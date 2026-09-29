@@ -2,8 +2,6 @@ package com.example.sleeptrackersimulator.ui.dashboard
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,25 +12,36 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.sleeptrackersimulator.ble.BleConnectionState
+import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.core.model.MovementState
 import com.example.sleeptrackersimulator.sensor.MovementClassifier
@@ -44,6 +53,12 @@ import kotlin.math.min
 @Composable
 fun SensorScreen(
     uiState: SensorUiState,
+    bleState: BleConnectionState,
+    bleLogs: List<String>,
+    onScan: () -> Unit,
+    onConnect: (BleDevice) -> Unit,
+    onDisconnect: () -> Unit,
+    onSendData: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { contentPadding ->
@@ -84,6 +99,233 @@ fun SensorScreen(
                 )
 
                 is SensorUiState.Active -> ActiveSensorContent(uiState.analysis)
+            }
+
+            BleSection(
+                bleState = bleState,
+                bleLogs = bleLogs,
+                onScan = onScan,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect,
+                onSendData = onSendData,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BleSection(
+    bleState: BleConnectionState,
+    bleLogs: List<String>,
+    onScan: () -> Unit,
+    onConnect: (BleDevice) -> Unit,
+    onDisconnect: () -> Unit,
+    onSendData: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var commandInput by rememberSaveable { mutableStateOf("") }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text(
+            text = "Mock BLE connection",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+
+        BleStatusCard(bleState)
+
+        val canScan = bleState !is BleConnectionState.Scanning &&
+            bleState !is BleConnectionState.Connecting &&
+            bleState !is BleConnectionState.Connected
+
+        Button(
+            onClick = onScan,
+            enabled = canScan,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Search for devices")
+        }
+
+        if (bleState is BleConnectionState.Scanning) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Text(
+                    text = "Scanning for virtual devices…",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+
+        if (bleState is BleConnectionState.DeviceFound) {
+            Text("Discovered devices", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            bleState.devices.forEach { device ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(device.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyLarge)
+                            Text(device.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Button(onClick = { onConnect(device) }) {
+                            Text("Connect")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bleState is BleConnectionState.Connecting) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Text(
+                    text = "Connecting to ${bleState.device.name}…",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+
+        if (bleState is BleConnectionState.Connected) {
+            OutlinedTextField(
+                value = commandInput,
+                onValueChange = { commandInput = it },
+                label = { Text("Command") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            Button(
+                onClick = {
+                    val payload = commandInput.trim()
+                    if (payload.isNotBlank()) {
+                        onSendData(payload)
+                        commandInput = ""
+                    }
+                },
+                enabled = commandInput.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Send")
+            }
+        }
+
+        if (bleState is BleConnectionState.Connecting || bleState is BleConnectionState.Connected) {
+            OutlinedButton(
+                onClick = onDisconnect,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Disconnect")
+            }
+        }
+
+        BleTerminalCard(bleLogs)
+    }
+}
+
+@Composable
+private fun BleStatusCard(bleState: BleConnectionState) {
+    val statusText = when (bleState) {
+        BleConnectionState.Idle -> "Disconnected"
+        BleConnectionState.Scanning -> "Scanning"
+        is BleConnectionState.DeviceFound -> "Device found"
+        is BleConnectionState.Connecting -> "Connecting"
+        is BleConnectionState.Connected -> "Connected: ${bleState.device.name}"
+        is BleConnectionState.Disconnected -> "Disconnected"
+        is BleConnectionState.Error -> "Error: ${bleState.message}"
+    }
+
+    val isConnected = bleState is BleConnectionState.Connected
+    val isScanningOrConnecting = bleState is BleConnectionState.Scanning || bleState is BleConnectionState.Connecting
+    val isError = bleState is BleConnectionState.Error
+
+    val indicatorColor = when {
+        isConnected -> CalmGreen
+        isScanningOrConnecting -> MotionAmber
+        isError -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("Connection status", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .background(indicatorColor, CircleShape),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BleTerminalCard(logs: List<String>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "BLE terminal",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+
+            if (logs.isEmpty()) {
+                Text(
+                    text = "No BLE messages yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    logs.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
             }
         }
     }
