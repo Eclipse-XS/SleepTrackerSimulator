@@ -1,8 +1,10 @@
 *.iml
 .gradle/
+.kotlin/
 .idea/
 local.properties
 .DS_Store
+Thumbs.db
 build/
 captures/
 .externalNativeBuild/
@@ -14,3 +16,4 @@ captures/
 keystore.properties
 google-services.json
 /tools/
+PLAN.md
