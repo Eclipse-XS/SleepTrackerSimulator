@@ -4,13 +4,14 @@ import kotlinx.coroutines.delay
 
 class MockBleScanner(
     private val discoveryDelayMillis: Long = 2_000L,
+    private val virtualDevice: BleDevice = VIRTUAL_DEVICE,
 ) {
     suspend fun scan(): List<BleDevice> {
         delay(discoveryDelayMillis)
-        return listOf(VIRTUAL_DEVICE)
+        return listOf(virtualDevice)
     }
 
     companion object {
-        val VIRTUAL_DEVICE = BleDevice("Sleep Tracker Hub", "MOCK:00:11:22:33:44")
+        val VIRTUAL_DEVICE = BleDevice("Sleep Band HR", "VIRTUAL:HR:01")
     }
 }

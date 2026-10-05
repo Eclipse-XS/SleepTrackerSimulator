@@ -10,15 +10,15 @@ import kotlinx.coroutines.flow.StateFlow
 class BleViewModel(private val connector: IBleConnector) : ViewModel() {
     val state: StateFlow<BleConnectionState> = connector.state
     val logs: StateFlow<List<String>> = connector.logs
+    val heartRate = connector.heartRate
+    val heartRateHistory = connector.heartRateHistory
+    val notificationsEnabled = connector.notificationsEnabled
 
     fun startScan() = connector.startScan()
     fun connect(device: BleDevice) = connector.connect(device)
     fun disconnect() = connector.disconnect()
-    fun sendData(data: String) {
-        if (data.isNotBlank()) {
-            connector.sendData(data.trim())
-        }
-    }
+    fun readBodySensorLocation() = connector.readBodySensorLocation()
+    fun writeCommand(command: String) = connector.writeCommand(command.trim())
 
     override fun onCleared() {
         connector.close()

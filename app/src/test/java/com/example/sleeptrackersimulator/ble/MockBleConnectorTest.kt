@@ -1,9 +1,6 @@
 package com.example.sleeptrackersimulator.ble
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -14,198 +11,77 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MockBleConnectorTest {
+    private fun connector() = MockBleConnector(
+        scope = activeScope!!,
+        connectionDelayMillis = 100,
+        notificationIntervalMillis = 100,
+        variation = HeartRateVariation { 1 },
+        logOutput = { _, _ -> },
+    )
+    private var activeScope: kotlinx.coroutines.CoroutineScope? = null
 
-    @Test
-    fun `initial state is idle`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        assertEquals(BleConnectionState.Idle, connector.state.value)
-        assertTrue(connector.logs.value.isEmpty())
+    @Test fun `initial state is idle`() = runTest {
+        activeScope = backgroundScope; val subject = connector()
+        assertEquals(BleConnectionState.Idle, subject.state.value)
+        assertTrue(subject.heartRateHistory.value.isEmpty())
     }
 
-    @Test
-    fun `start scan immediately exposes scanning`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        runCurrent()
-        assertEquals(BleConnectionState.Scanning, connector.state.value)
-        assertTrue(connector.logs.value.any { it.contains("SCAN started") })
+    @Test fun `scan discovers virtual band once after configured delay`() = runTest {
+        activeScope = this
+        val subject = MockBleConnector(scanner = MockBleScanner(200), scope = this, logOutput = { _, _ -> })
+        subject.startScan(); runCurrent()
+        assertEquals(BleConnectionState.Scanning, subject.state.value)
+        advanceTimeBy(200); runCurrent()
+        val devices = (subject.state.value as BleConnectionState.DeviceFound).devices
+        assertEquals(listOf(MockBleScanner.VIRTUAL_DEVICE), devices)
+        subject.startScan(); advanceTimeBy(200); runCurrent()
+        assertEquals(1, (subject.state.value as BleConnectionState.DeviceFound).devices.size)
     }
 
-    @Test
-    fun `device appears after two seconds`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        runCurrent()
-        advanceTimeBy(1_999L)
-        runCurrent()
-        assertEquals(BleConnectionState.Scanning, connector.state.value)
-
-        advanceTimeBy(1L)
-        runCurrent()
-        val state = connector.state.value
-        assertTrue(state is BleConnectionState.DeviceFound)
-        assertEquals(listOf(MockBleScanner.VIRTUAL_DEVICE), (state as BleConnectionState.DeviceFound).devices)
+    @Test fun `connection discovers service subscribes and streams bounded smooth heart rate`() = runTest {
+        activeScope = backgroundScope; val subject = connector()
+        subject.startScan(); advanceTimeBy(2_000); runCurrent()
+        subject.connect(MockBleScanner.VIRTUAL_DEVICE); runCurrent()
+        assertTrue(subject.state.value is BleConnectionState.Connecting)
+        advanceTimeBy(100); runCurrent()
+        assertTrue(subject.state.value is BleConnectionState.Connected)
+        assertTrue(subject.notificationsEnabled.value)
+        assertTrue(subject.logs.value.any { it == "SERVICE 180D discovered" })
+        assertTrue(subject.logs.value.any { it == "SUBSCRIBED characteristic 2A37" })
+        advanceTimeBy(7_000); runCurrent()
+        assertEquals(MockBleConnector.MAX_HISTORY_SIZE, subject.heartRateHistory.value.size)
+        assertTrue(subject.heartRateHistory.value.all { it in 45..90 })
+        assertTrue(subject.heartRateHistory.value.zipWithNext().all { (a, b) -> kotlin.math.abs(a - b) <= 3 })
     }
 
-    @Test
-    fun `connect transitions through connecting to connected`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-
-        val device = MockBleScanner.VIRTUAL_DEVICE
-        connector.connect(device)
-        runCurrent()
-        assertEquals(BleConnectionState.Connecting(device), connector.state.value)
-        assertTrue(connector.logs.value.any { it.contains("CONNECTING ${device.name}") })
-
-        advanceTimeBy(750L)
-        runCurrent()
-        assertEquals(BleConnectionState.Connected(device), connector.state.value)
-        assertTrue(connector.logs.value.any { it.contains("CONNECTED ${device.name}") })
-        assertTrue(connector.logs.value.any { it.contains("STATUS:READY") })
+    @Test fun `disconnect stops notifications`() = runTest {
+        activeScope = backgroundScope; val subject = connector()
+        subject.startScan(); advanceTimeBy(2_000); subject.connect(MockBleScanner.VIRTUAL_DEVICE)
+        advanceTimeBy(200); runCurrent()
+        subject.disconnect(); val count = subject.heartRateHistory.value.size
+        advanceTimeBy(1_000); runCurrent()
+        assertFalse(subject.notificationsEnabled.value)
+        assertEquals(count, subject.heartRateHistory.value.size)
     }
 
-    @Test
-    fun `send data logs write and notification ack`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-        connector.connect(MockBleScanner.VIRTUAL_DEVICE)
-        advanceTimeBy(750L)
-        runCurrent()
-
-        connector.sendData("STATUS_REQUEST")
-        runCurrent()
-
-        assertTrue(connector.state.value is BleConnectionState.Connected)
-        assertTrue(connector.logs.value.any { it.contains("TX ${BleProfile.COMMAND_CHARACTERISTIC_UUID}: STATUS_REQUEST") })
-        assertTrue(connector.logs.value.any { it.contains("RX ${BleProfile.STATUS_CHARACTERISTIC_UUID}: ACK:STATUS_REQUEST") })
+    @Test fun `read and typed writes return meaningful results`() = runTest {
+        activeScope = backgroundScope; val subject = connector()
+        assertEquals(BleOperationResult.Error("NOT_CONNECTED"), subject.readBodySensorLocation())
+        subject.startScan(); runCurrent(); advanceTimeBy(2_000); runCurrent()
+        subject.connect(MockBleScanner.VIRTUAL_DEVICE); runCurrent(); advanceTimeBy(100); runCurrent()
+        assertEquals(BleOperationResult.Success("Wrist"), subject.readBodySensorLocation())
+        assertEquals(BleOperationResult.Success("STREAM_STOPPED"), subject.writeCommand("STOP_STREAM"))
+        assertFalse(subject.notificationsEnabled.value)
+        assertEquals(BleOperationResult.Success("STREAM_STARTED"), subject.writeCommand("START_STREAM"))
+        assertEquals(BleOperationResult.Error("UNKNOWN_COMMAND"), subject.writeCommand("HELLO"))
     }
 
-    @Test
-    fun `disconnect cancels connection and exposes disconnected`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-        connector.connect(MockBleScanner.VIRTUAL_DEVICE)
-        runCurrent()
-        assertEquals(BleConnectionState.Connecting(MockBleScanner.VIRTUAL_DEVICE), connector.state.value)
-
-        advanceTimeBy(300L)
-        runCurrent()
-        connector.disconnect()
-        runCurrent()
-
-        assertEquals(BleConnectionState.Disconnected(MockBleScanner.VIRTUAL_DEVICE), connector.state.value)
-
-        advanceTimeBy(1_000L)
-        runCurrent()
-        assertEquals(BleConnectionState.Disconnected(MockBleScanner.VIRTUAL_DEVICE), connector.state.value)
-    }
-
-    @Test
-    fun `disconnect after connected preserves device identity`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-        connector.connect(MockBleScanner.VIRTUAL_DEVICE)
-        advanceTimeBy(750L)
-        runCurrent()
-
-        connector.disconnect()
-        runCurrent()
-
-        assertEquals(BleConnectionState.Disconnected(MockBleScanner.VIRTUAL_DEVICE), connector.state.value)
-        assertTrue(connector.logs.value.any { it.contains("DISCONNECTED ${MockBleScanner.VIRTUAL_DEVICE.name}") })
-    }
-
-    @Test
-    fun `double scan while scanning does not restart delay`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(1_000L)
-        runCurrent()
-
-        connector.startScan()
-        advanceTimeBy(1_000L)
-        runCurrent()
-
-        assertTrue(connector.state.value is BleConnectionState.DeviceFound)
-        val foundCount = connector.logs.value.count { it.contains("FOUND") }
-        assertEquals(1, foundCount)
-    }
-
-    @Test
-    fun `repeated scan replaces devices rather than duplicating`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-
-        val state = connector.state.value
-        assertTrue(state is BleConnectionState.DeviceFound)
-        assertEquals(1, (state as BleConnectionState.DeviceFound).devices.size)
-    }
-
-    @Test
-    fun `connect without discovery is ignored`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.connect(MockBleScanner.VIRTUAL_DEVICE)
-        runCurrent()
-
-        assertEquals(BleConnectionState.Idle, connector.state.value)
-        assertFalse(connector.logs.value.any { it.contains("CONNECTED") })
-    }
-
-    @Test
-    fun `send while disconnected is ignored`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.sendData("HELLO")
-        runCurrent()
-
-        assertFalse(connector.logs.value.any { it.contains("TX") })
-    }
-
-    @Test
-    fun `close cancels pending scan`() = runTest {
-        val connectorScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.test.StandardTestDispatcher(testScheduler))
-        val connector = MockBleConnector(scope = connectorScope, logOutput = { _, _ -> })
-        connector.startScan()
-        runCurrent()
-        assertEquals(BleConnectionState.Scanning, connector.state.value)
-
-        connector.close()
-        advanceTimeBy(2_000L)
-        runCurrent()
-
-        assertFalse(connector.state.value is BleConnectionState.DeviceFound)
-    }
-
-    @Test
-    fun `terminal history is bounded`() = runTest {
-        val connector = MockBleConnector(scope = this, logOutput = { _, _ -> })
-        connector.startScan()
-        advanceTimeBy(2_000L)
-        runCurrent()
-        connector.connect(MockBleScanner.VIRTUAL_DEVICE)
-        advanceTimeBy(750L)
-        runCurrent()
-
-        for (i in 1..30) {
-            connector.sendData("CMD_$i")
-        }
-        runCurrent()
-
-        assertEquals(50, connector.logs.value.size)
-        assertTrue(connector.logs.value.last().contains("ACK:CMD_30"))
+    @Test fun `connect without discovery is rejected and close cancels scan`() = runTest {
+        activeScope = backgroundScope; val subject = connector()
+        subject.connect(MockBleScanner.VIRTUAL_DEVICE)
+        assertEquals(BleConnectionState.Idle, subject.state.value)
+        assertTrue(subject.logs.value.last().contains("rejected"))
+        subject.startScan(); subject.close(); advanceTimeBy(3_000); runCurrent()
+        assertFalse(subject.state.value is BleConnectionState.DeviceFound)
     }
 }

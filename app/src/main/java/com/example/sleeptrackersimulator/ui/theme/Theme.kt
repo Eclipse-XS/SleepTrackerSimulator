@@ -1,6 +1,5 @@
 package com.example.sleeptrackersimulator.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -14,15 +13,19 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
+    background = NightBlue,
     primary = MoonBlue,
     secondary = CalmGreen,
     tertiary = MotionAmber,
     surface = DarkSurface,
+    surfaceVariant = DarkSurfaceRaised,
+    onBackground = MistBlue,
+    onSurface = MistBlue,
 )
 
 @Composable
 fun SleepTrackerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(

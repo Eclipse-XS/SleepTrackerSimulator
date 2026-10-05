@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelStore
 import com.example.sleeptrackersimulator.ble.BleConnectionState
 import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.ble.IBleConnector
+import com.example.sleeptrackersimulator.ble.BleOperationResult
+import com.example.sleeptrackersimulator.ble.HeartRateMeasurement
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
@@ -19,11 +21,15 @@ class BleViewModelTest {
 
         override val state: StateFlow<BleConnectionState> = stateFlow
         override val logs: StateFlow<List<String>> = logsFlow
+        override val heartRate = MutableStateFlow<HeartRateMeasurement?>(null)
+        override val heartRateHistory = MutableStateFlow<List<Int>>(emptyList())
+        override val notificationsEnabled = MutableStateFlow(false)
 
         var scanCalls = 0
         val connectedDevices = mutableListOf<BleDevice>()
         var disconnectCalls = 0
-        val sentData = mutableListOf<String>()
+        val commands = mutableListOf<String>()
+        var readCalls = 0
         var closeCalls = 0
 
         override fun startScan() {
@@ -38,8 +44,14 @@ class BleViewModelTest {
             disconnectCalls++
         }
 
-        override fun sendData(data: String) {
-            sentData.add(data)
+        override fun readBodySensorLocation(): BleOperationResult {
+            readCalls++
+            return BleOperationResult.Success("Wrist")
+        }
+
+        override fun writeCommand(command: String): BleOperationResult {
+            commands.add(command)
+            return BleOperationResult.Success("OK")
         }
 
         override fun close() {
@@ -63,24 +75,15 @@ class BleViewModelTest {
     }
 
     @Test
-    fun `blank command is not delegated`() {
+    fun `read and trimmed write delegate to connector`() {
         val fake = FakeBleConnector()
         val viewModel = BleViewModel(fake)
 
-        viewModel.sendData("")
-        viewModel.sendData("   ")
+        viewModel.readBodySensorLocation()
+        viewModel.writeCommand("  REQUEST_STATUS  ")
 
-        assertTrue(fake.sentData.isEmpty())
-    }
-
-    @Test
-    fun `command is trimmed before delegation`() {
-        val fake = FakeBleConnector()
-        val viewModel = BleViewModel(fake)
-
-        viewModel.sendData("  STATUS_REQUEST  ")
-
-        assertEquals(listOf("STATUS_REQUEST"), fake.sentData)
+        assertEquals(1, fake.readCalls)
+        assertEquals(listOf("REQUEST_STATUS"), fake.commands)
     }
 
     @Test
