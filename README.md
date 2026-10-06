@@ -110,6 +110,52 @@ Cloud orchestration tests use coroutine virtual time and fake repository/network
 
 Logcat tag `CloudSync` reports successful, pending, and failed uploads without logging payload values or Firebase configuration.
 
+## Lab 4 — Actuator Control
+
+`DecisionEngine` receives the existing smoothed movement intensity from `SensorViewModel`. It is a pure Kotlin edge detector with an educational threshold of `0.65 m/s²`: a transition from below to `>=` the threshold while movement is classified as `MOVEMENT` produces one vibration pulse. Remaining above the threshold produces no repeated alerts; dropping below rearms it. Automatic movement alerts can be disabled without disabling manual or remote control.
+
+```text
+SensorManager → MovementClassifier → SensorViewModel → DecisionEngine
+                                                        |
+                                              threshold crossed?
+                                                /             \
+                                              no              yes
+                                              none      vibration pulse
+```
+
+`AndroidSmartActuator` uses `VibratorManager` and `VibrationEffect` for pulse or persistent vibration. Flashlight control uses `CameraManager.setTorchMode()` only after checking `FEATURE_CAMERA_FLASH`, selecting a flash-capable camera, and checking camera permission. Missing hardware and API failures are represented as `UNAVAILABLE` or `ERROR`; the UI never claims that unavailable hardware is active. Automatic control uses vibration only. Flashlight is reserved for Manual Control and Firebase commands.
+
+Cloud-to-device commands use a separate event-driven path from Lab 3 telemetry:
+
+```text
+Firebase RTDB control/sleep-tracker-simulator
+        ↓ ValueEventListener (not polling)
+FirebaseRemoteControlRepository
+        ↓ callbackFlow
+ActuatorViewModel
+        ↓
+SmartActuator → VibratorManager / CameraManager
+```
+
+The typed remote node is:
+
+```json
+{
+  "control": {
+    "sleep-tracker-simulator": {
+      "vibrationEnabled": false,
+      "flashlightEnabled": false
+    }
+  }
+}
+```
+
+`awaitClose` removes the Firebase listener when collection is cancelled. `ActuatorViewModel.onCleared()` cancels its collectors and calls `stopAll()` so repeating vibration and torch do not remain active. `Disconnect Sleep Band` still affects only BLE; `End Monitoring` still affects only Lab 3 telemetry. Local, manual, and Firebase actuator controls remain independent of both.
+
+Event-driven control reacts when Firebase invokes the listener after a server-side change. Polling would repeatedly ask the server whether a value changed; Lab 4 does not poll.
+
+The actuator tests cover threshold edges and rearming, no-spam behavior, automatic enable/disable, manual and remote commands, unavailable hardware, remote errors, operation failures, and cleanup. Emulator flashlight availability depends on its virtual hardware profile; `Flashlight unavailable` is the correct result when the feature is absent.
+
 ## Verification
 
 ```powershell

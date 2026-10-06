@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- Kept for a future physical IBleConnector. The current mock transport never
          invokes Android Bluetooth APIs, so it deliberately requests no runtime permission. -->

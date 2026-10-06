@@ -4,7 +4,7 @@ import com.google.firebase.database.FirebaseDatabase
 import kotlinx.coroutines.tasks.await
 
 class FirebaseCloudRepository(
-    database: FirebaseDatabase = FirebaseDatabase.getInstance(DATABASE_URL),
+    database: FirebaseDatabase = FirebaseDatabase.getInstance(FIREBASE_DATABASE_URL),
 ) : CloudRepository {
     private val sessions = database.reference.child("sessions")
 
@@ -27,10 +27,5 @@ class FirebaseCloudRepository(
 
     override suspend fun endSession(sessionId: String, endedAt: Long) {
         sessions.child(sessionId).child("endedAt").setValue(endedAt).await()
-    }
-
-    companion object {
-        private const val DATABASE_URL =
-            "https://sleeptrackersimulator-default-rtdb.europe-west1.firebasedatabase.app"
     }
 }

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sleeptrackersimulator.ble.BleConnectionState
+import com.example.sleeptrackersimulator.actuator.ActuatorUiState
 import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.ble.BleOperationResult
 import com.example.sleeptrackersimulator.ble.HeartRateMeasurement
@@ -74,6 +75,7 @@ fun SensorScreen(
     notificationsEnabled: Boolean,
     restState: RestStateResult,
     cloudSyncState: CloudSyncUiState,
+    actuatorState: ActuatorUiState,
     onScan: () -> Unit,
     onConnect: (BleDevice) -> Unit,
     onDisconnect: () -> Unit,
@@ -81,6 +83,9 @@ fun SensorScreen(
     onWrite: (String) -> BleOperationResult,
     onStartMonitoring: () -> Unit,
     onEndMonitoring: () -> Unit,
+    onAutomaticControlChanged: (Boolean) -> Unit,
+    onVibrationChanged: (Boolean) -> Unit,
+    onFlashlightChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showDiagnostics by rememberSaveable { mutableStateOf(false) }
@@ -94,16 +99,21 @@ fun SensorScreen(
         if (bleState is BleConnectionState.Connected) {
             ConnectedDashboard(
                 uiState, bleState.device, heartRate, heartRateHistory, restState, cloudSyncState,
+                actuatorState,
                 Modifier.padding(padding),
                 onDiagnostics = { showDiagnostics = true },
                 onDisconnect = onDisconnect,
                 onStartMonitoring = onStartMonitoring,
                 onEndMonitoring = onEndMonitoring,
+                onAutomaticControlChanged = onAutomaticControlChanged,
+                onVibrationChanged = onVibrationChanged,
+                onFlashlightChanged = onFlashlightChanged,
             )
         } else {
             DisconnectedExperience(
-                uiState, bleState, cloudSyncState, onScan, onConnect,
-                onStartMonitoring, onEndMonitoring, Modifier.padding(padding),
+                uiState, bleState, cloudSyncState, actuatorState, onScan, onConnect,
+                onStartMonitoring, onEndMonitoring, onAutomaticControlChanged,
+                onVibrationChanged, onFlashlightChanged, Modifier.padding(padding),
             )
         }
     }
@@ -123,10 +133,14 @@ private fun DisconnectedExperience(
     sensorState: SensorUiState,
     bleState: BleConnectionState,
     cloudSyncState: CloudSyncUiState,
+    actuatorState: ActuatorUiState,
     onScan: () -> Unit,
     onConnect: (BleDevice) -> Unit,
     onStartMonitoring: () -> Unit,
     onEndMonitoring: () -> Unit,
+    onAutomaticControlChanged: (Boolean) -> Unit,
+    onVibrationChanged: (Boolean) -> Unit,
+    onFlashlightChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -169,6 +183,10 @@ private fun DisconnectedExperience(
         CloudSyncCard(cloudSyncState)
         Spacer(Modifier.height(12.dp))
         MonitoringAction(cloudSyncState, onStartMonitoring, onEndMonitoring)
+        Spacer(Modifier.height(18.dp))
+        ActuatorPanel(
+            actuatorState, onAutomaticControlChanged, onVibrationChanged, onFlashlightChanged,
+        )
     }
 }
 
@@ -227,11 +245,15 @@ private fun ConnectedDashboard(
     history: List<Int>,
     restState: RestStateResult,
     cloudSyncState: CloudSyncUiState,
+    actuatorState: ActuatorUiState,
     modifier: Modifier = Modifier,
     onDiagnostics: () -> Unit,
     onDisconnect: () -> Unit,
     onStartMonitoring: () -> Unit,
     onEndMonitoring: () -> Unit,
+    onAutomaticControlChanged: (Boolean) -> Unit,
+    onVibrationChanged: (Boolean) -> Unit,
+    onFlashlightChanged: (Boolean) -> Unit,
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -248,6 +270,9 @@ private fun ConnectedDashboard(
         MovementSummary(sensorState)
         CloudSyncCard(cloudSyncState)
         MonitoringAction(cloudSyncState, onStartMonitoring, onEndMonitoring)
+        ActuatorPanel(
+            actuatorState, onAutomaticControlChanged, onVibrationChanged, onFlashlightChanged,
+        )
         DeviceSummary(device, onDiagnostics)
         OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) { Text("Disconnect Sleep Band") }
         Text("Educational estimate · not medical sleep analysis", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -422,6 +447,77 @@ private fun MonitoringAction(
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
     ) {
         Text(if (state.monitoringActive) "End Monitoring" else "Start Monitoring")
+    }
+}
+
+@Composable
+private fun ActuatorPanel(
+    state: ActuatorUiState,
+    onAutomaticControlChanged: (Boolean) -> Unit,
+    onVibrationChanged: (Boolean) -> Unit,
+    onFlashlightChanged: (Boolean) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text("Actuators", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Firebase listener · ${if (state.remoteListenerConnected) "Connected" else "Waiting"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    if (state.automaticControlEnabled) "AUTO ON" else "AUTO OFF",
+                    color = if (state.automaticControlEnabled) CalmGreen else MaterialTheme.colorScheme.outline,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(
+                "Vibration: ${if (!state.vibratorAvailable) "Unavailable" else if (state.vibrationEnabled) "Active" else "Ready"}\n" +
+                    "Flashlight: ${if (!state.flashlightAvailable) "Unavailable" else if (state.flashlightEnabled) "Active" else "Ready"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = { onAutomaticControlChanged(!state.automaticControlEnabled) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Automatic movement alert ${if (state.automaticControlEnabled) "ON" else "OFF"}")
+            }
+            Text("Manual Control", style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = { onVibrationChanged(!state.vibrationEnabled) },
+                    enabled = state.vibratorAvailable,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Vibration ${if (state.vibrationEnabled) "OFF" else "ON"}") }
+                OutlinedButton(
+                    onClick = { onFlashlightChanged(!state.flashlightEnabled) },
+                    enabled = state.flashlightAvailable,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Flashlight ${if (state.flashlightEnabled) "OFF" else "ON"}") }
+            }
+            val action = state.lastActionTriggered.name.replace('_', ' ')
+            Text(
+                "Last action: $action${state.lastTriggerSource?.let { " · ${it.name.replace('_', ' ')}" } ?: ""}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.lastError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
     }
 }
 
