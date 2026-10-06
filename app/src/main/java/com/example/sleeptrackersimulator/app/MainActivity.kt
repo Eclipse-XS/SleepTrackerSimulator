@@ -17,6 +17,8 @@ import com.example.sleeptrackersimulator.actuator.AndroidSmartActuator
 import com.example.sleeptrackersimulator.actuator.FirebaseRemoteControlRepository
 import com.example.sleeptrackersimulator.cloud.AndroidNetworkMonitor
 import com.example.sleeptrackersimulator.cloud.FirebaseCloudRepository
+import com.example.sleeptrackersimulator.cloud.FirebaseAnonymousAuthRepository
+import com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStore
 import com.example.sleeptrackersimulator.sensor.AndroidAccelerometerDataSource
 import com.example.sleeptrackersimulator.ui.dashboard.BleViewModel
 import com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModel
@@ -58,7 +60,11 @@ class MainActivity : ComponentActivity() {
     private val cloudSyncViewModel: CloudSyncViewModel by viewModels {
         CloudSyncViewModel.factory(
             repository = FirebaseCloudRepository(),
+            authRepository = FirebaseAnonymousAuthRepository(),
             networkMonitor = AndroidNetworkMonitor(applicationContext),
+            stateStore = AtomicJsonCloudStateStore(
+                applicationContext.filesDir.resolve("cloud/cloud-state.json"),
+            ),
             sensorState = viewModel.uiState,
             bleState = bleViewModel.state,
             heartRate = bleViewModel.heartRate,

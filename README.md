@@ -64,7 +64,9 @@ Heart Rate Measurement -----+
 
 ## Lab 3 — Firebase Realtime Database
 
-`CloudSyncViewModel` samples the latest sensor, BLE, and derived rest state every five seconds. It owns one idempotent periodic job: `startSync()` cannot create duplicates, `stopSync()` cancels sampling, and `endMonitoring()` flushes pending records when online before writing `endedAt`. It creates immutable `SensorPayload` values and delegates persistence to `CloudRepository`; Compose contains no Firebase calls. `FirebaseCloudRepository` writes to the configured European Realtime Database instance through the main `firebase-database` module and coroutine `Task.await()`.
+`CloudSyncViewModel` snapshots the latest sensor, BLE, and derived rest state every five seconds. This interval is short enough for a laboratory demonstration and long enough to avoid sending every accelerometer event. It owns one idempotent producer job, while a `Mutex` serializes session creation, queue draining, and session closure. Compose contains no Firebase calls.
+
+Each measurement receives a UUID before it enters the queue. Firebase writes use that UUID as the key, so a retry overwrites the same logical record instead of creating duplicates. A session also has a stable UUID and is restored after process death. `End Monitoring` persists a typed `END_SESSION` operation; it is delivered after connectivity returns even if the process was killed meanwhile.
 
 `value` is the smoothed movement intensity in m/s². It is duplicated as `movementIntensity` so the generic laboratory field and the domain-specific meaning are both explicit. The logical `deviceId` is `sleep-tracker-simulator`; no hardware or personal identifier is collected.
 
@@ -75,38 +77,48 @@ sequenceDiagram
     participant VM as SensorViewModel
     participant C as CloudSyncViewModel
     participant R as CloudRepository
+    participant Q as Atomic JSON queue
+    participant A as Firebase Anonymous Auth
     participant F as Firebase Realtime Database
     S->>DS: onSensorChanged(x, y, z)
     DS->>VM: latest SensorSample
     VM->>C: latest SensorUiState
     loop every 5 seconds
         C->>C: immutable SensorPayload snapshot
-        C->>R: suspend uploadMeasurement
+        C->>Q: persist UPLOAD_MEASUREMENT
+        C->>A: ensureAuthenticated()
+        C->>R: upload stable measurementId
         R->>F: setValue(payload).await()
         F-->>C: success or failure
+        C->>Q: remove only after acknowledgement
         C-->>C: SYNCED, PENDING, or ERROR
     end
 ```
 
-Database shape:
+Authenticated database shape:
 
 ```text
-sessions/{sessionId}
-├── deviceId
-├── startedAt
-├── endedAt
-└── measurements/{pushId}
-    ├── deviceId, sensorType, timestamp
-    ├── x, y, z, value
-    ├── movementState, movementIntensity
-    └── heartRateBpm, bleConnected, restState
+users/{auth.uid}/sessions/{sessionId}
+├── schemaVersion, deviceId, startedAt, endedAt
+└── measurements/{measurementId}
+    ├── measurementId, deviceId, sensorType, timestamp
+    ├── x, y, z, value, movementIntensity
+    └── movementState, heartRateBpm, bleConnected, restState
 ```
 
-When Android reports no validated internet, payloads enter a bounded 50-item in-memory FIFO queue and UI status becomes `PENDING`. At the next five-second tick after connectivity returns, queued values are uploaded oldest first before the current sample. The queue intentionally does not survive process death; persistent storage belongs to a later lab.
+Pending operations are stored in an app-private atomic JSON file backed by Gson. The bounded FIFO holds 50 operations, equivalent to about 4 minutes 10 seconds of five-second samples, and survives process death. When validated internet returns, operations are sent oldest first. Only an acknowledged operation is removed. Transient network/server failures use bounded backoff delays of 500, 1000, and 2000 ms; validation and authorization failures are not retried indefinitely.
 
-`Disconnect Sleep Band` affects only the virtual BLE wearable. Accelerometer monitoring and cloud synchronization continue. `End Monitoring` is separate: it stops periodic cloud sampling and, when online, closes the Firebase session with `endedAt`. Ending offline stops locally and leaves the session open with a visible `PENDING` diagnostic because an in-memory queue cannot guarantee delivery after process death. `Start Monitoring` can resume synchronization without creating duplicate jobs.
+`SensorPayloadValidator` rejects non-finite or implausible sensor values, invalid enums, future timestamps, and malformed identifiers before queueing. Anonymous Firebase Authentication supplies the owner UID. `database.rules.json` defaults to deny, restricts telemetry to `/users/{auth.uid}`, and validates the expected schema and value ranges. No email, advertising ID, Android hardware identifier, account name, or location is collected; the fixed `deviceId` is a logical lab identifier.
 
-Cloud orchestration tests use coroutine virtual time and fake repository/network implementations. They cover the first five-second tick, duplicate-start prevention, disconnected and connected payloads, state transitions, failures, FIFO recovery, queue bounds, cancellation, restart, and session end without contacting Firebase.
+Retention runs only after a completed session: completed sessions older than 30 days and completed sessions beyond the newest 30 are removed. The active session, unfinished sessions, and unrelated database branches are never selected.
+
+Firebase Console setup required for a clean project:
+
+1. Enable Authentication > Sign-in method > Anonymous.
+2. Deploy `database.rules.json` with Firebase CLI (`firebase deploy --only database`) or paste the rules in Realtime Database > Rules and publish them.
+3. Keep the configured Realtime Database region and `google-services.json` aligned with this Android application.
+
+Cloud tests use coroutine virtual time and in-memory or temporary-file fakes. They cover scheduling, duplicate-start prevention, payload snapshots, status transitions, FIFO bounds and recovery, atomic persistence, validation boundaries, bounded retry, retention selection, cancellation, restart, and session end without contacting Firebase.
 
 Logcat tag `CloudSync` reports successful, pending, and failed uploads without logging payload values or Firebase configuration.
 
@@ -128,7 +140,7 @@ SensorManager → MovementClassifier → SensorViewModel → DecisionEngine
 Cloud-to-device commands use a separate event-driven path from Lab 3 telemetry:
 
 ```text
-Firebase RTDB control/sleep-tracker-simulator
+Firebase RTDB users/{auth.uid}/control/sleep-tracker-simulator
         ↓ ValueEventListener (not polling)
 FirebaseRemoteControlRepository
         ↓ callbackFlow
@@ -141,10 +153,14 @@ The typed remote node is:
 
 ```json
 {
-  "control": {
-    "sleep-tracker-simulator": {
-      "vibrationEnabled": false,
-      "flashlightEnabled": false
+  "users": {
+    "{auth.uid}": {
+      "control": {
+        "sleep-tracker-simulator": {
+          "vibrationEnabled": false,
+          "flashlightEnabled": false
+        }
+      }
     }
   }
 }

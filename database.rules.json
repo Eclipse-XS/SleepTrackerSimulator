@@ -1,0 +1,31 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "sessions": {
+          "$sessionId": {
+            ".validate": "newData.hasChildren(['schemaVersion','deviceId','startedAt']) && newData.child('schemaVersion').val() === 2 && newData.child('deviceId').val() === 'sleep-tracker-simulator' && newData.child('startedAt').isNumber() && (!newData.child('endedAt').exists() || newData.child('endedAt').isNumber())",
+            "measurements": {
+              "$measurementId": {
+                ".validate": "newData.hasChildren(['measurementId','deviceId','sensorType','x','y','z','value','timestamp','movementState','movementIntensity','bleConnected','restState']) && newData.child('measurementId').val() === $measurementId && newData.child('deviceId').val() === 'sleep-tracker-simulator' && newData.child('sensorType').val() === 'ACCELEROMETER' && newData.child('x').isNumber() && newData.child('x').val() >= -200 && newData.child('x').val() <= 200 && newData.child('y').isNumber() && newData.child('y').val() >= -200 && newData.child('y').val() <= 200 && newData.child('z').isNumber() && newData.child('z').val() >= -200 && newData.child('z').val() <= 200 && newData.child('value').isNumber() && newData.child('value').val() >= 0 && newData.child('timestamp').isNumber() && newData.child('timestamp').val() > 0 && newData.child('movementIntensity').isNumber() && newData.child('movementIntensity').val() >= 0 && newData.child('bleConnected').isBoolean() && (!newData.child('heartRateBpm').exists() || (newData.child('heartRateBpm').isNumber() && newData.child('heartRateBpm').val() >= 20 && newData.child('heartRateBpm').val() <= 250)) && (newData.child('movementState').val() === 'STILL' || newData.child('movementState').val() === 'MOVEMENT' || newData.child('movementState').val() === 'UNAVAILABLE') && (newData.child('restState').val() === 'MONITORING' || newData.child('restState').val() === 'ACTIVE' || newData.child('restState').val() === 'RESTING' || newData.child('restState').val() === 'POSSIBLE_SLEEP')",
+                "$other": { ".validate": false }
+              }
+            },
+            "$other": { ".validate": false }
+          }
+        },
+        "control": {
+          "sleep-tracker-simulator": {
+            ".validate": "newData.hasOnly(['vibrationEnabled','flashlightEnabled']) && (!newData.child('vibrationEnabled').exists() || newData.child('vibrationEnabled').isBoolean()) && (!newData.child('flashlightEnabled').exists() || newData.child('flashlightEnabled').isBoolean())"
+          },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

@@ -7,6 +7,9 @@ import com.example.sleeptrackersimulator.cloud.CloudRepository
 import com.example.sleeptrackersimulator.cloud.CloudSyncStatus
 import com.example.sleeptrackersimulator.cloud.NetworkMonitor
 import com.example.sleeptrackersimulator.cloud.PendingPayloadQueue
+import com.example.sleeptrackersimulator.cloud.CloudStateStore
+import com.example.sleeptrackersimulator.cloud.InMemoryCloudStateStore
+import com.example.sleeptrackersimulator.cloud.AuthRepository
 import com.example.sleeptrackersimulator.cloud.SensorPayload
 import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.core.model.MovementState
@@ -185,7 +188,7 @@ class CloudSyncViewModelTest {
 
     @Test
     fun `pending queue remains bounded to fifty and drops oldest`() =
-        cloudTest(online = false, queue = PendingPayloadQueue(50)) { fixture ->
+        cloudTest(online = false, store = InMemoryCloudStateStore(50)) { fixture ->
         repeat(51) { index ->
             fixture.now = index.toLong()
             advanceTimeBy(5_000)
@@ -197,7 +200,7 @@ class CloudSyncViewModelTest {
         fixture.now = 51L
         advanceTimeBy(5_000)
         runCurrent()
-        assertEquals((1L..51L).toList(), fixture.repository.uploads.map { it.timestamp })
+        assertEquals((2L..51L).toList(), fixture.repository.uploads.map { it.timestamp })
     }
 
     @Test
@@ -271,10 +274,10 @@ class CloudSyncViewModelTest {
 
     private fun cloudTest(
         online: Boolean = true,
-        queue: PendingPayloadQueue = PendingPayloadQueue(),
+        store: CloudStateStore = InMemoryCloudStateStore(),
         block: suspend TestScope.(Fixture) -> Unit,
     ) = runTest(dispatcher) {
-        val fixture = Fixture(online, queue)
+        val fixture = Fixture(online, store)
         try {
             block(fixture)
         } finally {
@@ -285,7 +288,7 @@ class CloudSyncViewModelTest {
 
     private class Fixture(
         online: Boolean = true,
-        queue: PendingPayloadQueue = PendingPayloadQueue(),
+        store: CloudStateStore = InMemoryCloudStateStore(),
     ) {
         val repository = FakeCloudRepository()
         val network = FakeNetworkMonitor(online)
@@ -293,16 +296,18 @@ class CloudSyncViewModelTest {
         val ble = MutableStateFlow<BleConnectionState>(BleConnectionState.Idle)
         val heartRate = MutableStateFlow<HeartRateMeasurement?>(null)
         val rest = MutableStateFlow(rest(RestState.MONITORING))
-        var now = 0L
+        var now = 1L
         val viewModel = CloudSyncViewModel(
             repository = repository,
+            authRepository = FakeAuthRepository(),
             networkMonitor = network,
             sensorState = sensor,
             bleState = ble,
             heartRate = heartRate,
             restState = rest,
             now = { now },
-            pendingQueue = queue,
+            stateStore = store,
+            newId = { "id-${now}" },
             log = { _, _, _ -> },
         )
 
@@ -323,18 +328,25 @@ class CloudSyncViewModelTest {
         var failure: Exception? = null
         var uploadGate: CompletableDeferred<Unit>? = null
 
-        override suspend fun createSession(deviceId: String, startedAt: Long): String = "session-1"
+        override suspend fun createSession(ownerUid: String, sessionId: String, deviceId: String, startedAt: Long) = Unit
 
-        override suspend fun uploadMeasurement(sessionId: String, payload: SensorPayload) {
+        override suspend fun uploadMeasurement(ownerUid: String, sessionId: String, payload: SensorPayload) {
             failure?.let { throw it }
             uploadGate?.await()
             uploads += payload
         }
 
-        override suspend fun endSession(sessionId: String, endedAt: Long) {
+        override suspend fun endSession(ownerUid: String, sessionId: String, endedAt: Long) {
             failure?.let { throw it }
             endTimes += endedAt
         }
+
+        override suspend fun applyRetention(ownerUid: String, activeSessionId: String?, now: Long) = Unit
+    }
+
+    private class FakeAuthRepository : AuthRepository {
+        override suspend fun ensureAuthenticated(): String = "uid-1"
+        override val currentUid: String = "uid-1"
     }
 
     companion object {
