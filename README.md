@@ -1,5 +1,37 @@
 # Sleep Tracker Simulator
 
+## Lab 6 On-device AI
+
+The dashboard now classifies 1-second accelerometer windows locally with a real
+TensorFlow Lite model. The ML pipeline is independent from the existing
+threshold movement classifier and the heuristic rest-state estimator.
+
+- Model: `app/src/main/assets/rest_movement_classifier.tflite`
+- Input: float32 `[1, 20, 3]`, XYZ at approximately 20 Hz
+- Preprocessing: subtract each channel's window mean, clip to `[-4, 4]` m/s²,
+  divide by `4`
+- Output: float32 `[1, 3]` softmax probabilities
+- Classes: `STILL`, `MICRO_MOVEMENT`, `PRONOUNCED_MOVEMENT`
+- Runtime: inference runs in `MlViewModel` on `Dispatchers.Default`
+- Integration: pronounced movement temporarily changes Room sampling from
+  1000 ms to 250 ms and emits a debounced automatic vibration event
+
+The training/export pipeline is in `ml/train_and_export.py`; exact metrics and
+the model digest are in `ml/model_metrics.json`. Data is simulated in
+independently seeded sessions. Its test metrics do not establish accuracy on
+people and the model does not infer sleep stages.
+
+Build and verify:
+
+```text
+gradlew.bat testDebugUnitTest assembleDebug lintDebug connectedDebugAndroidTest
+```
+
+For emulator reproduction, start the app on an AVD with an accelerometer and
+change Device Manager > Extended Controls > Virtual sensors. The AI Insights
+card first reports collection progress and then updates scores for each complete
+rolling window. Inference remains offline if Firebase is unavailable.
+
 Android educational project combining independent phone and virtual-wearable sensor streams. It is not a medical application or sleep-stage detector.
 
 ## Lab 1 — phone movement

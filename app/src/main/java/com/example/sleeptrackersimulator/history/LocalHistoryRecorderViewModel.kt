@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.sleeptrackersimulator.actuator.ActuatorActivation
 import com.example.sleeptrackersimulator.ui.dashboard.SensorUiState
+import com.example.sleeptrackersimulator.ml.MlUiState
+import com.example.sleeptrackersimulator.ml.MovementClass
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -28,12 +30,14 @@ class LocalHistoryRecorderViewModel(
     private val repository: SensorHistoryRepository,
     private val clock: () -> Long = System::currentTimeMillis,
     private val sampleIntervalMillis: Long = DEFAULT_SAMPLE_INTERVAL_MILLIS,
+    mlState: StateFlow<MlUiState>? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val writeMutex = Mutex()
     private var pendingActivation = false
     private var latestActiveState: SensorUiState.Active? = null
     private var lastRecordedSensorTimestampNanos: Long? = null
+    private var latestMlState: MlUiState = MlUiState.Loading
     private val _state = MutableStateFlow(LocalRecordingState())
     val state: StateFlow<LocalRecordingState> = _state
 
@@ -49,10 +53,22 @@ class LocalHistoryRecorderViewModel(
             }
         }
         viewModelScope.launch(dispatcher) {
+            mlState?.collect { latestMlState = it }
+        }
+        viewModelScope.launch(dispatcher) {
             while (isActive) {
-                delay(sampleIntervalMillis)
+                delay(currentSampleIntervalMillis())
                 recordLatestIfNew()
             }
+        }
+    }
+
+    private fun currentSampleIntervalMillis(): Long {
+        val ready = latestMlState as? MlUiState.Ready
+        return if (ready?.prediction?.predictedClass == MovementClass.PRONOUNCED_MOVEMENT) {
+            FAST_SAMPLE_INTERVAL_MILLIS.coerceAtMost(sampleIntervalMillis)
+        } else {
+            sampleIntervalMillis
         }
     }
 
@@ -79,16 +95,23 @@ class LocalHistoryRecorderViewModel(
 
     companion object {
         const val DEFAULT_SAMPLE_INTERVAL_MILLIS = 1_000L
+        const val FAST_SAMPLE_INTERVAL_MILLIS = 250L
 
         fun factory(
             sensorState: StateFlow<SensorUiState>,
             actuatorActivations: Flow<ActuatorActivation>,
             repository: SensorHistoryRepository,
+            mlState: StateFlow<MlUiState>? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(LocalHistoryRecorderViewModel::class.java))
-                return LocalHistoryRecorderViewModel(sensorState, actuatorActivations, repository) as T
+                return LocalHistoryRecorderViewModel(
+                    sensorState = sensorState,
+                    actuatorActivations = actuatorActivations,
+                    repository = repository,
+                    mlState = mlState,
+                ) as T
             }
         }
     }

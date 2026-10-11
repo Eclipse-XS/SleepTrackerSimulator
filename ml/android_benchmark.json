@@ -1,0 +1,10 @@
+{
+  "device": "Pixel_10_Pro AVD",
+  "android_version": 16,
+  "samples": 100,
+  "warmup_runs": 10,
+  "mean_inference_ms": 0.166428,
+  "p95_inference_ms": 0.2931,
+  "source": "ActivityClassifierInstrumentedTest logcat",
+  "scope": "Interpreter.run latency only; not an end-to-end UI benchmark"
+}

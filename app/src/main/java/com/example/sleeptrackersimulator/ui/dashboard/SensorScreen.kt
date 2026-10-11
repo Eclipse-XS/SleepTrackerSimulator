@@ -62,6 +62,7 @@ import com.example.sleeptrackersimulator.ui.theme.HeartCoral
 import com.example.sleeptrackersimulator.ui.theme.MotionAmber
 import com.example.sleeptrackersimulator.rest.RestState
 import com.example.sleeptrackersimulator.rest.RestStateResult
+import com.example.sleeptrackersimulator.ml.MlUiState
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,6 +77,7 @@ fun SensorScreen(
     restState: RestStateResult,
     cloudSyncState: CloudSyncUiState,
     actuatorState: ActuatorUiState,
+    mlState: MlUiState,
     onScan: () -> Unit,
     onConnect: (BleDevice) -> Unit,
     onDisconnect: () -> Unit,
@@ -99,7 +101,7 @@ fun SensorScreen(
         if (bleState is BleConnectionState.Connected) {
             ConnectedDashboard(
                 uiState, bleState.device, heartRate, heartRateHistory, restState, cloudSyncState,
-                actuatorState,
+                actuatorState, mlState,
                 Modifier.padding(padding),
                 onDiagnostics = { showDiagnostics = true },
                 onDisconnect = onDisconnect,
@@ -111,7 +113,7 @@ fun SensorScreen(
             )
         } else {
             DisconnectedExperience(
-                uiState, bleState, cloudSyncState, actuatorState, onScan, onConnect,
+                uiState, bleState, cloudSyncState, actuatorState, mlState, onScan, onConnect,
                 onStartMonitoring, onEndMonitoring, onAutomaticControlChanged,
                 onVibrationChanged, onFlashlightChanged, Modifier.padding(padding),
             )
@@ -134,6 +136,7 @@ private fun DisconnectedExperience(
     bleState: BleConnectionState,
     cloudSyncState: CloudSyncUiState,
     actuatorState: ActuatorUiState,
+    mlState: MlUiState,
     onScan: () -> Unit,
     onConnect: (BleDevice) -> Unit,
     onStartMonitoring: () -> Unit,
@@ -179,6 +182,8 @@ private fun DisconnectedExperience(
         ConnectionAction(bleState, onScan, onConnect)
         Spacer(Modifier.height(56.dp))
         PhoneSensorStrip(sensorState)
+        Spacer(Modifier.height(18.dp))
+        AiInsightsCard(mlState)
         Spacer(Modifier.height(18.dp))
         CloudSyncCard(cloudSyncState)
         Spacer(Modifier.height(12.dp))
@@ -246,6 +251,7 @@ private fun ConnectedDashboard(
     restState: RestStateResult,
     cloudSyncState: CloudSyncUiState,
     actuatorState: ActuatorUiState,
+    mlState: MlUiState,
     modifier: Modifier = Modifier,
     onDiagnostics: () -> Unit,
     onDisconnect: () -> Unit,
@@ -268,6 +274,7 @@ private fun ConnectedDashboard(
         RestEstimate(restState)
         HeartRateChart(history)
         MovementSummary(sensorState)
+        AiInsightsCard(mlState)
         CloudSyncCard(cloudSyncState)
         MonitoringAction(cloudSyncState, onStartMonitoring, onEndMonitoring)
         ActuatorPanel(
@@ -301,6 +308,41 @@ private fun RestEstimate(result: RestStateResult) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+@Composable
+private fun AiInsightsCard(state: MlUiState) {
+    val ready = state as? MlUiState.Ready
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("AI Insights", fontWeight = FontWeight.SemiBold)
+            Text(
+                when (state) {
+                    MlUiState.Loading -> "Loading on-device model"
+                    MlUiState.Unavailable -> "Accelerometer unavailable"
+                    is MlUiState.Collecting -> "Collecting sensor window ${state.samplesCollected}/${state.requiredSamples}"
+                    is MlUiState.Error -> "Inference unavailable: ${state.message}"
+                    is MlUiState.Ready -> "${state.prediction.predictedClass.name.replace('_', ' ')} · ${String.format(Locale.US, "%.1f%%", state.prediction.confidence * 100f)}"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                color = if (ready == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+            )
+            ready?.let {
+                Text(
+                    "STILL ${formatPercent(it.prediction.probabilities[0])} · " +
+                        "MICRO ${formatPercent(it.prediction.probabilities[1])} · " +
+                        "PRONOUNCED ${formatPercent(it.prediction.probabilities[2])}\n" +
+                        "Local inference ${String.format(Locale.US, "%.2f ms", it.prediction.inferenceMillis)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -534,3 +576,5 @@ private fun sensorDescription(state: SensorUiState): String = when (state) {
 }
 
 private fun format(value: Float): String = String.format(Locale.US, "%.2f", value)
+
+private fun formatPercent(value: Float): String = String.format(Locale.US, "%.0f%%", value * 100f)

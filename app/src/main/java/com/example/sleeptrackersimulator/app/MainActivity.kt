@@ -31,6 +31,8 @@ import com.example.sleeptrackersimulator.sensor.AndroidAccelerometerDataSource
 import com.example.sleeptrackersimulator.history.LocalHistoryRecorderViewModel
 import com.example.sleeptrackersimulator.history.RoomSensorHistoryRepository
 import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
+import com.example.sleeptrackersimulator.ml.ActivityClassifier
+import com.example.sleeptrackersimulator.ml.MlViewModel
 import com.example.sleeptrackersimulator.ui.analytics.AnalyticsScreen
 import com.example.sleeptrackersimulator.ui.analytics.AnalyticsViewModel
 import com.example.sleeptrackersimulator.ui.dashboard.BleViewModel
@@ -85,11 +87,19 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val mlViewModel: MlViewModel by viewModels {
+        MlViewModel.factory(
+            sensorState = viewModel.uiState,
+            classifier = ActivityClassifier(applicationContext),
+        )
+    }
+
     private val actuatorViewModel: ActuatorViewModel by viewModels {
         ActuatorViewModel.factory(
             sensorState = viewModel.uiState,
             actuator = AndroidSmartActuator(applicationContext),
             remoteRepository = FirebaseRemoteControlRepository(),
+            pronouncedMovementEvents = mlViewModel.pronouncedEvents,
         )
     }
 
@@ -102,6 +112,7 @@ class MainActivity : ComponentActivity() {
             sensorState = viewModel.uiState,
             actuatorActivations = actuatorViewModel.activations,
             repository = historyRepository,
+            mlState = mlViewModel.state,
         )
     }
 
@@ -124,6 +135,7 @@ class MainActivity : ComponentActivity() {
                 val restState = restStateViewModel.state.collectAsStateWithLifecycle().value
                 val cloudSyncState = cloudSyncViewModel.state.collectAsStateWithLifecycle().value
                 val actuatorState = actuatorViewModel.state.collectAsStateWithLifecycle().value
+                val mlState = mlViewModel.state.collectAsStateWithLifecycle().value
                 val recordingState = historyRecorderViewModel.state.collectAsStateWithLifecycle().value
                 val analyticsState = analyticsViewModel.state.collectAsStateWithLifecycle().value
 
@@ -139,6 +151,7 @@ class MainActivity : ComponentActivity() {
                             restState = restState,
                             cloudSyncState = cloudSyncState,
                             actuatorState = actuatorState,
+                            mlState = mlState,
                             onScan = bleViewModel::startScan,
                             onConnect = bleViewModel::connect,
                             onDisconnect = bleViewModel::disconnect,

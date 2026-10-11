@@ -15,6 +15,7 @@ import com.example.sleeptrackersimulator.actuator.RemoteControlEvent
 import com.example.sleeptrackersimulator.actuator.RemoteControlRepository
 import com.example.sleeptrackersimulator.actuator.SmartActuator
 import com.example.sleeptrackersimulator.actuator.TriggerSource
+import com.example.sleeptrackersimulator.ml.MlPrediction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,7 @@ class ActuatorViewModel(
     sensorState: StateFlow<SensorUiState>,
     private val actuator: SmartActuator,
     private val remoteRepository: RemoteControlRepository,
+    pronouncedMovementEvents: Flow<MlPrediction>? = null,
     private val decisionEngine: DecisionEngine = DecisionEngine(),
     private val log: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.i(TAG, message) else Log.e(TAG, message, error)
@@ -45,6 +47,14 @@ class ActuatorViewModel(
     val activations: Flow<ActuatorActivation> = activationChannel.receiveAsFlow()
 
     init {
+        viewModelScope.launch {
+            pronouncedMovementEvents?.collect {
+                if (_state.value.automaticControlEnabled) {
+                    log("ML pronounced movement detected", null)
+                    applyPulse(actuator.triggerVibrationPulse(), TriggerSource.ML_AUTOMATIC)
+                }
+            }
+        }
         viewModelScope.launch {
             sensorState.collect { sensor ->
                 val analysis = (sensor as? SensorUiState.Active)?.analysis ?: return@collect
@@ -176,11 +186,17 @@ class ActuatorViewModel(
             sensorState: StateFlow<SensorUiState>,
             actuator: SmartActuator,
             remoteRepository: RemoteControlRepository,
+            pronouncedMovementEvents: Flow<MlPrediction>? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(ActuatorViewModel::class.java))
-                return ActuatorViewModel(sensorState, actuator, remoteRepository) as T
+                return ActuatorViewModel(
+                    sensorState,
+                    actuator,
+                    remoteRepository,
+                    pronouncedMovementEvents,
+                ) as T
             }
         }
     }

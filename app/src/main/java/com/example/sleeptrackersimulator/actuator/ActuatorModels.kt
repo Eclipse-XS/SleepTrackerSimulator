@@ -19,7 +19,7 @@ data class ActuatorResult(
     val successful: Boolean get() = status == ActuatorOperationStatus.SUCCESS
 }
 
-enum class TriggerSource { LOCAL_AUTOMATIC, MANUAL, REMOTE }
+enum class TriggerSource { LOCAL_AUTOMATIC, ML_AUTOMATIC, MANUAL, REMOTE }
 
 enum class ActuatorAction {
     NONE,
