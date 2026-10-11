@@ -16,10 +16,13 @@ import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.core.model.MovementState
 import com.example.sleeptrackersimulator.core.model.SensorSample
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -172,6 +175,35 @@ class ActuatorViewModelTest {
         fixture.viewModel.setManualFlashlight(true)
         assertFalse(fixture.viewModel.state.value.flashlightEnabled)
         assertEquals("hardware busy", fixture.viewModel.state.value.lastError)
+    }
+
+    @Test
+    fun `successful activation emits one typed event and disabling emits none`() = actuatorTest { fixture ->
+        val first = async { fixture.viewModel.activations.first() }
+        runCurrent()
+        fixture.viewModel.setManualVibration(true)
+        assertEquals(ActuatorAction.VIBRATION_ENABLED, first.await().action)
+        assertEquals(TriggerSource.MANUAL, first.await().source)
+
+        val events = mutableListOf<ActuatorAction>()
+        val collector = launch { fixture.viewModel.activations.collect { events += it.action } }
+        runCurrent()
+        fixture.viewModel.setManualVibration(false)
+        runCurrent()
+        collector.cancel()
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `failed activation does not emit event`() = actuatorTest { fixture ->
+        val events = mutableListOf<ActuatorAction>()
+        val collector = launch { fixture.viewModel.activations.collect { events += it.action } }
+        runCurrent()
+        fixture.actuator.nextFailure = "hardware busy"
+        fixture.viewModel.setManualFlashlight(true)
+        runCurrent()
+        collector.cancel()
+        assertTrue(events.isEmpty())
     }
 
     @Test
