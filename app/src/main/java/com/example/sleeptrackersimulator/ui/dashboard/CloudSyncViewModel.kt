@@ -52,6 +52,7 @@ class CloudSyncViewModel(
             pendingCount = stateStore.pendingCount,
             droppedTelemetryCount = stateStore.droppedTelemetryCount,
             lastErrorMessage = stateStore.loadError,
+            storageErrorMessage = stateStore.loadError,
             status = if (stateStore.loadError == null) CloudSyncStatus.IDLE else CloudSyncStatus.ERROR,
         ),
     )
@@ -64,8 +65,24 @@ class CloudSyncViewModel(
     init {
         viewModelScope.launch { combine(sensorState, bleState, heartRate, restState, ::Snapshot).collect { latest.value = it } }
         val stored = stateStore.activeSession()
-        if (stored?.monitoringActive == false) startPendingRecovery()
-        else startSync()
+        when {
+            stored == null || stored.monitoringActive -> startSync()
+            hasPendingEnd(stored.sessionId) -> startPendingRecovery()
+            stateStore.pendingCount == 0 -> {
+                try {
+                    stateStore.saveActiveSession(null)
+                    _state.update { it.copy(sessionId = null, monitoringActive = false) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    persistenceError(failure)
+                }
+            }
+            else -> error(
+                CloudErrorType.VALIDATION,
+                "Inactive cloud session has pending operations but no END_SESSION marker",
+            )
+        }
     }
 
     fun startSync() {
@@ -83,8 +100,22 @@ class CloudSyncViewModel(
             startPendingRecovery()
             return
         }
-        stateStore.activeSession()?.let { stateStore.saveActiveSession(it.copy(monitoringActive = true)) }
-        _state.update { it.copy(status = CloudSyncStatus.IDLE, monitoringActive = true, pendingCount = stateStore.pendingCount, lastErrorMessage = null) }
+        try {
+            stateStore.activeSession()?.let { stateStore.saveActiveSession(it.copy(monitoringActive = true)) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            persistenceError(failure)
+            return
+        }
+        _state.update {
+            it.copy(
+                status = if (it.storageErrorMessage == null) CloudSyncStatus.IDLE else CloudSyncStatus.ERROR,
+                monitoringActive = true,
+                pendingCount = stateStore.pendingCount,
+                lastErrorMessage = it.storageErrorMessage,
+            )
+        }
         syncJob = viewModelScope.launch {
             while (isActive) {
                 delay(intervalMillis)
@@ -95,41 +126,46 @@ class CloudSyncViewModel(
 
     fun stopSync() {
         syncJob?.cancel(); syncJob = null
+        recoveryJob?.cancel(); recoveryJob = null
         _state.update { it.copy(status = CloudSyncStatus.IDLE, monitoringActive = false) }
     }
 
     fun endMonitoring() {
         stopSync()
         viewModelScope.launch {
-            operationMutex.withLock {
-                val active = stateStore.activeSession() ?: return@withLock
-                val endedAt = now()
-                if (!hasPendingEnd(active.sessionId)) {
-                    stateStore.enqueue(PendingCloudOperation("end-${active.sessionId}", PendingOperationType.END_SESSION, active.sessionId, endedAt = endedAt))
+            try {
+                operationMutex.withLock {
+                    val active = stateStore.activeSession() ?: return@withLock
+                    val endedAt = now()
+                    if (!hasPendingEnd(active.sessionId)) {
+                        stateStore.enqueue(PendingCloudOperation("end-${active.sessionId}", PendingOperationType.END_SESSION, active.sessionId, endedAt = endedAt))
+                    }
+                    stateStore.saveActiveSession(active.copy(monitoringActive = false))
+                    if (!networkMonitor.isOnline()) {
+                        pending("Monitoring ended offline; end operation persisted")
+                    } else {
+                        flushLocked()
+                    }
                 }
-                stateStore.saveActiveSession(active.copy(monitoringActive = false))
-                if (!networkMonitor.isOnline()) {
-                    pending("Monitoring ended offline; end operation persisted")
-                } else {
-                    flushLocked()
-                }
+                startPendingRecovery()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                persistenceError(failure)
             }
-            startPendingRecovery()
         }
     }
 
     private fun startPendingRecovery() {
         if (recoveryJob?.isActive == true) return
         recoveryJob = viewModelScope.launch {
-            var attempts = 0
-            while (isActive && stateStore.pendingCount > 0 && attempts < MAX_IN_PROCESS_RECOVERY_POLLS) {
+            while (isActive && stateStore.pendingCount > 0) {
                 if (networkMonitor.isOnline()) {
                     operationMutex.withLock { flushLocked() }
                 } else {
                     pending("Pending operations restored; waiting for validated network")
                 }
-                attempts++
-                if (stateStore.pendingCount > 0 && attempts < MAX_IN_PROCESS_RECOVERY_POLLS) delay(intervalMillis)
+                if (stateStore.pendingCount > 0) delay(intervalMillis)
             }
         }
     }
@@ -143,27 +179,33 @@ class CloudSyncViewModel(
             return
         }
         val payload = snapshot.toPayload(now(), newId())
-        operationMutex.withLock {
-            val result = validator.validate(payload, now())
-            if (!result.valid) {
-                error(CloudErrorType.VALIDATION, "Payload rejected: ${result.reason}")
-                log("W", "Cloud payload rejected by validation", null)
-                return@withLock
+        try {
+            operationMutex.withLock {
+                val result = validator.validate(payload, now())
+                if (!result.valid) {
+                    error(CloudErrorType.VALIDATION, "Payload rejected: ${result.reason}")
+                    log("W", "Cloud payload rejected by validation", null)
+                    return@withLock
+                }
+                val active = ensureSessionLocked()
+                val enqueueResult = stateStore.enqueue(
+                    PendingCloudOperation(payload.measurementId, PendingOperationType.UPLOAD_MEASUREMENT, active.sessionId, payload = payload),
+                )
+                lastEnqueuedSensorTimestampNanos = analysis.sample.timestampNanos
+                _state.update { it.copy(droppedTelemetryCount = stateStore.droppedTelemetryCount) }
+                if (enqueueResult.droppedTelemetry > 0) {
+                    log("W", "Cloud outbox overflow dropped oldest telemetry; control operations were preserved", null)
+                }
+                if (!networkMonitor.isOnline()) {
+                    pending("No validated internet connection")
+                    return@withLock
+                }
+                flushLocked()
             }
-            val active = ensureSessionLocked()
-            val enqueueResult = stateStore.enqueue(
-                PendingCloudOperation(payload.measurementId, PendingOperationType.UPLOAD_MEASUREMENT, active.sessionId, payload = payload),
-            )
-            lastEnqueuedSensorTimestampNanos = analysis.sample.timestampNanos
-            _state.update { it.copy(droppedTelemetryCount = stateStore.droppedTelemetryCount) }
-            if (enqueueResult.droppedTelemetry > 0) {
-                log("W", "Cloud outbox overflow dropped oldest telemetry; control operations were preserved", null)
-            }
-            if (!networkMonitor.isOnline()) {
-                pending("No validated internet connection")
-                return@withLock
-            }
-            flushLocked()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            persistenceError(failure)
         }
     }
 
@@ -200,8 +242,15 @@ class CloudSyncViewModel(
         }
         val uid = authenticatedUid
         if (session.ownerUid.isBlank()) {
-            session = session.copy(ownerUid = uid)
-            stateStore.saveActiveSession(session)
+            try {
+                session = session.copy(ownerUid = uid)
+                stateStore.saveActiveSession(session)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                persistenceError(failure)
+                return
+            }
         }
         _state.update { it.copy(status = CloudSyncStatus.SYNCING, authenticated = true, lastErrorMessage = null) }
         try {
@@ -219,13 +268,15 @@ class CloudSyncViewModel(
                         PendingOperationType.END_SESSION -> repository.endSession(uid, operation.sessionId, requireNotNull(operation.endedAt))
                     }
                 }
-                stateStore.removeFirst()
-                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) recordSuccess()
-                else {
-                    stateStore.saveActiveSession(null)
+                if (operation.type == PendingOperationType.END_SESSION) {
+                    stateStore.completeSessionEnd(operation.sessionId)
                     _state.update { it.copy(status = CloudSyncStatus.IDLE, sessionId = null, monitoringActive = false, pendingCount = stateStore.pendingCount) }
                     runCatching { repository.applyRetention(uid, null, now()) }
                     log("I", "Cloud monitoring session ended", null)
+                }
+                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) {
+                    stateStore.removeFirst()
+                    recordSuccess()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -248,6 +299,20 @@ class CloudSyncViewModel(
     private fun error(type: CloudErrorType, message: String) {
         _state.update { it.copy(status = CloudSyncStatus.ERROR, pendingCount = stateStore.pendingCount, lastErrorMessage = message, errorType = type) }
         log("E", "Cloud operation failed: $type", null)
+    }
+
+    private fun persistenceError(failure: Exception) {
+        val message = "Local cloud state persistence failed: ${failure.message ?: failure.javaClass.simpleName}"
+        _state.update {
+            it.copy(
+                status = CloudSyncStatus.ERROR,
+                pendingCount = runCatching { stateStore.pendingCount }.getOrDefault(it.pendingCount),
+                lastErrorMessage = message,
+                storageErrorMessage = message,
+                errorType = CloudErrorType.UNKNOWN,
+            )
+        }
+        log("E", message, failure)
     }
 
     private fun recordSuccess() {
@@ -273,7 +338,6 @@ class CloudSyncViewModel(
 
     companion object {
         private const val TAG = "CloudSync"
-        private const val MAX_IN_PROCESS_RECOVERY_POLLS = 12
         fun factory(
             repository: CloudRepository, authRepository: AuthRepository, networkMonitor: NetworkMonitor,
             stateStore: CloudStateStore, sensorState: StateFlow<SensorUiState>, bleState: StateFlow<BleConnectionState>,

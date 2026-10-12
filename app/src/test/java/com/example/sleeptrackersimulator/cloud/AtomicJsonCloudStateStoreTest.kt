@@ -73,5 +73,26 @@ class AtomicJsonCloudStateStoreTest {
         assertEquals(0, store.pendingCount)
     }
 
+    @Test fun `completing end session atomically removes operation and active session`() {
+        val file = Files.createTempDirectory("cloud-store").resolve("state.json").toFile()
+        AtomicJsonCloudStateStore(file).apply {
+            saveActiveSession(ActiveCloudSession("s", 1, "uid", monitoringActive = false))
+            enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 2))
+            completeSessionEnd("s")
+        }
+        val restored = AtomicJsonCloudStateStore(file)
+        assertNull(restored.activeSession())
+        assertTrue(restored.pendingOperations().isEmpty())
+    }
+
+    @Test fun `legacy json without new counters remains readable`() {
+        val file = Files.createTempDirectory("cloud-store").resolve("state.json").toFile()
+        file.writeText("""{"operations":[],"activeSession":null}""")
+        val store = AtomicJsonCloudStateStore(file)
+        assertEquals(0, store.pendingCount)
+        assertEquals(0L, store.droppedTelemetryCount)
+        assertNull(store.loadError)
+    }
+
     private fun upload(id: String, timestamp: Long) = PendingCloudOperation(id, PendingOperationType.UPLOAD_MEASUREMENT, "s", SensorPayload(id, CLOUD_DEVICE_ID, "ACCELEROMETER", timestamp = timestamp, movementState = "STILL", restState = "MONITORING"))
 }

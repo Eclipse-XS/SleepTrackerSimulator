@@ -15,6 +15,9 @@ import com.example.sleeptrackersimulator.cloud.ActiveCloudSession
 import com.example.sleeptrackersimulator.cloud.CLOUD_DEVICE_ID
 import com.example.sleeptrackersimulator.cloud.PendingCloudOperation
 import com.example.sleeptrackersimulator.cloud.PendingOperationType
+import com.example.sleeptrackersimulator.cloud.EnqueueResult
+import com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStore
+import java.nio.file.Files
 import com.example.sleeptrackersimulator.cloud.SensorPayload
 import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.core.model.MovementState
@@ -318,6 +321,7 @@ class CloudSyncViewModelTest {
         advanceTimeBy(10_000)
         runCurrent()
         assertTrue(fixture.repository.uploads.isEmpty())
+        fixture.viewModel.stopSync()
     }
 
     @Test
@@ -332,6 +336,135 @@ class CloudSyncViewModelTest {
         assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
         assertEquals(CloudErrorType.AUTH, fixture.viewModel.state.value.errorType)
         assertEquals(1, store.pendingCount)
+        fixture.viewModel.stopSync()
+    }
+
+    @Test
+    fun `corrupted persisted state remains visible in ViewModel diagnostics`() = runTest(dispatcher) {
+        val file = Files.createTempDirectory("cloud-vm-corrupt").resolve("state.json").toFile()
+        file.writeText("{broken")
+        val fixture = Fixture(true, AtomicJsonCloudStateStore(file))
+        runCurrent()
+        assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
+        assertTrue(fixture.viewModel.state.value.storageErrorMessage!!.contains("unreadable"))
+        assertTrue(fixture.viewModel.state.value.lastErrorMessage!!.contains("unreadable"))
+        fixture.viewModel.stopSync()
+    }
+
+    @Test
+    fun `enqueue persistence failure becomes error without upload or false success`() = cloudTest(
+        store = FailingCloudStateStore(failOn = mutableSetOf("enqueue")),
+    ) { fixture ->
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
+        assertTrue(fixture.viewModel.state.value.storageErrorMessage!!.contains("simulated enqueue"))
+        assertTrue(fixture.repository.uploads.isEmpty())
+        assertEquals(0, fixture.viewModel.state.value.uploadedCount)
+    }
+
+    @Test
+    fun `session persistence failure becomes error instead of escaping ViewModel`() = cloudTest(
+        store = FailingCloudStateStore(failOn = mutableSetOf("save")),
+    ) { fixture ->
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
+        assertTrue(fixture.repository.uploads.isEmpty())
+    }
+
+    @Test
+    fun `failure while reactivating stored session is reported synchronously`() = runTest(dispatcher) {
+        val store = FailingCloudStateStore()
+        store.saveActiveSession(ActiveCloudSession("s", 1L, "uid-1", monitoringActive = true))
+        store.failOn += "save"
+        val fixture = Fixture(true, store)
+        runCurrent()
+        assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+        assertTrue(fixture.repository.uploads.isEmpty())
+    }
+
+    @Test
+    fun `failure while persisting end request is reported and pending end prevents reuse`() = cloudTest { fixture ->
+        advanceTimeBy(5_000)
+        runCurrent()
+        val store = FailingCloudStateStore()
+        val active = requireNotNull(fixture.store.activeSession())
+        store.saveActiveSession(active)
+        val failingFixture = Fixture(false, store)
+        store.failOn += "save"
+        failingFixture.viewModel.endMonitoring()
+        runCurrent()
+        assertEquals(CloudSyncStatus.ERROR, failingFixture.viewModel.state.value.status)
+        assertTrue(store.pendingOperations().any { it.type == PendingOperationType.END_SESSION })
+        failingFixture.viewModel.startSync()
+        runCurrent()
+        assertFalse(failingFixture.viewModel.state.value.monitoringActive)
+        failingFixture.viewModel.stopSync()
+    }
+
+    @Test
+    fun `remove failure after Firebase upload reports error and keeps operation for idempotent retry`() = cloudTest(
+        store = FailingCloudStateStore(failOn = mutableSetOf("remove")),
+    ) { fixture ->
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(1, fixture.repository.uploads.size)
+        assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
+        assertEquals(0, fixture.viewModel.state.value.uploadedCount)
+        assertEquals(1, fixture.store.pendingCount)
+    }
+
+    @Test
+    fun `failed atomic end completion is retried after restart without reusing active session`() = runTest(dispatcher) {
+        val store = FailingCloudStateStore(failOn = mutableSetOf("complete"))
+        store.saveActiveSession(ActiveCloudSession("s", 1L, "uid-1", monitoringActive = false))
+        store.enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 3L))
+        val first = Fixture(true, store)
+        runCurrent()
+        assertEquals(listOf(3L), first.repository.endTimes)
+        assertEquals(CloudSyncStatus.ERROR, first.viewModel.state.value.status)
+        assertEquals("s", store.activeSession()?.sessionId)
+        assertEquals(1, store.pendingCount)
+        first.viewModel.stopSync()
+
+        store.failOn.clear()
+        val restarted = Fixture(true, store)
+        runCurrent()
+        assertEquals(listOf(3L), restarted.repository.endTimes)
+        assertNull(store.activeSession())
+        assertEquals(0, store.pendingCount)
+    }
+
+    @Test
+    fun `legacy inactive session left after old two-step end cleanup is not reactivated`() = runTest(dispatcher) {
+        val store = InMemoryCloudStateStore().apply {
+            saveActiveSession(ActiveCloudSession("ended-s", 1L, "uid-1", monitoringActive = false))
+        }
+        val fixture = Fixture(true, store)
+        runCurrent()
+        assertNull(store.activeSession())
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+        assertTrue(fixture.repository.uploads.isEmpty())
+    }
+
+    @Test
+    fun `pending end recovers when network returns after ten minutes`() = runTest(dispatcher) {
+        val store = InMemoryCloudStateStore().apply {
+            saveActiveSession(ActiveCloudSession("s", 1L, "uid-1", monitoringActive = false))
+            enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 3L))
+        }
+        val fixture = Fixture(false, store)
+        runCurrent()
+        advanceTimeBy(10 * 60 * 1_000L)
+        runCurrent()
+        assertTrue(fixture.repository.endTimes.isEmpty())
+        fixture.network.online = true
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(listOf(3L), fixture.repository.endTimes)
+        assertNull(store.activeSession())
     }
 
     @Test
@@ -365,6 +498,7 @@ class CloudSyncViewModelTest {
         authUid: String = "uid-1",
     ) {
         val repository = FakeCloudRepository()
+        val store = store
         val network = FakeNetworkMonitor(online)
         val sensor = MutableStateFlow<SensorUiState>(
             SensorUiState.Active(
@@ -425,6 +559,28 @@ class CloudSyncViewModelTest {
     private class FakeAuthRepository(private val uid: String) : AuthRepository {
         override suspend fun ensureAuthenticated(): String = uid
         override val currentUid: String = uid
+    }
+
+    private class FailingCloudStateStore(
+        private val delegate: InMemoryCloudStateStore = InMemoryCloudStateStore(),
+        val failOn: MutableSet<String> = mutableSetOf(),
+    ) : CloudStateStore {
+        override val pendingCount get() = delegate.pendingCount
+        override val droppedTelemetryCount get() = delegate.droppedTelemetryCount
+        override val loadError: String? get() = delegate.loadError
+        override fun enqueue(operation: PendingCloudOperation): EnqueueResult {
+            fail("enqueue")
+            return delegate.enqueue(operation)
+        }
+        override fun peek() = delegate.peek()
+        override fun removeFirst() { fail("remove"); delegate.removeFirst() }
+        override fun pendingOperations() = delegate.pendingOperations()
+        override fun activeSession() = delegate.activeSession()
+        override fun saveActiveSession(session: ActiveCloudSession?) { fail("save"); delegate.saveActiveSession(session) }
+        override fun completeSessionEnd(sessionId: String) { fail("complete"); delegate.completeSessionEnd(sessionId) }
+        private fun fail(operation: String) {
+            if (failOn.remove(operation)) throw java.io.IOException("simulated $operation persistence failure")
+        }
     }
 
     companion object {

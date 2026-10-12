@@ -15,6 +15,7 @@ interface CloudStateStore {
     fun pendingOperations(): List<PendingCloudOperation>
     fun activeSession(): ActiveCloudSession?
     fun saveActiveSession(session: ActiveCloudSession?)
+    fun completeSessionEnd(sessionId: String)
 }
 
 data class PersistedCloudState(
@@ -70,6 +71,14 @@ class AtomicJsonCloudStateStore(
 
     @Synchronized override fun saveActiveSession(session: ActiveCloudSession?) {
         persist(state.copy(activeSession = session))
+    }
+
+    @Synchronized override fun completeSessionEnd(sessionId: String) {
+        val first = state.operations.firstOrNull()
+        require(first?.type == PendingOperationType.END_SESSION && first.sessionId == sessionId) {
+            "The first pending operation is not END_SESSION for $sessionId"
+        }
+        persist(state.copy(operations = state.operations.drop(1), activeSession = null))
     }
 
     private fun readSafely(): PersistedCloudState = try {
@@ -129,4 +138,9 @@ class InMemoryCloudStateStore(
     override fun pendingOperations() = state.operations.toList()
     override fun activeSession() = state.activeSession
     override fun saveActiveSession(session: ActiveCloudSession?) { state = state.copy(activeSession = session) }
+    override fun completeSessionEnd(sessionId: String) {
+        val first = state.operations.firstOrNull()
+        require(first?.type == PendingOperationType.END_SESSION && first.sessionId == sessionId)
+        state = state.copy(operations = state.operations.drop(1), activeSession = null)
+    }
 }

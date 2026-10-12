@@ -29,6 +29,7 @@ data class CloudSyncUiState(
     val errorType: CloudErrorType? = null,
     val authenticated: Boolean = false,
     val droppedTelemetryCount: Long = 0,
+    val storageErrorMessage: String? = null,
 )
 
 const val CLOUD_SYNC_INTERVAL_MS = 5_000L

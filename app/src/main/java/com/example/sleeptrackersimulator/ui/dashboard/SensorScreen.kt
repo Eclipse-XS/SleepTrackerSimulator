@@ -391,6 +391,7 @@ private fun DiagnosticsContent(
         Text(
             "Status: ${cloudSyncState.status}\nUploaded: ${cloudSyncState.uploadedCount}\nPending: ${cloudSyncState.pendingCount}\n" +
                 "Dropped telemetry: ${cloudSyncState.droppedTelemetryCount}\nSession: ${cloudSyncState.sessionId ?: "not created"}\n" +
+                "Storage error: ${cloudSyncState.storageErrorMessage ?: "none"}\n" +
                 "Last error: ${cloudSyncState.lastErrorMessage ?: "none"}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
