@@ -16,7 +16,6 @@ class FirebaseCloudRepository(
                 "schemaVersion" to CLOUD_SCHEMA_VERSION,
                 "deviceId" to deviceId,
                 "startedAt" to startedAt,
-                "endedAt" to null,
             ),
         ).await(); Unit
     }

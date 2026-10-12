@@ -4,12 +4,17 @@ import com.example.sleeptrackersimulator.ble.BleConnectionState
 import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.ble.HeartRateMeasurement
 import com.example.sleeptrackersimulator.cloud.CloudRepository
+import com.example.sleeptrackersimulator.cloud.CloudErrorType
 import com.example.sleeptrackersimulator.cloud.CloudSyncStatus
 import com.example.sleeptrackersimulator.cloud.NetworkMonitor
 import com.example.sleeptrackersimulator.cloud.PendingPayloadQueue
 import com.example.sleeptrackersimulator.cloud.CloudStateStore
 import com.example.sleeptrackersimulator.cloud.InMemoryCloudStateStore
 import com.example.sleeptrackersimulator.cloud.AuthRepository
+import com.example.sleeptrackersimulator.cloud.ActiveCloudSession
+import com.example.sleeptrackersimulator.cloud.CLOUD_DEVICE_ID
+import com.example.sleeptrackersimulator.cloud.PendingCloudOperation
+import com.example.sleeptrackersimulator.cloud.PendingOperationType
 import com.example.sleeptrackersimulator.cloud.SensorPayload
 import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.core.model.MovementState
@@ -154,14 +159,32 @@ class CloudSyncViewModelTest {
     }
 
     @Test
+    fun `unavailable sensor is not uploaded as synthetic zero measurement`() = cloudTest { fixture ->
+        fixture.sensor.value = SensorUiState.Unavailable
+        runCurrent()
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fixture.repository.uploads.isEmpty())
+    }
+
+    @Test
+    fun `unchanged sensor sample is uploaded only once`() = cloudTest { fixture ->
+        advanceTimeBy(15_000)
+        runCurrent()
+        assertEquals(1, fixture.repository.uploads.size)
+    }
+
+    @Test
     fun `network recovery flushes pending payloads in FIFO order`() = cloudTest(online = false) { fixture ->
         repeat(3) { index ->
             fixture.now = (index + 1).toLong()
+            fixture.setSensor(1f, 2f, 3f, .2f, MovementState.STILL)
             advanceTimeBy(5_000)
             runCurrent()
         }
         fixture.network.online = true
         fixture.now = 4L
+        fixture.setSensor(1f, 2f, 3f, .2f, MovementState.STILL)
 
         advanceTimeBy(5_000)
         runCurrent()
@@ -190,7 +213,8 @@ class CloudSyncViewModelTest {
     fun `pending queue remains bounded to fifty and drops oldest`() =
         cloudTest(online = false, store = InMemoryCloudStateStore(50)) { fixture ->
         repeat(51) { index ->
-            fixture.now = index.toLong()
+            fixture.now = (index + 1).toLong()
+            fixture.setSensor(1f, 2f, 3f, .2f, MovementState.STILL)
             advanceTimeBy(5_000)
             runCurrent()
         }
@@ -226,6 +250,7 @@ class CloudSyncViewModelTest {
         runCurrent()
         fixture.network.online = true
         fixture.now = 20L
+        fixture.setSensor(1f, 2f, 3f, .2f, MovementState.STILL)
         advanceTimeBy(5_000)
         runCurrent()
 
@@ -255,10 +280,58 @@ class CloudSyncViewModelTest {
         assertTrue(fixture.repository.endTimes.isEmpty())
         assertFalse(fixture.viewModel.state.value.monitoringActive)
         assertEquals(CloudSyncStatus.PENDING, fixture.viewModel.state.value.status)
-        assertTrue(fixture.viewModel.state.value.lastErrorMessage!!.contains("offline"))
+        assertTrue(fixture.viewModel.state.value.lastErrorMessage!!.contains("Pending operations"))
         advanceTimeBy(10_000)
         runCurrent()
         assertEquals(1, fixture.repository.uploads.size)
+    }
+
+    @Test
+    fun `pending offline end recovers automatically when network returns`() = runTest(dispatcher) {
+        val store = InMemoryCloudStateStore().apply {
+            saveActiveSession(ActiveCloudSession("s", 1L, "uid-1", monitoringActive = false))
+            enqueue(PendingCloudOperation("m", PendingOperationType.UPLOAD_MEASUREMENT, "s", SensorPayload("m", CLOUD_DEVICE_ID, "ACCELEROMETER", timestamp = 2L, movementState = "STILL", restState = "MONITORING")))
+            enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 3L))
+        }
+        val fixture = Fixture(false, store)
+        runCurrent()
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+        fixture.network.online = true
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(listOf(2L), fixture.repository.uploads.map { it.timestamp })
+        assertEquals(listOf(3L), fixture.repository.endTimes)
+        assertEquals(0, store.pendingCount)
+        assertNull(store.activeSession())
+    }
+
+    @Test
+    fun `start cannot reopen a session whose end is pending`() = runTest(dispatcher) {
+        val store = InMemoryCloudStateStore().apply {
+            saveActiveSession(ActiveCloudSession("s", 1L, "uid-1", monitoringActive = false))
+            enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 3L))
+        }
+        val fixture = Fixture(false, store)
+        fixture.viewModel.startSync()
+        runCurrent()
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fixture.repository.uploads.isEmpty())
+    }
+
+    @Test
+    fun `pending state from another Firebase uid is not uploaded`() = runTest(dispatcher) {
+        val store = InMemoryCloudStateStore().apply {
+            saveActiveSession(ActiveCloudSession("s", 1L, "old-uid", monitoringActive = false))
+            enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 3L))
+        }
+        val fixture = Fixture(true, store, authUid = "new-uid")
+        runCurrent()
+        assertTrue(fixture.repository.endTimes.isEmpty())
+        assertEquals(CloudSyncStatus.ERROR, fixture.viewModel.state.value.status)
+        assertEquals(CloudErrorType.AUTH, fixture.viewModel.state.value.errorType)
+        assertEquals(1, store.pendingCount)
     }
 
     @Test
@@ -289,17 +362,22 @@ class CloudSyncViewModelTest {
     private class Fixture(
         online: Boolean = true,
         store: CloudStateStore = InMemoryCloudStateStore(),
+        authUid: String = "uid-1",
     ) {
         val repository = FakeCloudRepository()
         val network = FakeNetworkMonitor(online)
-        val sensor = MutableStateFlow<SensorUiState>(SensorUiState.Initializing)
+        val sensor = MutableStateFlow<SensorUiState>(
+            SensorUiState.Active(
+                MovementAnalysis(SensorSample(0f, 0f, 9.81f, 1L), 0f, MovementState.STILL),
+            ),
+        )
         val ble = MutableStateFlow<BleConnectionState>(BleConnectionState.Idle)
         val heartRate = MutableStateFlow<HeartRateMeasurement?>(null)
         val rest = MutableStateFlow(rest(RestState.MONITORING))
         var now = 1L
         val viewModel = CloudSyncViewModel(
             repository = repository,
-            authRepository = FakeAuthRepository(),
+            authRepository = FakeAuthRepository(authUid),
             networkMonitor = network,
             sensorState = sensor,
             bleState = ble,
@@ -313,7 +391,7 @@ class CloudSyncViewModelTest {
 
         fun setSensor(x: Float, y: Float, z: Float, intensity: Float, state: MovementState) {
             sensor.value = SensorUiState.Active(
-                MovementAnalysis(SensorSample(x, y, z, 1L), intensity, state),
+                MovementAnalysis(SensorSample(x, y, z, now.coerceAtLeast(1L)), intensity, state),
             )
         }
     }
@@ -344,9 +422,9 @@ class CloudSyncViewModelTest {
         override suspend fun applyRetention(ownerUid: String, activeSessionId: String?, now: Long) = Unit
     }
 
-    private class FakeAuthRepository : AuthRepository {
-        override suspend fun ensureAuthenticated(): String = "uid-1"
-        override val currentUid: String = "uid-1"
+    private class FakeAuthRepository(private val uid: String) : AuthRepository {
+        override suspend fun ensureAuthenticated(): String = uid
+        override val currentUid: String = uid
     }
 
     companion object {

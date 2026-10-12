@@ -7,7 +7,9 @@ import java.nio.file.StandardCopyOption
 
 interface CloudStateStore {
     val pendingCount: Int
-    fun enqueue(operation: PendingCloudOperation)
+    val droppedTelemetryCount: Long
+    val loadError: String?
+    fun enqueue(operation: PendingCloudOperation): EnqueueResult
     fun peek(): PendingCloudOperation?
     fun removeFirst()
     fun pendingOperations(): List<PendingCloudOperation>
@@ -18,22 +20,42 @@ interface CloudStateStore {
 data class PersistedCloudState(
     val operations: List<PendingCloudOperation> = emptyList(),
     val activeSession: ActiveCloudSession? = null,
+    val droppedTelemetryCount: Long = 0,
 )
+
+data class EnqueueResult(val droppedTelemetry: Int = 0)
 
 class AtomicJsonCloudStateStore(
     private val file: File,
     private val capacity: Int = CLOUD_PENDING_QUEUE_CAPACITY,
     private val gson: Gson = Gson(),
 ) : CloudStateStore {
+    private var initialLoadError: String? = null
     private var state = readSafely()
 
     init { require(capacity > 0) }
 
     @get:Synchronized override val pendingCount: Int get() = state.operations.size
+    @get:Synchronized override val droppedTelemetryCount: Long get() = state.droppedTelemetryCount
+    override val loadError: String? get() = initialLoadError
 
-    @Synchronized override fun enqueue(operation: PendingCloudOperation) {
-        val updated = (state.operations + operation).takeLast(capacity)
-        persist(state.copy(operations = updated))
+    @Synchronized override fun enqueue(operation: PendingCloudOperation): EnqueueResult {
+        val uploads = state.operations.count { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
+        val shouldDropUpload = operation.type == PendingOperationType.UPLOAD_MEASUREMENT && uploads >= capacity
+        val updated = if (shouldDropUpload) {
+            val dropIndex = state.operations.indexOfFirst { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
+            state.operations.filterIndexed { index, _ -> index != dropIndex } + operation
+        } else {
+            state.operations + operation
+        }
+        val dropped = if (shouldDropUpload) 1 else 0
+        persist(
+            state.copy(
+                operations = updated,
+                droppedTelemetryCount = state.droppedTelemetryCount + dropped,
+            ),
+        )
+        return EnqueueResult(dropped)
     }
 
     @Synchronized override fun peek(): PendingCloudOperation? = state.operations.firstOrNull()
@@ -53,7 +75,15 @@ class AtomicJsonCloudStateStore(
     private fun readSafely(): PersistedCloudState = try {
         if (!file.exists()) PersistedCloudState()
         else gson.fromJson(file.readText(), PersistedCloudState::class.java) ?: PersistedCloudState()
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+        initialLoadError = "Cloud state was unreadable and preserved as ${file.name}.corrupt"
+        runCatching {
+            Files.move(
+                file.toPath(),
+                file.resolveSibling("${file.name}.corrupt").toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
         PersistedCloudState()
     }
 
@@ -78,8 +108,21 @@ class InMemoryCloudStateStore(
 ) : CloudStateStore {
     private var state = PersistedCloudState()
     override val pendingCount: Int get() = state.operations.size
-    override fun enqueue(operation: PendingCloudOperation) {
-        state = state.copy(operations = (state.operations + operation).takeLast(capacity))
+    override val droppedTelemetryCount: Long get() = state.droppedTelemetryCount
+    override val loadError: String? = null
+    override fun enqueue(operation: PendingCloudOperation): EnqueueResult {
+        val uploads = state.operations.count { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
+        val shouldDropUpload = operation.type == PendingOperationType.UPLOAD_MEASUREMENT && uploads >= capacity
+        val updated = if (shouldDropUpload) {
+            val dropIndex = state.operations.indexOfFirst { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
+            state.operations.filterIndexed { index, _ -> index != dropIndex } + operation
+        } else state.operations + operation
+        val dropped = if (shouldDropUpload) 1 else 0
+        state = state.copy(
+            operations = updated,
+            droppedTelemetryCount = state.droppedTelemetryCount + dropped,
+        )
+        return EnqueueResult(dropped)
     }
     override fun peek() = state.operations.firstOrNull()
     override fun removeFirst() { if (state.operations.isNotEmpty()) state = state.copy(operations = state.operations.drop(1)) }
