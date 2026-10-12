@@ -93,7 +93,7 @@ fun AnalyticsScreen(
 private fun SummaryRow(recordCount: Int, actionCount: Int) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard("Measurements", recordCount.toString(), Modifier.weight(1f))
-        SummaryCard("Activations", actionCount.toString(), Modifier.weight(1f))
+        SummaryCard("Records with activations", actionCount.toString(), Modifier.weight(1f))
     }
 }
 

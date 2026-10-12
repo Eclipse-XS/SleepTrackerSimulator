@@ -389,7 +389,9 @@ private fun DiagnosticsContent(
         )
         Text("Cloud diagnostics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            "Status: ${cloudSyncState.status}\nUploaded: ${cloudSyncState.uploadedCount}\nPending: ${cloudSyncState.pendingCount}\nSession: ${cloudSyncState.sessionId ?: "not created"}\nLast error: ${cloudSyncState.lastErrorMessage ?: "none"}",
+            "Status: ${cloudSyncState.status}\nUploaded: ${cloudSyncState.uploadedCount}\nPending: ${cloudSyncState.pendingCount}\n" +
+                "Dropped telemetry: ${cloudSyncState.droppedTelemetryCount}\nSession: ${cloudSyncState.sessionId ?: "not created"}\n" +
+                "Last error: ${cloudSyncState.lastErrorMessage ?: "none"}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text("BLE terminal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -528,6 +530,7 @@ private fun operationText(result: BleOperationResult): String = when (result) {
 
 private fun sensorDescription(state: SensorUiState): String = when (state) {
     SensorUiState.Initializing -> "Starting movement monitoring"
+    SensorUiState.Paused -> "Movement monitoring paused"
     SensorUiState.Unavailable -> "Accelerometer unavailable"
     is SensorUiState.Error -> state.message
     is SensorUiState.Active -> "${if (state.analysis.state == MovementState.MOVEMENT) "MOVEMENT" else "STILL"} · ${format(state.analysis.motionIntensity)} m/s²"

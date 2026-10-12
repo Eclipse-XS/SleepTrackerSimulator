@@ -74,6 +74,20 @@ class LocalHistoryRecorderViewModelTest {
     }
 
     @Test
+    fun `multiple activations before a sample are represented by one boolean record`() = runTest(dispatcher) {
+        val fixture = Fixture()
+        runCurrent()
+        fixture.activations.emit(ActuatorActivation(ActuatorAction.VIBRATION_PULSE, TriggerSource.LOCAL_AUTOMATIC, 800L))
+        fixture.activations.emit(ActuatorActivation(ActuatorAction.FLASHLIGHT_ENABLED, TriggerSource.MANUAL, 900L))
+        fixture.sensor.value = active(1L, .7f)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(1, fixture.repository.records.size)
+        assertTrue(fixture.repository.records.single().actionTriggered)
+        fixture.close()
+    }
+
+    @Test
     fun `failed insert retains pending activation for retry`() = runTest(dispatcher) {
         val fixture = Fixture()
         runCurrent()

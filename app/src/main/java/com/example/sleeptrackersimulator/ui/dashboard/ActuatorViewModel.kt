@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ActuatorViewModel(
@@ -43,13 +45,22 @@ class ActuatorViewModel(
     val state: StateFlow<ActuatorUiState> = _state
     private val activationChannel = Channel<ActuatorActivation>(Channel.UNLIMITED)
     val activations: Flow<ActuatorActivation> = activationChannel.receiveAsFlow()
+    private var foregroundActive = false
+    private var latestRemoteControls: com.example.sleeptrackersimulator.actuator.RemoteControlState? = null
 
     init {
         viewModelScope.launch {
             sensorState.collect { sensor ->
-                val analysis = (sensor as? SensorUiState.Active)?.analysis ?: return@collect
+                val analysis = (sensor as? SensorUiState.Active)?.analysis
+                if (analysis == null) {
+                    decisionEngine.reset()
+                    return@collect
+                }
                 val decision = decisionEngine.evaluate(analysis.motionIntensity, analysis.state)
-                if (decision == Decision.TRIGGER_MOVEMENT_ALERT && _state.value.automaticControlEnabled) {
+                if (decision == Decision.TRIGGER_MOVEMENT_ALERT &&
+                    foregroundActive && _state.value.automaticControlEnabled &&
+                    !_state.value.vibrationEnabled
+                ) {
                     log("Local movement threshold crossed", null)
                     applyPulse(actuator.triggerVibrationPulse(), TriggerSource.LOCAL_AUTOMATIC)
                 }
@@ -57,13 +68,20 @@ class ActuatorViewModel(
         }
         viewModelScope.launch {
             try {
-                remoteRepository.events.collect { event ->
+                remoteRepository.events.retryWhen { error, attempt ->
+                    log("Remote listener disconnected; retry ${attempt + 1}", error)
+                    if (attempt >= MAX_REMOTE_RECONNECT_ATTEMPTS - 1) false
+                    else {
+                        delay(REMOTE_RECONNECT_DELAY_MILLIS)
+                        true
+                    }
+                }.collect { event ->
                     when (event) {
                         is RemoteControlEvent.Updated -> {
+                            latestRemoteControls = event.controls
                             _state.update { it.copy(remoteListenerConnected = true, lastError = null) }
                             log("Remote control updated", null)
-                            applyPersistentVibration(event.controls.vibrationEnabled, TriggerSource.REMOTE)
-                            applyFlashlight(event.controls.flashlightEnabled, TriggerSource.REMOTE)
+                            if (foregroundActive) applyRemoteControls(event.controls)
                         }
                         is RemoteControlEvent.Error -> {
                             _state.update {
@@ -86,14 +104,31 @@ class ActuatorViewModel(
 
     fun setAutomaticControlEnabled(enabled: Boolean) {
         _state.update { it.copy(automaticControlEnabled = enabled) }
+        decisionEngine.reset()
+    }
+
+    fun setForegroundActive(active: Boolean) {
+        if (foregroundActive == active) return
+        foregroundActive = active
+        decisionEngine.reset()
+        if (!active) {
+            actuator.stopAll()
+            _state.update {
+                it.copy(vibrationEnabled = false, flashlightEnabled = false)
+            }
+        } else {
+            latestRemoteControls?.let(::applyRemoteControls)
+        }
     }
 
     fun setManualVibration(enabled: Boolean) {
+        if (!foregroundActive) return
         log("Manual vibration ${if (enabled) "enabled" else "disabled"}", null)
         applyPersistentVibration(enabled, TriggerSource.MANUAL)
     }
 
     fun setManualFlashlight(enabled: Boolean) {
+        if (!foregroundActive) return
         log("Manual flashlight ${if (enabled) "enabled" else "disabled"}", null)
         applyFlashlight(enabled, TriggerSource.MANUAL)
     }
@@ -106,6 +141,11 @@ class ActuatorViewModel(
                 lastError = null,
             )
         }
+    }
+
+    private fun applyRemoteControls(controls: com.example.sleeptrackersimulator.actuator.RemoteControlState) {
+        controls.vibrationEnabled?.let { applyPersistentVibration(it, TriggerSource.REMOTE) }
+        controls.flashlightEnabled?.let { applyFlashlight(it, TriggerSource.REMOTE) }
     }
 
     private fun applyPersistentVibration(enabled: Boolean, source: TriggerSource) {
@@ -171,6 +211,8 @@ class ActuatorViewModel(
 
     companion object {
         private const val TAG = "ActuatorControl"
+        private const val MAX_REMOTE_RECONNECT_ATTEMPTS = 3L
+        private const val REMOTE_RECONNECT_DELAY_MILLIS = 1_000L
 
         fun factory(
             sensorState: StateFlow<SensorUiState>,

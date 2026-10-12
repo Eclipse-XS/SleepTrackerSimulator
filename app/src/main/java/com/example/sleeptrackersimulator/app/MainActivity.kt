@@ -176,6 +176,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.setForegroundActive(true)
+        actuatorViewModel.setForegroundActive(true)
+    }
+
+    override fun onPause() {
+        actuatorViewModel.setForegroundActive(false)
+        viewModel.setForegroundActive(false)
+        super.onPause()
+    }
+
     private enum class AppDestination { DASHBOARD, ANALYTICS }
 
     private fun requestFlashlightChange(enabled: Boolean) {

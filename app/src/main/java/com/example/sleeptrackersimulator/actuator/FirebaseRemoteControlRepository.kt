@@ -36,6 +36,7 @@ class FirebaseRemoteControlRepository(
 
             override fun onCancelled(error: DatabaseError) {
                 trySend(RemoteControlEvent.Error(error.message))
+                close(error.toException())
             }
         }
         reference.addValueEventListener(listener)

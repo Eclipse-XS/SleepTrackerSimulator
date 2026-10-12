@@ -32,7 +32,7 @@ class LocalHistoryRecorderViewModel(
 ) : ViewModel() {
     private val writeMutex = Mutex()
     private var pendingActivation = false
-    private var latestActiveState: SensorUiState.Active? = null
+    @Volatile private var latestActiveState: SensorUiState.Active? = null
     private var lastRecordedSensorTimestampNanos: Long? = null
     private val _state = MutableStateFlow(LocalRecordingState())
     val state: StateFlow<LocalRecordingState> = _state
