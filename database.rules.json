@@ -20,7 +20,9 @@
         },
         "control": {
           "sleep-tracker-simulator": {
-            ".validate": "newData.hasOnly(['vibrationEnabled','flashlightEnabled']) && (!newData.child('vibrationEnabled').exists() || newData.child('vibrationEnabled').isBoolean()) && (!newData.child('flashlightEnabled').exists() || newData.child('flashlightEnabled').isBoolean())"
+            "vibrationEnabled": { ".validate": "newData.isBoolean()" },
+            "flashlightEnabled": { ".validate": "newData.isBoolean()" },
+            "$other": { ".validate": false }
           },
           "$other": { ".validate": false }
         },
