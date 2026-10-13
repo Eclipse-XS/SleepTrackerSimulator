@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.sleeptrackersimulator.actuator.ActuatorAction
+import com.example.sleeptrackersimulator.actuator.ActuatorActivation
 import com.example.sleeptrackersimulator.actuator.ActuatorOperationStatus
 import com.example.sleeptrackersimulator.actuator.ActuatorResult
 import com.example.sleeptrackersimulator.actuator.ActuatorUiState
@@ -18,6 +19,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 class ActuatorViewModel(
@@ -28,6 +32,7 @@ class ActuatorViewModel(
     private val log: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.i(TAG, message) else Log.e(TAG, message, error)
     },
+    private val currentTimeMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         ActuatorUiState(
@@ -36,6 +41,8 @@ class ActuatorViewModel(
         ),
     )
     val state: StateFlow<ActuatorUiState> = _state
+    private val activationChannel = Channel<ActuatorActivation>(Channel.UNLIMITED)
+    val activations: Flow<ActuatorActivation> = activationChannel.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -92,7 +99,7 @@ class ActuatorViewModel(
     }
 
     private fun applyPulse(result: ActuatorResult, source: TriggerSource) {
-        applyResult(result) {
+        applyResult(result, ActuatorAction.VIBRATION_PULSE, source) {
             it.copy(
                 lastTriggerSource = source,
                 lastActionTriggered = ActuatorAction.VIBRATION_PULSE,
@@ -102,7 +109,9 @@ class ActuatorViewModel(
     }
 
     private fun applyPersistentVibration(enabled: Boolean, source: TriggerSource) {
-        applyResult(actuator.setPersistentVibration(enabled)) {
+        if (_state.value.vibrationEnabled == enabled) return
+        val activation = if (enabled) ActuatorAction.VIBRATION_ENABLED else null
+        applyResult(actuator.setPersistentVibration(enabled), activation, source) {
             it.copy(
                 vibrationEnabled = enabled,
                 lastTriggerSource = source,
@@ -117,7 +126,9 @@ class ActuatorViewModel(
     }
 
     private fun applyFlashlight(enabled: Boolean, source: TriggerSource) {
-        applyResult(actuator.setFlashlightEnabled(enabled)) {
+        if (_state.value.flashlightEnabled == enabled) return
+        val activation = if (enabled) ActuatorAction.FLASHLIGHT_ENABLED else null
+        applyResult(actuator.setFlashlightEnabled(enabled), activation, source) {
             it.copy(
                 flashlightEnabled = enabled,
                 lastTriggerSource = source,
@@ -133,11 +144,18 @@ class ActuatorViewModel(
 
     private inline fun applyResult(
         result: ActuatorResult,
+        activation: ActuatorAction?,
+        source: TriggerSource,
         onSuccess: (ActuatorUiState) -> ActuatorUiState,
     ) {
         if (result.status == ActuatorOperationStatus.SUCCESS) {
             log(result.message, null)
             _state.update(onSuccess)
+            if (activation != null) {
+                activationChannel.trySend(
+                    ActuatorActivation(activation, source, currentTimeMillis()),
+                )
+            }
         } else {
             _state.update { it.copy(lastError = result.message) }
             log("Actuator operation failed: ${result.message}", null)
@@ -147,6 +165,7 @@ class ActuatorViewModel(
     override fun onCleared() {
         decisionEngine.reset()
         actuator.stopAll()
+        activationChannel.close()
         super.onCleared()
     }
 

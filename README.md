@@ -179,4 +179,34 @@ The actuator tests cover threshold edges and rearming, no-spam behavior, automat
 .\gradlew.bat assembleDebug
 ```
 
+## Lab 5 — Room history and analytics
+
+Processed `MovementAnalysis.motionIntensity` values are stored locally in Room about once per second while the activity-scoped recorder receives valid accelerometer samples. This path does not depend on BLE, Firebase authentication, cloud monitoring, or Internet connectivity.
+
+```text
+SensorManager → SensorViewModel → LocalHistoryRecorderViewModel
+                                      ↓
+                              SensorHistoryRepository
+                                      ↓
+                         Room DAO → sleep_tracker.db
+                                      ↓ Flow
+                              AnalyticsViewModel
+                                      ↓
+                         Compose Analytics + Vico
+```
+
+The `sensor_records` table contains `id`, Unix `timestamp` in milliseconds, smoothed `sensorValue` in m/s², and `actionTriggered`. Successful vibration pulses and successful transitions that enable persistent vibration or flashlight are emitted as one-shot typed activation events. Disable, unavailable, and failed operations do not create activations. A pending activation is cleared only after a Room insert succeeds.
+
+Analytics displays a rolling one-hour window. SQL selects the newest 50 records using `timestamp DESC, id DESC`, then returns those records in chronological order for Vico. Counts cover the complete one-hour window and refresh reactively through Room `Flow`.
+
+Additional verification commands:
+
+```powershell
+.\gradlew.bat lintDebug
+.\gradlew.bat compileDebugAndroidTestSources
+.\gradlew.bat connectedDebugAndroidTest
+```
+
+For Database Inspector evidence, run the debug app, open **View > Tool Windows > App Inspection**, choose **Database Inspector**, select `sleep_tracker.db`, and open `sensor_records`. The database uses WAL, so keep the app process running while inspecting it.
+
 Educational simulation; not a medical sleep-stage detector.

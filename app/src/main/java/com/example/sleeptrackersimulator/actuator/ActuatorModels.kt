@@ -41,3 +41,9 @@ data class ActuatorUiState(
     val lastActionTriggered: ActuatorAction = ActuatorAction.NONE,
     val lastError: String? = null,
 )
+
+data class ActuatorActivation(
+    val action: ActuatorAction,
+    val source: TriggerSource,
+    val timestamp: Long,
+)
