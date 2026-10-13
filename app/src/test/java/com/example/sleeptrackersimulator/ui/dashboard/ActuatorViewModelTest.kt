@@ -188,14 +188,24 @@ class ActuatorViewModelTest {
     }
 
     @Test
-    fun `new remote command overrides manual state and manual command can override until next snapshot`() =
+    fun `initial remote snapshot does not cancel a manual command issued while Firebase connects`() =
         actuatorTest { fixture ->
             fixture.viewModel.setManualVibration(true)
             fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = false)))
             runCurrent()
-            fixture.viewModel.setManualVibration(true)
             assertTrue(fixture.viewModel.state.value.vibrationEnabled)
-            assertEquals(listOf(true, false, true), fixture.actuator.vibrationStates)
+            assertEquals(listOf(true), fixture.actuator.vibrationStates)
+        }
+
+    @Test
+    fun `remote update after initial snapshot overrides manual state`() = actuatorTest { fixture ->
+            fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState()))
+            runCurrent()
+            fixture.viewModel.setManualVibration(true)
+            fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = false)))
+            runCurrent()
+            assertFalse(fixture.viewModel.state.value.vibrationEnabled)
+            assertEquals(listOf(true, false), fixture.actuator.vibrationStates)
         }
 
     @Test

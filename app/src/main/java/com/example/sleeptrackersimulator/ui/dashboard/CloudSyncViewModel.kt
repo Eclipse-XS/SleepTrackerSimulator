@@ -1,6 +1,5 @@
 package com.example.sleeptrackersimulator.ui.dashboard
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -20,6 +19,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 class CloudSyncViewModel(
     private val repository: CloudRepository,
@@ -36,7 +38,13 @@ class CloudSyncViewModel(
     private val newId: () -> String = { UUID.randomUUID().toString() },
     private val intervalMillis: Long = CLOUD_SYNC_INTERVAL_MS,
     private val log: (String, String, Throwable?) -> Unit = { level, message, error ->
-        when (level) { "I" -> Log.i(TAG, message); "W" -> Log.w(TAG, message); else -> Log.e(TAG, message, error) }
+        DiagnosticLog.event(
+            DiagnosticTags.CLOUD,
+            "cloudSync",
+            when (level) { "I" -> DiagnosticResult.SUCCESS; "W" -> DiagnosticResult.SKIPPED; else -> DiagnosticResult.FAILED },
+            details = mapOf("message" to message, "reason" to error?.javaClass?.simpleName),
+            error = null,
+        )
     },
 ) : ViewModel() {
     private data class Snapshot(
@@ -86,7 +94,11 @@ class CloudSyncViewModel(
     }
 
     fun startSync() {
-        if (syncJob?.isActive == true) return
+        if (syncJob?.isActive == true) {
+            DiagnosticLog.event(DiagnosticTags.CLOUD, "startMonitoring", DiagnosticResult.SKIPPED, details = mapOf("reason" to "already_active"))
+            return
+        }
+        DiagnosticLog.event(DiagnosticTags.CLOUD, "startMonitoring", DiagnosticResult.STARTED)
         val stored = stateStore.activeSession()
         if (stored != null && hasPendingEnd(stored.sessionId)) {
             _state.update {
@@ -122,12 +134,14 @@ class CloudSyncViewModel(
                 enqueueMeasurement(latest.value)
             }
         }
+        DiagnosticLog.event(DiagnosticTags.CLOUD, "startMonitoring", DiagnosticResult.SUCCESS, details = mapOf("pendingCount" to stateStore.pendingCount))
     }
 
     fun stopSync() {
         syncJob?.cancel(); syncJob = null
         recoveryJob?.cancel(); recoveryJob = null
         _state.update { it.copy(status = CloudSyncStatus.IDLE, monitoringActive = false) }
+        DiagnosticLog.event(DiagnosticTags.CLOUD, "stopMonitoring", DiagnosticResult.SUCCESS, details = mapOf("pendingCount" to stateStore.pendingCount))
     }
 
     fun endMonitoring() {
@@ -191,6 +205,7 @@ class CloudSyncViewModel(
                 val enqueueResult = stateStore.enqueue(
                     PendingCloudOperation(payload.measurementId, PendingOperationType.UPLOAD_MEASUREMENT, active.sessionId, payload = payload),
                 )
+                DiagnosticLog.event(DiagnosticTags.CLOUD, "offlineQueueEnqueue", DiagnosticResult.SUCCESS, correlationId = payload.measurementId.take(8), details = mapOf("pendingCount" to stateStore.pendingCount, "operationType" to PendingOperationType.UPLOAD_MEASUREMENT))
                 lastEnqueuedSensorTimestampNanos = analysis.sample.timestampNanos
                 _state.update { it.copy(droppedTelemetryCount = stateStore.droppedTelemetryCount) }
                 if (enqueueResult.droppedTelemetry > 0) {
@@ -230,6 +245,7 @@ class CloudSyncViewModel(
 
     private suspend fun flushLocked() {
         if (stateStore.pendingCount == 0) return
+        DiagnosticLog.event(DiagnosticTags.CLOUD, "flushQueue", DiagnosticResult.STARTED, details = mapOf("pendingCount" to stateStore.pendingCount))
         var session = stateStore.activeSession() ?: return
         val authenticatedUid = try {
             authenticate()
@@ -262,6 +278,7 @@ class CloudSyncViewModel(
         while (true) {
             val operation = stateStore.peek() ?: break
             try {
+                val correlationId = operation.operationId.take(8)
                 retryPolicy.execute {
                     when (operation.type) {
                         PendingOperationType.UPLOAD_MEASUREMENT -> repository.uploadMeasurement(uid, operation.sessionId, requireNotNull(operation.payload))
@@ -276,11 +293,14 @@ class CloudSyncViewModel(
                 }
                 if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) {
                     stateStore.removeFirst()
+                    DiagnosticLog.event(DiagnosticTags.CLOUD, "uploadMeasurement", DiagnosticResult.SUCCESS, correlationId = correlationId, details = mapOf("pendingCount" to stateStore.pendingCount))
                     recordSuccess()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: CloudOperationException) {
+                val rulesRejected = failure.message?.contains("permission", ignoreCase = true) == true
+                DiagnosticLog.event(DiagnosticTags.CLOUD, if (rulesRejected) "firebaseRules" else "cloudOperation", DiagnosticResult.FAILED, correlationId = operation.operationId.take(8), details = mapOf("reason" to failure.type, "rulesRejected" to rulesRejected, "exceptionType" to failure.javaClass.simpleName))
                 error(failure.type, failure.message ?: "Cloud operation failed")
                 return
             } catch (failure: Exception) {
@@ -288,6 +308,7 @@ class CloudSyncViewModel(
                 return
             }
         }
+        DiagnosticLog.event(DiagnosticTags.CLOUD, "flushQueue", DiagnosticResult.SUCCESS, details = mapOf("pendingCount" to stateStore.pendingCount))
         if (_state.value.monitoringActive) _state.update { it.copy(status = CloudSyncStatus.SYNCED, pendingCount = 0) }
     }
 
@@ -337,7 +358,6 @@ class CloudSyncViewModel(
     }
 
     companion object {
-        private const val TAG = "CloudSync"
         fun factory(
             repository: CloudRepository, authRepository: AuthRepository, networkMonitor: NetworkMonitor,
             stateStore: CloudStateStore, sensorState: StateFlow<SensorUiState>, bleState: StateFlow<BleConnectionState>,

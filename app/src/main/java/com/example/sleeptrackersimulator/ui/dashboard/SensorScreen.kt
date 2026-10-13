@@ -20,12 +20,21 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.FlashlightOn
+import androidx.compose.material.icons.rounded.Sensors
+import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sleeptrackersimulator.ble.BleConnectionState
 import com.example.sleeptrackersimulator.actuator.ActuatorUiState
+import com.example.sleeptrackersimulator.actuator.ActuatorAction
+import com.example.sleeptrackersimulator.actuator.TriggerSource
 import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.ble.BleOperationResult
 import com.example.sleeptrackersimulator.ble.HeartRateMeasurement
@@ -166,9 +177,9 @@ private fun DisconnectedExperience(
             text = when (bleState) {
                 BleConnectionState.Scanning -> "Searching for the virtual Heart Rate Service"
                 is BleConnectionState.Connecting -> "Preparing Heart Rate notifications"
-                is BleConnectionState.DeviceFound -> "Ready to begin live monitoring"
+                is BleConnectionState.DeviceFound -> "Ready to begin simulated monitoring"
                 is BleConnectionState.Error -> bleState.message
-                else -> "Connect your virtual Sleep Band to start live heart-rate monitoring."
+                else -> "Connect the virtual Sleep Band to start simulated heart-rate monitoring."
             },
             modifier = Modifier.padding(top = 9.dp),
             style = MaterialTheme.typography.bodyMedium,
@@ -227,12 +238,17 @@ private fun PhoneSensorStrip(state: SensorUiState) {
     val analysis = (state as? SensorUiState.Active)?.analysis
     Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(10.dp).background(if (analysis != null) MotionAmber else MaterialTheme.colorScheme.outline, CircleShape))
+            Icon(Icons.Rounded.Sensors, contentDescription = null, tint = if (analysis != null) MotionAmber else MaterialTheme.colorScheme.outline)
             Column(Modifier.weight(1f)) {
                 Text("Phone movement sensor", fontWeight = FontWeight.SemiBold)
                 Text(sensorDescription(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (analysis != null) Text(format(analysis.motionIntensity), fontWeight = FontWeight.SemiBold)
+            if (analysis != null) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(format(analysis.motionIntensity), fontWeight = FontWeight.SemiBold)
+                    Text("m/s²", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }
@@ -260,7 +276,7 @@ private fun ConnectedDashboard(
             Column { Text("Sleep Tracker", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("Tonight · ${device.name}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Surface(color = CalmGreen.copy(alpha = .14f), shape = RoundedCornerShape(50)) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Box(Modifier.size(7.dp).background(CalmGreen, CircleShape)); Text("LIVE", color = CalmGreen, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Box(Modifier.size(7.dp).background(CalmGreen, CircleShape)); Text("MOCK BLE", color = CalmGreen, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -343,9 +359,11 @@ private fun HeartRateChart(samples: List<Int>) {
 private fun MovementSummary(state: SensorUiState) {
     val analysis = (state as? SensorUiState.Active)?.analysis
     val moving = analysis?.state == MovementState.MOVEMENT
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column { Text(if (moving) "MOVEMENT" else "STILL", style = MaterialTheme.typography.headlineSmall, color = if (moving) MotionAmber else CalmGreen); Text("Phone accelerometer", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Column(horizontalAlignment = Alignment.End) { Text(analysis?.let { format(it.motionIntensity) } ?: "—", style = MaterialTheme.typography.headlineSmall); Text("intensity m/s²", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column { Text(if (moving) "MOVEMENT" else "STILL", style = MaterialTheme.typography.headlineSmall, color = if (moving) MotionAmber else CalmGreen); Text("Phone accelerometer", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Column(horizontalAlignment = Alignment.End) { Text(analysis?.let { format(it.motionIntensity) } ?: "—", style = MaterialTheme.typography.headlineSmall); Text("intensity m/s²", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
     }
 }
 
@@ -353,7 +371,7 @@ private fun MovementSummary(state: SensorUiState) {
 private fun DeviceSummary(device: BleDevice, onDiagnostics: () -> Unit) {
     Surface(onClick = onDiagnostics, color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column { Text(device.name, fontWeight = FontWeight.SemiBold); Text("Connected · Heart Rate Service", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Column { Text(device.name, fontWeight = FontWeight.SemiBold); Text("Virtual device · Simulated Heart Rate Service", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text("Diagnostics  ›", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         }
     }
@@ -417,7 +435,7 @@ private fun CloudSyncCard(state: CloudSyncUiState) {
     }
     Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(10.dp).background(color, CircleShape))
+            Icon(Icons.Rounded.Cloud, contentDescription = null, tint = color)
             Column(Modifier.weight(1f)) {
                 Text("Cloud sync", fontWeight = FontWeight.SemiBold)
                 Text(
@@ -465,63 +483,119 @@ private fun ActuatorPanel(
         shape = RoundedCornerShape(22.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Column {
                     Text("Actuators", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Firebase listener · ${if (state.remoteListenerConnected) "Connected" else "Waiting"}",
+                        "Hardware and remote control",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    }
                 }
-                Text(
-                    if (state.automaticControlEnabled) "AUTO ON" else "AUTO OFF",
-                    color = if (state.automaticControlEnabled) CalmGreen else MaterialTheme.colorScheme.outline,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
+                StatusBadge(
+                    text = when {
+                        state.remoteListenerConnected -> "REMOTE CONNECTED"
+                        state.lastError != null -> "REMOTE ERROR"
+                        else -> "REMOTE CONNECTING"
+                    },
+                    color = when {
+                        state.remoteListenerConnected -> CalmGreen
+                        state.lastError != null -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                 )
             }
-            Text(
-                "Vibration: ${if (!state.vibratorAvailable) "Unavailable" else if (state.vibrationEnabled) "Active" else "Ready"}\n" +
-                    "Flashlight: ${if (!state.flashlightAvailable) "Unavailable" else if (state.flashlightEnabled) "Active" else "Ready"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+            SettingSwitchRow(
+                icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) },
+                title = "Automatic movement alert",
+                supportingText = "Triggers a vibration pulse when movement begins",
+                checked = state.automaticControlEnabled,
+                enabled = state.vibratorAvailable,
+                onCheckedChange = onAutomaticControlChanged,
             )
-            OutlinedButton(
-                onClick = { onAutomaticControlChanged(!state.automaticControlEnabled) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Automatic movement alert ${if (state.automaticControlEnabled) "ON" else "OFF"}")
-            }
-            Text("Manual Control", style = MaterialTheme.typography.labelLarge)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = { onVibrationChanged(!state.vibrationEnabled) },
-                    enabled = state.vibratorAvailable,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Vibration ${if (state.vibrationEnabled) "OFF" else "ON"}") }
-                OutlinedButton(
-                    onClick = { onFlashlightChanged(!state.flashlightEnabled) },
-                    enabled = state.flashlightAvailable,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Flashlight ${if (state.flashlightEnabled) "OFF" else "ON"}") }
-            }
-            val action = state.lastActionTriggered.name.replace('_', ' ')
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+            Text("Manual control", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SettingSwitchRow(
+                icon = { Icon(Icons.Rounded.Vibration, contentDescription = null) },
+                title = "Vibration",
+                supportingText = if (state.vibratorAvailable) "Logical state; physical response is not confirmed" else "Vibrator hardware unavailable",
+                checked = state.vibrationEnabled,
+                enabled = state.vibratorAvailable,
+                onCheckedChange = onVibrationChanged,
+            )
+            SettingSwitchRow(
+                icon = { Icon(Icons.Rounded.FlashlightOn, contentDescription = null) },
+                title = "Flashlight",
+                supportingText = if (state.flashlightAvailable) "Uses the rear camera torch" else "Camera torch unavailable",
+                checked = state.flashlightEnabled,
+                enabled = state.flashlightAvailable,
+                onCheckedChange = onFlashlightChanged,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
             Text(
-                "Last action: $action${state.lastTriggerSource?.let { " · ${it.name.replace('_', ' ')}" } ?: ""}",
+                "Last action: ${actionLabel(state.lastActionTriggered)}${state.lastTriggerSource?.let { " · ${sourceLabel(it)}" } ?: ""}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             state.lastError?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                }
             }
         }
     }
+}
+
+@Composable
+private fun StatusBadge(text: String, color: androidx.compose.ui.graphics.Color) {
+    Surface(color = color.copy(alpha = .14f), shape = RoundedCornerShape(50)) {
+        Text(text, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = color, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    icon: @Composable () -> Unit,
+    title: String,
+    supportingText: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { icon() }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(supportingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+private fun actionLabel(action: ActuatorAction): String = when (action) {
+    ActuatorAction.NONE -> "None"
+    ActuatorAction.VIBRATION_PULSE -> "Vibration pulse requested"
+    ActuatorAction.VIBRATION_ENABLED -> "Vibration enabled"
+    ActuatorAction.VIBRATION_DISABLED -> "Vibration disabled"
+    ActuatorAction.FLASHLIGHT_ENABLED -> "Flashlight enabled"
+    ActuatorAction.FLASHLIGHT_DISABLED -> "Flashlight disabled"
+}
+
+private fun sourceLabel(source: TriggerSource): String = when (source) {
+    TriggerSource.MANUAL -> "Manual"
+    TriggerSource.REMOTE -> "Firebase remote"
+    TriggerSource.LOCAL_AUTOMATIC -> "Automatic movement"
 }
 
 private fun operationText(result: BleOperationResult): String = when (result) {

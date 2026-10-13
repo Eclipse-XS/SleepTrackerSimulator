@@ -16,6 +16,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 data class LocalRecordingState(
     val savedCount: Long = 0,
@@ -72,6 +75,7 @@ class LocalHistoryRecorderViewModel(
                 if (actionForRecord) pendingActivation = false
                 _state.update { it.copy(savedCount = it.savedCount + 1, lastError = null) }
             } catch (error: Exception) {
+                DiagnosticLog.event(DiagnosticTags.ROOM, "recordLatest", DiagnosticResult.FAILED, details = mapOf("reason" to error.javaClass.simpleName), error = error)
                 _state.update { it.copy(lastError = error.message ?: "Local database write failed") }
             }
         }

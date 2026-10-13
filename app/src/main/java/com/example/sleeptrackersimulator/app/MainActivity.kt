@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -12,7 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +45,9 @@ import com.example.sleeptrackersimulator.ui.dashboard.SensorScreen
 import com.example.sleeptrackersimulator.ui.dashboard.SensorViewModel
 import com.example.sleeptrackersimulator.ui.dashboard.RestStateViewModel
 import com.example.sleeptrackersimulator.ui.theme.SleepTrackerTheme
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 class MainActivity : ComponentActivity() {
     private var pendingFlashlightEnable = false
@@ -111,7 +119,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onCreate", DiagnosticResult.SUCCESS, details = mapOf("restored" to (savedInstanceState != null)))
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             SleepTrackerTheme {
                 var destination by rememberSaveable { mutableStateOf(AppDestination.DASHBOARD) }
@@ -161,13 +173,13 @@ class MainActivity : ComponentActivity() {
                         NavigationBarItem(
                             selected = destination == AppDestination.DASHBOARD,
                             onClick = { destination = AppDestination.DASHBOARD },
-                            icon = { Text("D") },
+                            icon = { Icon(Icons.Rounded.Dashboard, contentDescription = null) },
                             label = { Text("Dashboard") },
                         )
                         NavigationBarItem(
                             selected = destination == AppDestination.ANALYTICS,
                             onClick = { destination = AppDestination.ANALYTICS },
-                            icon = { Text("A") },
+                            icon = { Icon(Icons.Rounded.Analytics, contentDescription = null) },
                             label = { Text("Analytics") },
                         )
                     }
@@ -178,14 +190,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onResume", DiagnosticResult.STARTED)
         viewModel.setForegroundActive(true)
         actuatorViewModel.setForegroundActive(true)
+        DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onResume", DiagnosticResult.SUCCESS)
     }
 
     override fun onPause() {
+        DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onPause", DiagnosticResult.STARTED)
         actuatorViewModel.setForegroundActive(false)
         viewModel.setForegroundActive(false)
+        DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onPause", DiagnosticResult.SUCCESS)
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onDestroy", DiagnosticResult.SUCCESS, details = mapOf("changingConfigurations" to isChangingConfigurations))
+        super.onDestroy()
     }
 
     private enum class AppDestination { DASHBOARD, ANALYTICS }

@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 @Database(entities = [SensorRecord::class], version = 1, exportSchema = true)
 abstract class SleepTrackerDatabase : RoomDatabase() {
@@ -21,7 +25,11 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                     context.applicationContext,
                     SleepTrackerDatabase::class.java,
                     DATABASE_NAME,
-                ).build().also { instance = it }
+                ).addCallback(object : Callback() {
+                    override fun onOpen(db: SupportSQLiteDatabase) {
+                        DiagnosticLog.event(DiagnosticTags.ROOM, "openDatabase", DiagnosticResult.SUCCESS, details = mapOf("database" to DATABASE_NAME, "version" to db.version))
+                    }
+                }).build().also { instance = it }
             }
     }
 }

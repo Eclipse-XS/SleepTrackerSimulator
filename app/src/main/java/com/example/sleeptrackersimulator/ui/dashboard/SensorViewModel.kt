@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.sleeptrackersimulator.sensor.AccelerometerDataSource
 import com.example.sleeptrackersimulator.sensor.AccelerometerEvent
 import com.example.sleeptrackersimulator.sensor.MovementClassifier
+import com.example.sleeptrackersimulator.core.model.MovementState
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +26,7 @@ class SensorViewModel(
     private val classifier: MovementClassifier = MovementClassifier(),
 ) : ViewModel() {
     private val foregroundActive = MutableStateFlow(false)
+    private var lastMovementState: MovementState? = null
 
     val uiState = foregroundActive.flatMapLatest { active ->
         if (!active) {
@@ -31,9 +36,19 @@ class SensorViewModel(
             dataSource.observe()
                 .map { event ->
                     when (event) {
-                        is AccelerometerEvent.Measurement -> SensorUiState.Active(classifier.analyze(event.sample))
-                        AccelerometerEvent.Unavailable -> SensorUiState.Unavailable
-                        is AccelerometerEvent.Error -> SensorUiState.Error(event.message)
+                        is AccelerometerEvent.Measurement -> SensorUiState.Active(classifier.analyze(event.sample).also { analysis ->
+                            val previous = lastMovementState
+                            if (previous != null && previous != analysis.state) {
+                                DiagnosticLog.event(DiagnosticTags.SENSORS, "movementTransition", DiagnosticResult.SUCCESS, details = mapOf("from" to previous, "to" to analysis.state))
+                            }
+                            lastMovementState = analysis.state
+                        })
+                        AccelerometerEvent.Unavailable -> SensorUiState.Unavailable.also {
+                            DiagnosticLog.event(DiagnosticTags.SENSORS, "monitoring", DiagnosticResult.FAILED, details = mapOf("reason" to "sensor_unavailable"))
+                        }
+                        is AccelerometerEvent.Error -> SensorUiState.Error(event.message).also {
+                            DiagnosticLog.event(DiagnosticTags.SENSORS, "monitoring", DiagnosticResult.FAILED, details = mapOf("reason" to event.message))
+                        }
                     }
                 }
                 .onStart {
@@ -41,6 +56,7 @@ class SensorViewModel(
                     emit(SensorUiState.Initializing)
                 }
                 .catch { error ->
+                    DiagnosticLog.event(DiagnosticTags.SENSORS, "monitoring", DiagnosticResult.FAILED, details = mapOf("reason" to error.javaClass.simpleName), error = error)
                     emit(SensorUiState.Error(error.message ?: "Unexpected sensor error"))
                 }
         }
@@ -52,6 +68,12 @@ class SensorViewModel(
         )
 
     fun setForegroundActive(active: Boolean) {
+        if (foregroundActive.value == active) {
+            DiagnosticLog.event(DiagnosticTags.SENSORS, if (active) "startMonitoring" else "stopMonitoring", DiagnosticResult.SKIPPED, details = mapOf("reason" to "already_in_requested_state"))
+            return
+        }
+        DiagnosticLog.event(DiagnosticTags.SENSORS, if (active) "startMonitoring" else "stopMonitoring", DiagnosticResult.SUCCESS, source = "LIFECYCLE")
+        if (!active) lastMovementState = null
         foregroundActive.value = active
     }
 
