@@ -19,6 +19,7 @@ class BleViewModel(private val connector: IBleConnector) : ViewModel() {
     fun disconnect() = connector.disconnect()
     fun readBodySensorLocation() = connector.readBodySensorLocation()
     fun writeCommand(command: String) = connector.writeCommand(command.trim())
+    fun sendAlert() = connector.sendData("ALERT")
 
     override fun onCleared() {
         connector.close()

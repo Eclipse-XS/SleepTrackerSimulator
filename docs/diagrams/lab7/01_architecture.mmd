@@ -1,0 +1,18 @@
+flowchart LR
+  SM[Android SensorManager] --> DS[AndroidAccelerometerDataSource]
+  DS --> SVM[SensorViewModel]
+  SVM --> ML[ActivityClassifier TFLite]
+  SVM --> RH[Room sensor history]
+  SVM --> SR[Smart Rule Engine]
+  ML --> SR
+  SR --> EX[Room rule executions]
+  SR --> ACT[AndroidSmartActuator]
+  SR --> BLE[MockBleConnector]
+  SVM --> OUT[Room cloud outbox]
+  OUT --> WM[WorkManager]
+  WM --> FB[Firebase RTDB]
+  SVM --> UI[Compose Dashboard]
+  ML --> UI
+  RH --> UI
+  BLE --> UI
+  FB --> UI

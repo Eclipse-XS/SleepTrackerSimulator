@@ -16,6 +16,7 @@ interface CloudStateStore {
     fun activeSession(): ActiveCloudSession?
     fun saveActiveSession(session: ActiveCloudSession?)
     fun completeSessionEnd(sessionId: String)
+    fun recordFirstFailure(message: String, permanent: Boolean) = Unit
 }
 
 data class PersistedCloudState(
@@ -41,15 +42,8 @@ class AtomicJsonCloudStateStore(
     override val loadError: String? get() = initialLoadError
 
     @Synchronized override fun enqueue(operation: PendingCloudOperation): EnqueueResult {
-        val uploads = state.operations.count { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
-        val shouldDropUpload = operation.type == PendingOperationType.UPLOAD_MEASUREMENT && uploads >= capacity
-        val updated = if (shouldDropUpload) {
-            val dropIndex = state.operations.indexOfFirst { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
-            state.operations.filterIndexed { index, _ -> index != dropIndex } + operation
-        } else {
-            state.operations + operation
-        }
-        val dropped = if (shouldDropUpload) 1 else 0
+        val updated = state.operations + operation
+        val dropped = 0
         persist(
             state.copy(
                 operations = updated,
@@ -120,13 +114,8 @@ class InMemoryCloudStateStore(
     override val droppedTelemetryCount: Long get() = state.droppedTelemetryCount
     override val loadError: String? = null
     override fun enqueue(operation: PendingCloudOperation): EnqueueResult {
-        val uploads = state.operations.count { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
-        val shouldDropUpload = operation.type == PendingOperationType.UPLOAD_MEASUREMENT && uploads >= capacity
-        val updated = if (shouldDropUpload) {
-            val dropIndex = state.operations.indexOfFirst { it.type == PendingOperationType.UPLOAD_MEASUREMENT }
-            state.operations.filterIndexed { index, _ -> index != dropIndex } + operation
-        } else state.operations + operation
-        val dropped = if (shouldDropUpload) 1 else 0
+        val updated = state.operations + operation
+        val dropped = 0
         state = state.copy(
             operations = updated,
             droppedTelemetryCount = state.droppedTelemetryCount + dropped,

@@ -11,7 +11,6 @@ class PendingPayloadQueue(private val capacity: Int = CLOUD_PENDING_QUEUE_CAPACI
     fun removeFirst(): SensorPayload = items.removeFirst()
 
     fun add(payload: SensorPayload) {
-        if (items.size == capacity) items.removeFirst()
         items.addLast(payload)
     }
 }

@@ -1,0 +1,10 @@
+stateDiagram-v2
+  [*] --> Armed
+  Armed --> Counting: condition true
+  Counting --> Counting: true and count below required
+  Counting --> Triggered: required consecutive matches
+  Triggered --> WaitingForReset: side effect requested and execution recorded
+  WaitingForReset --> WaitingForReset: condition remains true
+  WaitingForReset --> Cooldown: condition false
+  Cooldown --> Armed: elapsed time reaches cooldown
+  Counting --> Armed: condition false

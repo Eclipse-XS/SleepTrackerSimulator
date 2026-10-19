@@ -6,6 +6,8 @@ Android educational project combining independent phone and virtual-wearable sen
 
 `AndroidAccelerometerDataSource` observes the phone accelerometer. `MovementClassifier` smooths changes between acceleration vectors and exposes `STILL` or `MOVEMENT` through `SensorViewModel` and `StateFlow`. This pipeline remains live with BLE disconnected, scanning, connecting, connected, and after disconnect.
 
+The dashboard displays the current raw X/Y/Z acceleration values in m/s² separately from derived movement intensity. Three signed axis bars are driven by the same live sample. `MainActivity.onResume()` enables collection and `onPause()` disables it; the data source unregisters its listener through `awaitClose`.
+
 ## Lab 2 — Virtual Sleep Band
 
 `VirtualSleepBand` models an external BLE heart-rate wearable. The transport remains software-based, while its lifecycle and profile mirror a concrete BLE sensor:
@@ -19,6 +21,17 @@ Android educational project combining independent phone and virtual-wearable sen
 - reject unknown commands.
 
 The generator uses a bounded random walk from a configurable initial BPM. Its interval and variation source are injectable. The most recent 60 measurements feed the live Compose Canvas graph.
+
+Protocol properties:
+
+| UUID | Property | Meaning |
+|---|---|---|
+| `0x180D` | Service | Standard Heart Rate Service |
+| `0x2A37` | Notify | Standard Heart Rate Measurement |
+| `0x2A38` | Read | Standard Body Sensor Location |
+| `7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e` | Write | Custom simulator command characteristic |
+
+`IBleConnector.sendData(String)` is the laboratory compatibility API and delegates to the typed command parser. Unknown commands return `UNKNOWN_COMMAND`. Disconnect and reconnect clear current HR and session history so an old baseline cannot be treated as fresh.
 
 ## Combined Rest-State Estimation
 
@@ -64,9 +77,9 @@ Heart Rate Measurement -----+
 
 ## Lab 3 — Firebase Realtime Database
 
-`CloudSyncViewModel` snapshots the latest sensor, BLE, and derived rest state every five seconds. This interval is short enough for a laboratory demonstration and long enough to avoid sending every accelerometer event. It owns one idempotent producer job, while a `Mutex` serializes session creation, queue draining, and session closure. Compose contains no Firebase calls.
+`CloudSyncViewModel` snapshots the latest sensor, BLE, and derived rest state every five seconds. This interval is short enough for a laboratory demonstration and long enough to avoid sending every accelerometer event. It owns one idempotent foreground producer job, while mutexes serialize session creation, queue draining, and session closure. Compose contains no Firebase calls.
 
-Each measurement receives a UUID before it enters the queue. Firebase writes use that UUID as the key, so a retry overwrites the same logical record instead of creating duplicates. A session also has a stable UUID and is restored after process death. `End Monitoring` persists a typed `END_SESSION` operation. While the application process remains alive, one lifecycle-bound recovery job retries it at five-second intervals without a busy loop. After process death, delivery resumes only when the application is launched again; this project does not claim WorkManager-style background delivery.
+Each measurement receives a UUID before it enters the queue. Firebase writes use that UUID as the key, so a retry overwrites the same logical record instead of creating duplicates. A session also has a stable UUID and is restored after process death. `End Monitoring` persists a typed `END_SESSION` operation after all earlier measurements. WorkManager schedules unique, network-constrained delivery with exponential backoff for normal process termination and supported restart scenarios. Five-second sensor sampling remains foreground-only and is never delegated to WorkManager. Android force-stop prevents scheduled work until the user launches the app again.
 
 `value` is the smoothed movement intensity in m/s². It is duplicated as `movementIntensity` so the generic laboratory field and the domain-specific meaning are both explicit. The logical `deviceId` is `sleep-tracker-simulator`; no hardware or personal identifier is collected.
 
@@ -77,7 +90,7 @@ sequenceDiagram
     participant VM as SensorViewModel
     participant C as CloudSyncViewModel
     participant R as CloudRepository
-    participant Q as Atomic JSON queue
+    participant Q as Room outbox
     participant A as Firebase Anonymous Auth
     participant F as Firebase Realtime Database
     S->>DS: onSensorChanged(x, y, z)
@@ -106,7 +119,9 @@ users/{auth.uid}/sessions/{sessionId}
     └── movementState, heartRateBpm, bleConnected, restState
 ```
 
-Pending operations are stored in an app-private atomic JSON file backed by Gson. The bound applies to 50 telemetry operations, equivalent to about 4 minutes 10 seconds of five-second samples. On overflow, the oldest telemetry measurement is discarded, the durable dropped-telemetry counter is incremented, and `END_SESSION` control operations are preserved outside that telemetry limit. Therefore cloud telemetry is explicitly best-effort and bounded, not lossless. Room remains the durable local measurement history. When validated internet returns, operations are sent oldest first. An acknowledged measurement is removed using its stable Firebase key; an acknowledged `END_SESSION` and its active-session marker are cleared in one atomic local-state write. Transient network/server failures use bounded request backoff delays of 500, 1000, and 2000 ms; persisted outbox recovery continues at a controlled five-second interval while the process is alive.
+Pending operations are stored in Room `cloud_outbox` rows ordered by an auto-increment sequence and protected by a unique operation UUID. `cloud_active_session` stores the owner UID and lifecycle intent. Enqueue, acknowledgement, and END_SESSION completion use Room transactions. The queue never evicts unacknowledged data. At 10,000 telemetry operations it rejects new collection explicitly with a storage/backpressure error instead of deleting old rows. One unique terminal `END_SESSION` operation may still be appended for that session; a second terminal operation is rejected. Retry count, last error, and permanent-failure state remain durable. Existing atomic JSON state is imported idempotently on first Room access and archived only after the transaction succeeds.
+
+Foreground and WorkManager drainers share a process-wide mutex; Firebase measurement keys remain idempotent protection across process boundaries. A UID mismatch is a permanent failure and never uploads the former owner's data under a new anonymous identity.
 
 `SensorPayloadValidator` rejects non-finite or implausible sensor values, invalid enums, future timestamps, and malformed identifiers before queueing. Anonymous Firebase Authentication supplies the owner UID. `database.rules.json` defaults to deny, restricts telemetry to `/users/{auth.uid}`, and validates the expected schema and value ranges. No email, advertising ID, Android hardware identifier, account name, or location is collected; the fixed `deviceId` is a logical lab identifier.
 
@@ -210,3 +225,25 @@ Additional verification commands:
 For Database Inspector evidence, run the debug app, open **View > Tool Windows > App Inspection**, choose **Database Inspector**, select `sleep_tracker.db`, and open `sensor_records`. The database uses WAL, so keep the app process running while inspecting it.
 
 Educational simulation; not a medical sleep-stage detector.
+
+## Lab 6 — On-device TFLite
+
+`ml/train_activity_model.py` reproducibly generates synthetic accelerometer windows, trains a three-class model and exports `app/src/main/assets/activity_classifier.tflite`. The model receives `float32[1,20,3]` and returns probabilities for `REST`, `RESTLESS`, and `ACTIVE`. The committed evaluation evidence is in `docs/ml_evaluation.json`; its 97.22% test accuracy applies only to the independent synthetic test set.
+
+`SensorWindowBuffer` maintains the latest 20 XYZ samples. `MlViewModel` invokes the real TensorFlow Lite interpreter on `Dispatchers.Default`, exposes the prediction to the AI Insights card, and closes the interpreter on lifecycle cleanup. An `ACTIVE` transition with confidence at least 0.75 can request one automatic vibration pulse. Instrumentation tests execute the packaged model, rather than replacing inference with thresholds. The exported float model is 11,368 bytes.
+
+Reproduce the model with:
+
+```powershell
+py -3.11 -m venv ml\.venv
+.\ml\.venv\Scripts\python.exe -m pip install -r ml\requirements.txt
+.\ml\.venv\Scripts\python.exe ml\train_activity_model.py
+```
+
+## Lab 7 — Integrated system
+
+The dashboard combines phone sensor state, AI Insights, virtual BLE state, heart rate, cloud/outbox status and actuator controls. Room stores sensor history, typed actuator events and the durable cloud outbox. WorkManager recovers queued Firebase delivery when platform constraints permit. Architecture sources and defense instructions are under `docs/`.
+
+## Privacy and backup policy
+
+Android backup is disabled. Anonymous Firebase identity, Room history, heart-rate observations, and the pending outbox are therefore not restored into a different installation or identity context. This conservative policy prevents cross-user replay at the cost of no automatic local-data restore.

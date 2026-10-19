@@ -1,0 +1,16 @@
+sequenceDiagram
+  participant VM as CloudSyncViewModel
+  participant Room as Cloud outbox DAO
+  participant Worker as WorkManager recovery
+  participant Firebase as Realtime Database
+  VM->>Room: enqueue operation transactionally
+  VM->>Firebase: attempt delivery
+  alt acknowledged
+    Firebase-->>VM: success
+    VM->>Room: mark delivered
+  else offline or rejected
+    Firebase-->>VM: error
+    VM->>Room: keep pending and record attempt
+    Worker->>Room: load pending operations
+    Worker->>Firebase: retry when constraints allow
+  end

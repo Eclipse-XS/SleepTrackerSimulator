@@ -16,12 +16,12 @@ class AtomicJsonCloudStateStoreTest {
         assertEquals("m-1", second.pendingOperations()[0].payload?.measurementId)
     }
 
-    @Test fun `bounded FIFO and overflow survive persistence`() {
+    @Test fun `legacy capacity never truncates durable FIFO`() {
         val file = Files.createTempDirectory("cloud-store").resolve("state.json").toFile()
         AtomicJsonCloudStateStore(file, 2).apply { enqueue(upload("m-1", 1)); enqueue(upload("m-2", 2)); enqueue(upload("m-3", 3)) }
         val restored = AtomicJsonCloudStateStore(file, 2)
-        assertEquals(listOf("m-2", "m-3"), restored.pendingOperations().map { it.operationId })
-        assertEquals(1L, restored.droppedTelemetryCount)
+        assertEquals(listOf("m-1", "m-2", "m-3"), restored.pendingOperations().map { it.operationId })
+        assertEquals(0L, restored.droppedTelemetryCount)
     }
 
     @Test fun `end session and mixed operation order persist`() {
@@ -41,7 +41,7 @@ class AtomicJsonCloudStateStoreTest {
         assertTrue(file.parentFile.resolve("state.json.corrupt").exists())
     }
 
-    @Test fun `overflow never drops end session control operation`() {
+    @Test fun `legacy capacity preserves telemetry and end session control operation`() {
         val file = Files.createTempDirectory("cloud-store").resolve("state.json").toFile()
         val store = AtomicJsonCloudStateStore(file, 2)
         store.enqueue(upload("m-1", 1))
@@ -49,20 +49,20 @@ class AtomicJsonCloudStateStoreTest {
         store.enqueue(upload("m-2", 2))
         store.enqueue(upload("m-3", 3))
         assertEquals(
-            listOf("end-s", "m-2", "m-3"),
+            listOf("m-1", "end-s", "m-2", "m-3"),
             store.pendingOperations().map { it.operationId },
         )
-        assertEquals(1L, store.droppedTelemetryCount)
+        assertEquals(0L, store.droppedTelemetryCount)
     }
 
-    @Test fun `one hundred telemetry operations report overflow and preserve end operation`() {
+    @Test fun `one hundred telemetry operations remain durable with end operation`() {
         val file = Files.createTempDirectory("cloud-store").resolve("state.json").toFile()
         val store = AtomicJsonCloudStateStore(file, 50)
         repeat(49) { store.enqueue(upload("m-$it", it.toLong() + 1)) }
         store.enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 50))
         repeat(51) { store.enqueue(upload("late-$it", it.toLong() + 51)) }
-        assertEquals(51, store.pendingCount)
-        assertEquals(50L, store.droppedTelemetryCount)
+        assertEquals(101, store.pendingCount)
+        assertEquals(0L, store.droppedTelemetryCount)
         assertTrue(store.pendingOperations().any { it.type == PendingOperationType.END_SESSION })
     }
 

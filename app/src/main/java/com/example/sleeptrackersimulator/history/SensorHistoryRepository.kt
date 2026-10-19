@@ -17,6 +17,8 @@ interface SensorHistoryRepository {
     fun observeCount(sinceInclusive: Long): Flow<Int>
     fun observeActionCount(sinceInclusive: Long): Flow<Int>
     suspend fun deleteOlderThan(beforeExclusive: Long): Int
+    suspend fun addActuatorEvent(event: ActuatorEvent)
+    fun observeActuatorEventCount(sinceInclusive: Long): Flow<Int>
 }
 
 class RoomSensorHistoryRepository(
@@ -69,8 +71,18 @@ class RoomSensorHistoryRepository(
 
     override suspend fun deleteOlderThan(beforeExclusive: Long): Int {
         require(beforeExclusive > 0) { "Retention boundary must be positive" }
-        return withContext(ioDispatcher) { dao.deleteOlderThan(beforeExclusive) }
+        return withContext(ioDispatcher) {
+            dao.deleteOlderThan(beforeExclusive) + dao.deleteActuatorEventsOlderThan(beforeExclusive)
+        }
     }
+
+    override suspend fun addActuatorEvent(event: ActuatorEvent) {
+        require(event.eventId.isNotBlank() && event.timestamp > 0)
+        withContext(ioDispatcher) { dao.insertActuatorEvent(event) }
+    }
+
+    override fun observeActuatorEventCount(sinceInclusive: Long): Flow<Int> =
+        dao.observeActuatorEventCount(sinceInclusive.coerceAtLeast(1))
 
     companion object {
         const val MAX_QUERY_LIMIT = 500

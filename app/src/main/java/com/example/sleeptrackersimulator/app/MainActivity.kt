@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Rule
 import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.runtime.getValue
@@ -31,7 +34,8 @@ import com.example.sleeptrackersimulator.actuator.FirebaseRemoteControlRepositor
 import com.example.sleeptrackersimulator.cloud.AndroidNetworkMonitor
 import com.example.sleeptrackersimulator.cloud.FirebaseCloudRepository
 import com.example.sleeptrackersimulator.cloud.FirebaseAnonymousAuthRepository
-import com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStore
+import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
+import com.example.sleeptrackersimulator.cloud.WorkManagerCloudRecoveryScheduler
 import com.example.sleeptrackersimulator.sensor.AndroidAccelerometerDataSource
 import com.example.sleeptrackersimulator.history.LocalHistoryRecorderViewModel
 import com.example.sleeptrackersimulator.history.RoomSensorHistoryRepository
@@ -48,6 +52,12 @@ import com.example.sleeptrackersimulator.ui.theme.SleepTrackerTheme
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
+import com.example.sleeptrackersimulator.ml.ActivityClassifier
+import com.example.sleeptrackersimulator.ml.MlViewModel
+import com.example.sleeptrackersimulator.smart.RoomSmartRuleRepository
+import com.example.sleeptrackersimulator.smart.SmartScenariosViewModel
+import com.example.sleeptrackersimulator.ui.smart.SmartScenariosScreen
+import com.example.sleeptrackersimulator.ble.BleOperationResult
 
 class MainActivity : ComponentActivity() {
     private var pendingFlashlightEnable = false
@@ -55,8 +65,8 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (pendingFlashlightEnable) {
-            actuatorViewModel.setManualFlashlight(granted)
-            if (!granted) actuatorViewModel.setManualFlashlight(true)
+            if (granted) actuatorViewModel.setManualFlashlight(true)
+            else actuatorViewModel.reportFlashlightPermissionDenied()
         }
         pendingFlashlightEnable = false
     }
@@ -78,18 +88,25 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val mlViewModel: MlViewModel by viewModels {
+        MlViewModel.factory(viewModel.samples, ActivityClassifier(applicationContext))
+    }
+
     private val cloudSyncViewModel: CloudSyncViewModel by viewModels {
+        val database = SleepTrackerDatabase.getInstance(applicationContext)
         CloudSyncViewModel.factory(
             repository = FirebaseCloudRepository(),
             authRepository = FirebaseAnonymousAuthRepository(),
             networkMonitor = AndroidNetworkMonitor(applicationContext),
-            stateStore = AtomicJsonCloudStateStore(
-                applicationContext.filesDir.resolve("cloud/cloud-state.json"),
+            stateStore = RoomCloudStateStore(
+                dao = database.cloudOutboxDao(),
+                legacyFile = applicationContext.filesDir.resolve("cloud/cloud-state.json"),
             ),
             sensorState = viewModel.uiState,
             bleState = bleViewModel.state,
             heartRate = bleViewModel.heartRate,
             restState = restStateViewModel.state,
+            recoveryScheduler = WorkManagerCloudRecoveryScheduler(applicationContext),
         )
     }
 
@@ -98,6 +115,7 @@ class MainActivity : ComponentActivity() {
             sensorState = viewModel.uiState,
             actuator = AndroidSmartActuator(applicationContext),
             remoteRepository = FirebaseRemoteControlRepository(),
+            mlState = mlViewModel.state,
         )
     }
 
@@ -117,6 +135,25 @@ class MainActivity : ComponentActivity() {
         AnalyticsViewModel.factory(historyRepository)
     }
 
+    private val smartScenariosViewModel: SmartScenariosViewModel by viewModels {
+        SmartScenariosViewModel.factory(
+            sensorState = viewModel.uiState,
+            mlState = mlViewModel.state,
+            repository = RoomSmartRuleRepository(SleepTrackerDatabase.getInstance(applicationContext).smartRuleDao()),
+            vibration = {
+                actuatorViewModel.triggerSmartRulePulse().let { result ->
+                    if (result.successful) result.message else "ERROR:${result.message}"
+                }
+            },
+            bleAlert = {
+                when (val result = bleViewModel.sendAlert()) {
+                    is BleOperationResult.Success -> result.message
+                    is BleOperationResult.Error -> "ERROR:${result.message}"
+                }
+            },
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "onCreate", DiagnosticResult.SUCCESS, details = mapOf("restored" to (savedInstanceState != null)))
@@ -134,10 +171,12 @@ class MainActivity : ComponentActivity() {
                 val heartRateHistory = bleViewModel.heartRateHistory.collectAsStateWithLifecycle().value
                 val notificationsEnabled = bleViewModel.notificationsEnabled.collectAsStateWithLifecycle().value
                 val restState = restStateViewModel.state.collectAsStateWithLifecycle().value
+                val mlState = mlViewModel.state.collectAsStateWithLifecycle().value
                 val cloudSyncState = cloudSyncViewModel.state.collectAsStateWithLifecycle().value
                 val actuatorState = actuatorViewModel.state.collectAsStateWithLifecycle().value
                 val recordingState = historyRecorderViewModel.state.collectAsStateWithLifecycle().value
                 val analyticsState = analyticsViewModel.state.collectAsStateWithLifecycle().value
+                val smartState = smartScenariosViewModel.state.collectAsStateWithLifecycle().value
 
                 Column(Modifier.fillMaxSize()) {
                     when (destination) {
@@ -149,8 +188,10 @@ class MainActivity : ComponentActivity() {
                             heartRateHistory = heartRateHistory,
                             notificationsEnabled = notificationsEnabled,
                             restState = restState,
+                            mlState = mlState,
                             cloudSyncState = cloudSyncState,
                             actuatorState = actuatorState,
+                            recentRecords = analyticsState.records.takeLast(5).reversed(),
                             onScan = bleViewModel::startScan,
                             onConnect = bleViewModel::connect,
                             onDisconnect = bleViewModel::disconnect,
@@ -168,6 +209,13 @@ class MainActivity : ComponentActivity() {
                             recordingError = recordingState.lastError,
                             modifier = Modifier.weight(1f),
                         )
+                        AppDestination.SMART_SCENARIOS -> SmartScenariosScreen(
+                            state = smartState,
+                            onSave = smartScenariosViewModel::save,
+                            onEnabled = smartScenariosViewModel::setEnabled,
+                            onDelete = smartScenariosViewModel::delete,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                     NavigationBar {
                         NavigationBarItem(
@@ -177,12 +225,30 @@ class MainActivity : ComponentActivity() {
                             label = { Text("Dashboard") },
                         )
                         NavigationBarItem(
+                            selected = destination == AppDestination.SMART_SCENARIOS,
+                            onClick = { destination = AppDestination.SMART_SCENARIOS },
+                            icon = { Icon(Icons.AutoMirrored.Rounded.Rule, contentDescription = null) },
+                            label = { Text("Scenarios") },
+                        )
+                        NavigationBarItem(
                             selected = destination == AppDestination.ANALYTICS,
                             onClick = { destination = AppDestination.ANALYTICS },
                             icon = { Icon(Icons.Rounded.Analytics, contentDescription = null) },
                             label = { Text("Analytics") },
                         )
                     }
+                }
+                smartState.visibleAlert?.let { ruleName ->
+                    AlertDialog(
+                        onDismissRequest = smartScenariosViewModel::dismissVisibleAlert,
+                        title = { Text("Smart scenario alert") },
+                        text = { Text("Rule triggered: $ruleName") },
+                        confirmButton = {
+                            TextButton(onClick = smartScenariosViewModel::dismissVisibleAlert) {
+                                Text("Dismiss")
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -209,7 +275,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private enum class AppDestination { DASHBOARD, ANALYTICS }
+    private enum class AppDestination { DASHBOARD, ANALYTICS, SMART_SCENARIOS }
 
     private fun requestFlashlightChange(enabled: Boolean) {
         if (!enabled ||

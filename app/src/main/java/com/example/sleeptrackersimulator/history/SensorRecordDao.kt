@@ -35,4 +35,13 @@ interface SensorRecordDao {
 
     @Query("DELETE FROM sensor_records WHERE timestamp < :beforeExclusive")
     suspend fun deleteOlderThan(beforeExclusive: Long): Int
+
+    @Insert
+    suspend fun insertActuatorEvent(event: ActuatorEvent)
+
+    @Query("SELECT COUNT(*) FROM actuator_events WHERE timestamp >= :sinceInclusive")
+    fun observeActuatorEventCount(sinceInclusive: Long): Flow<Int>
+
+    @Query("DELETE FROM actuator_events WHERE timestamp < :beforeExclusive")
+    suspend fun deleteActuatorEventsOlderThan(beforeExclusive: Long): Int
 }

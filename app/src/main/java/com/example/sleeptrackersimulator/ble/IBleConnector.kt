@@ -13,5 +13,7 @@ interface IBleConnector {
     fun disconnect()
     fun readBodySensorLocation(): BleOperationResult
     fun writeCommand(command: String): BleOperationResult
+    /** Lab-compatible textual transport contract. */
+    fun sendData(data: String): BleOperationResult = writeCommand(data)
     fun close()
 }

@@ -1,0 +1,64 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 23074342 Realtime: 23074342
+
+** MEMINFO in pid 15235 [com.example.sleeptrackersimulator] **
+                   Pss  Private  Private     Swap      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap     2478     2400        0        0     6504    12240     5917     1968
+  Dalvik Heap     1746     1572        0        0     9492     4963     2546     2417
+ Dalvik Other     5360     4120        0        0     7292
+        Stack      616      616        0        0      620
+       Ashmem        8        0        0        0      580
+    Other dev       13        0       12        0      292
+     .so mmap      842       96      120        0    31868
+    .jar mmap     1530        0       60        0    43272
+    .apk mmap    70120        0    69964        0    71012
+    .dex mmap       14        0        0        0      912
+    .oat mmap       25        0        0        0     1648
+    .art mmap     9078     8708        0        0    32716
+   Other mmap      683       36        0        0     2696
+      Unknown      427      416        0        0     2016
+        TOTAL    92940    17964    70156        0   210920    17203     8463     4385
+
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    10280                          42208
+         Native Heap:     2400                           6504
+                Code:    70320                         151244
+               Stack:      616                            620
+            Graphics:        0                              0
+       Private Other:     4504
+              System:     4820
+             Unknown:                                   10344
+
+           TOTAL PSS:    92940            TOTAL RSS:   210920      TOTAL SWAP (KB):        0
+
+ Objects
+               Views:        0         ViewRootImpl:        0
+         AppContexts:        4           Activities:        1
+              Assets:       20        AssetManagers:        0
+       Local Binders:        6        Proxy Binders:       36
+       Parcel memory:        4         Parcel count:       19
+    Death Recipients:        0             WebViews:        0
+
+ Native Allocations
+                         Count                       Total(kB)
+                        ------                         ------
+    Other (malloced):      278                             25
+ Other (nonmalloced):       47                             39
+
+ SQL
+         MEMORY_USED:      307
+  PAGECACHE_OVERFLOW:       88          MALLOC_SIZE:       46
+
+ DATABASES
+      pgsz     dbsz   Lookaside(b) cache hits cache misses cache size  Dbname
+PER CONNECTION STATS
+         4      104            123    12    45    11  /data/user/0/com.example.sleeptrackersimulator/no_backup/androidx.work.workdb
+         4        8                    0     0     0    (attached) temp
+         4      104             45     6    23     5  /data/user/0/com.example.sleeptrackersimulator/no_backup/androidx.work.workdb (1)
+POOL STATS
+     cache hits  cache misses    cache size  Dbname
+             18            72            16  /data/user/0/com.example.sleeptrackersimulator/no_backup/androidx.work.workdb

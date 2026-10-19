@@ -62,6 +62,8 @@ class MockBleConnectorTest {
         advanceTimeBy(1_000); runCurrent()
         assertFalse(subject.notificationsEnabled.value)
         assertEquals(count, subject.heartRateHistory.value.size)
+        assertTrue(subject.heartRateHistory.value.isEmpty())
+        assertEquals(null, subject.heartRate.value)
     }
 
     @Test fun `read and typed writes return meaningful results`() = runTest {
@@ -73,6 +75,9 @@ class MockBleConnectorTest {
         assertEquals(BleOperationResult.Success("STREAM_STOPPED"), subject.writeCommand("STOP_STREAM"))
         assertFalse(subject.notificationsEnabled.value)
         assertEquals(BleOperationResult.Success("STREAM_STARTED"), subject.writeCommand("START_STREAM"))
+        assertTrue(subject.sendData("REQUEST_STATUS") is BleOperationResult.Success)
+        assertEquals(BleOperationResult.Success("ALERT_ACKNOWLEDGED"), subject.sendData("ALERT"))
+        assertTrue(subject.logs.value.any { it.contains("WRITE command: ALERT") })
         assertEquals(BleOperationResult.Error("UNKNOWN_COMMAND"), subject.writeCommand("HELLO"))
     }
 

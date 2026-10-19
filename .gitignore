@@ -16,6 +16,7 @@ captures/
 keystore.properties
 google-services.json
 tools/.venv/
+ml/.venv/
 tools/__pycache__/
 tools/**/__pycache__/
 tools/*service-account*.json
@@ -24,3 +25,9 @@ tools/*.key.json
 service-account*.json
 credentials*.json
 PLAN.md
+.codex-doc/
+.codex-docx-qa/
+.codex-pptx/
+database-debug.log
+tools/word_lock_backup.tmp
+node_modules/

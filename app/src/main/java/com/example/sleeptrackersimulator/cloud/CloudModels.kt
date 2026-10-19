@@ -50,6 +50,7 @@ class CloudOperationException(
 }
 
 enum class PendingOperationType { UPLOAD_MEASUREMENT, END_SESSION }
+enum class DeliveryState { PENDING, PERMANENT_FAILURE }
 
 data class PendingCloudOperation(
     val operationId: String = "",
@@ -57,6 +58,10 @@ data class PendingCloudOperation(
     val sessionId: String = "",
     val payload: SensorPayload? = null,
     val endedAt: Long? = null,
+    val createdAt: Long = 0L,
+    val retryCount: Int = 0,
+    val lastError: String? = null,
+    val deliveryState: DeliveryState = DeliveryState.PENDING,
 )
 
 data class ActiveCloudSession(

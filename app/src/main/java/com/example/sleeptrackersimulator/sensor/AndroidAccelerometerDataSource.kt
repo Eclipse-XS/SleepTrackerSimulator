@@ -47,8 +47,8 @@ class AndroidAccelerometerDataSource(context: Context) : AccelerometerDataSource
             }
 
             val registered = runCatching {
-                DiagnosticLog.event(DiagnosticTags.SENSORS, "registerListener", DiagnosticResult.STARTED, details = mapOf("delay" to "SENSOR_DELAY_UI"))
-                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+                DiagnosticLog.event(DiagnosticTags.SENSORS, "registerListener", DiagnosticResult.STARTED, details = mapOf("samplingPeriodUs" to 50_000))
+                manager.registerListener(listener, sensor, 50_000, 0)
             }.getOrElse { error ->
                 DiagnosticLog.event(DiagnosticTags.SENSORS, "registerListener", DiagnosticResult.FAILED, details = mapOf("reason" to error.javaClass.simpleName), error = error)
                 trySend(AccelerometerEvent.Error(error.message ?: "Cannot access the accelerometer"))

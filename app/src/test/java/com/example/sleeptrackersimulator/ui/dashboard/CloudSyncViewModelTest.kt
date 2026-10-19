@@ -19,6 +19,7 @@ import com.example.sleeptrackersimulator.cloud.EnqueueResult
 import com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStore
 import java.nio.file.Files
 import com.example.sleeptrackersimulator.cloud.SensorPayload
+import com.example.sleeptrackersimulator.cloud.CloudRecoveryScheduler
 import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.core.model.MovementState
 import com.example.sleeptrackersimulator.core.model.SensorSample
@@ -213,7 +214,7 @@ class CloudSyncViewModelTest {
     }
 
     @Test
-    fun `pending queue remains bounded to fifty and drops oldest`() =
+    fun `pending queue preserves more than fifty offline samples`() =
         cloudTest(online = false, store = InMemoryCloudStateStore(50)) { fixture ->
         repeat(51) { index ->
             fixture.now = (index + 1).toLong()
@@ -221,13 +222,13 @@ class CloudSyncViewModelTest {
             advanceTimeBy(5_000)
             runCurrent()
         }
-        assertEquals(50, fixture.viewModel.state.value.pendingCount)
+        assertEquals(51, fixture.viewModel.state.value.pendingCount)
 
         fixture.network.online = true
         fixture.now = 51L
         advanceTimeBy(5_000)
         runCurrent()
-        assertEquals((2L..51L).toList(), fixture.repository.uploads.map { it.timestamp })
+        assertEquals((1L..51L).toList(), fixture.repository.uploads.map { it.timestamp })
     }
 
     @Test
@@ -306,6 +307,49 @@ class CloudSyncViewModelTest {
         assertEquals(listOf(3L), fixture.repository.endTimes)
         assertEquals(0, store.pendingCount)
         assertNull(store.activeSession())
+    }
+
+    @Test
+    fun `offline end survives process recreation and closes original session in order`() = runTest(dispatcher) {
+        val store = InMemoryCloudStateStore()
+        val first = Fixture(true, store)
+        runCurrent()
+        first.now = 10
+        first.setSensor(1f, 2f, 3f, .2f, MovementState.STILL)
+        advanceTimeBy(5_000); runCurrent()
+        first.network.online = false
+        first.now = 20
+        first.setSensor(2f, 3f, 4f, .3f, MovementState.MOVEMENT)
+        advanceTimeBy(5_000); runCurrent()
+        val originalSession = requireNotNull(store.activeSession()).sessionId
+        first.now = 30
+        first.viewModel.endMonitoring(); runCurrent()
+        first.viewModel.stopSync(); runCurrent()
+
+        assertEquals(listOf(PendingOperationType.UPLOAD_MEASUREMENT, PendingOperationType.END_SESSION), store.pendingOperations().map { it.type })
+        val restarted = Fixture(false, store)
+        runCurrent()
+        assertEquals(originalSession, store.activeSession()?.sessionId)
+        assertFalse(restarted.viewModel.state.value.monitoringActive)
+        restarted.network.online = true
+        advanceTimeBy(5_000); runCurrent()
+
+        assertEquals(listOf(20L), restarted.repository.uploads.map { it.timestamp })
+        assertEquals(listOf(30L), restarted.repository.endTimes)
+        assertNull(store.activeSession())
+        assertEquals(0, store.pendingCount)
+        restarted.viewModel.stopSync()
+    }
+
+    @Test
+    fun `offline measurement and end schedule durable recovery work`() = cloudTest(online = false) { fixture ->
+        advanceTimeBy(5_000)
+        runCurrent()
+        fixture.viewModel.endMonitoring()
+        runCurrent()
+
+        assertTrue(fixture.scheduler.calls >= 2)
+        assertTrue(fixture.store.pendingOperations().any { it.type == PendingOperationType.END_SESSION })
     }
 
     @Test
@@ -485,6 +529,7 @@ class CloudSyncViewModelTest {
     ) = runTest(dispatcher) {
         val fixture = Fixture(online, store)
         try {
+            runCurrent()
             block(fixture)
         } finally {
             fixture.viewModel.stopSync()
@@ -500,6 +545,7 @@ class CloudSyncViewModelTest {
         val repository = FakeCloudRepository()
         val store = store
         val network = FakeNetworkMonitor(online)
+        val scheduler = CountingScheduler()
         val sensor = MutableStateFlow<SensorUiState>(
             SensorUiState.Active(
                 MovementAnalysis(SensorSample(0f, 0f, 9.81f, 1L), 0f, MovementState.STILL),
@@ -520,6 +566,8 @@ class CloudSyncViewModelTest {
             now = { now },
             stateStore = store,
             newId = { "id-${now}" },
+            storageDispatcher = Dispatchers.Main,
+            recoveryScheduler = scheduler,
             log = { _, _, _ -> },
         )
 
@@ -528,6 +576,11 @@ class CloudSyncViewModelTest {
                 MovementAnalysis(SensorSample(x, y, z, now.coerceAtLeast(1L)), intensity, state),
             )
         }
+    }
+
+    private class CountingScheduler : CloudRecoveryScheduler {
+        var calls = 0
+        override fun schedule() { calls++ }
     }
 
     private class FakeNetworkMonitor(var online: Boolean) : NetworkMonitor {

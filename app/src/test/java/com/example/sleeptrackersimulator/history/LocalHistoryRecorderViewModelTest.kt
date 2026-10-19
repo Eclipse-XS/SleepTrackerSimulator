@@ -74,7 +74,7 @@ class LocalHistoryRecorderViewModelTest {
     }
 
     @Test
-    fun `multiple activations before a sample are represented by one boolean record`() = runTest(dispatcher) {
+    fun `multiple activations remain distinct while compatibility record uses boolean`() = runTest(dispatcher) {
         val fixture = Fixture()
         runCurrent()
         fixture.activations.emit(ActuatorActivation(ActuatorAction.VIBRATION_PULSE, TriggerSource.LOCAL_AUTOMATIC, 800L))
@@ -84,6 +84,7 @@ class LocalHistoryRecorderViewModelTest {
         runCurrent()
         assertEquals(1, fixture.repository.records.size)
         assertTrue(fixture.repository.records.single().actionTriggered)
+        assertEquals(2, fixture.repository.events.size)
         fixture.close()
     }
 
@@ -133,6 +134,7 @@ class LocalHistoryRecorderViewModelTest {
 
     private class FakeRepository : SensorHistoryRepository {
         val records = mutableListOf<SensorRecord>()
+        val events = mutableListOf<ActuatorEvent>()
         var failNextInsert = false
 
         override suspend fun addMeasurement(timestamp: Long, sensorValue: Float, actionTriggered: Boolean): Long {
@@ -156,6 +158,9 @@ class LocalHistoryRecorderViewModelTest {
             MutableStateFlow(records.count { it.actionTriggered })
 
         override suspend fun deleteOlderThan(beforeExclusive: Long): Int = 0
+        override suspend fun addActuatorEvent(event: ActuatorEvent) { events += event }
+        override fun observeActuatorEventCount(sinceInclusive: Long): Flow<Int> =
+            MutableStateFlow(events.count { it.timestamp >= sinceInclusive })
     }
 
     companion object {

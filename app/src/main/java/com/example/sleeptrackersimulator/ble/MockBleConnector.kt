@@ -44,6 +44,7 @@ class MockBleConnector(
             return
         }
         stopTelemetry()
+        clearSessionMeasurements()
         lifecycleJob?.cancel()
         _state.value = BleConnectionState.Scanning
         diagnostic("scan", DiagnosticResult.STARTED)
@@ -73,6 +74,7 @@ class MockBleConnector(
             return
         }
         lifecycleJob?.cancel()
+        clearSessionMeasurements()
         _state.value = BleConnectionState.Connecting(device)
         diagnostic("connect", DiagnosticResult.STARTED, mapOf("deviceName" to device.name))
         log("CONNECTING ${device.name}")
@@ -100,6 +102,7 @@ class MockBleConnector(
             else -> null
         }
         stopTelemetry()
+        clearSessionMeasurements()
         _state.value = BleConnectionState.Disconnected(device)
         diagnostic("disconnect", DiagnosticResult.SUCCESS, mapOf("deviceName" to device?.name))
         log("DISCONNECTED${device?.let { " ${it.name}" }.orEmpty()}")
@@ -133,15 +136,19 @@ class MockBleConnector(
             DeviceCommand.REQUEST_STATUS -> BleOperationResult.Success(
                 "CONNECTED; STREAM=${if (band.isStreaming) "ON" else "OFF"}; HR=${band.currentMeasurement.beatsPerMinute}",
             )
+            DeviceCommand.ALERT -> BleOperationResult.Success("ALERT_ACKNOWLEDGED")
         }.also { result ->
             log("WRITE result: ${result.message}")
             diagnostic("write", DiagnosticResult.SUCCESS, mapOf("command" to parsed.name, "resultMessage" to result.message))
         }
     }
 
+    override fun sendData(data: String): BleOperationResult = writeCommand(data)
+
     override fun close() {
         lifecycleJob?.cancel()
         stopTelemetry()
+        clearSessionMeasurements()
         band.close()
     }
 
@@ -165,6 +172,11 @@ class MockBleConnector(
         band.stopStreaming()
         measurementJob?.cancel()
         measurementJob = null
+    }
+
+    private fun clearSessionMeasurements() {
+        _heartRate.value = null
+        _heartRateHistory.value = emptyList()
     }
 
     private fun notConnected(operation: String): BleOperationResult.Error =

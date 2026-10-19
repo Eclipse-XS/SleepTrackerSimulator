@@ -1,0 +1,10 @@
+flowchart TD
+  I[Sensor or ML state] --> E[Pure rule evaluation]
+  E -->|no trigger| N[Update runtime state]
+  E -->|trigger| C[SmartScenariosViewModel coordinator]
+  C --> A[Vibration result]
+  C --> B[Mock BLE ALERT acknowledgement]
+  C --> V[Visible AlertDialog]
+  A --> R[Persist execution result]
+  B --> R
+  V --> R

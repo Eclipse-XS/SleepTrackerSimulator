@@ -44,7 +44,7 @@ class AnalyticsViewModel(
         combine(
             repository.observeRecent(sinceInclusive, MAX_CHART_POINTS),
             repository.observeCount(sinceInclusive),
-            repository.observeActionCount(sinceInclusive),
+            repository.observeActuatorEventCount(sinceInclusive),
         ) { records, count, actionCount ->
             AnalyticsUiState(
                 records = records,

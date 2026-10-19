@@ -138,6 +138,15 @@ class ActuatorViewModelTest {
     }
 
     @Test
+    fun `camera permission denial leaves flashlight off without hardware call`() = actuatorTest { fixture ->
+        fixture.viewModel.reportFlashlightPermissionDenied()
+
+        assertTrue(fixture.actuator.flashlightStates.isEmpty())
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+        assertTrue(fixture.viewModel.state.value.lastError!!.contains("permission denied"))
+    }
+
+    @Test
     fun `remote vibration true and false controls persistent vibration`() = actuatorTest { fixture ->
         fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = true)))
         runCurrent()

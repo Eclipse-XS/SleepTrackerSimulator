@@ -1,0 +1,23 @@
+sequenceDiagram
+  participant Sensor
+  participant ML
+  participant Rules
+  participant Room
+  participant Cloud
+  participant Actuator
+  participant BLE
+  participant UI
+  Sensor->>ML: window of 20 samples
+  ML-->>Rules: class and confidence
+  Sensor-->>Rules: axes and intensity
+  Sensor->>Room: persist sample
+  Sensor->>Cloud: enqueue monitoring snapshot
+  Rules->>Rules: consecutive matches, edge, cooldown
+  par side effects
+    Rules->>Actuator: request pulse
+    Rules->>BLE: send ALERT
+    Rules->>Room: save execution with actual result
+  end
+  Room-->>UI: recent records and executions
+  Cloud-->>UI: sync state
+  BLE-->>UI: connection and acknowledgement

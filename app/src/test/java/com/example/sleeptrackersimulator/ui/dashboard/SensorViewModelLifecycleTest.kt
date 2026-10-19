@@ -13,10 +13,10 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Assert.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SensorViewModelLifecycleTest {
@@ -60,4 +60,28 @@ class SensorViewModelLifecycleTest {
             awaitClose { activeCollectors-- }
         }
     }
+
+    @Test fun `background unregisters even while multiple downstream subscribers remain`() =
+        runTest(dispatcher) {
+            val source = CountingDataSource()
+            val viewModel = SensorViewModel(source)
+            val collectors = List(4) { launch { viewModel.uiState.collect {} } }
+            viewModel.setForegroundActive(true)
+            runCurrent()
+            assertEquals(1, source.activeCollectors)
+
+            repeat(3) {
+                viewModel.setForegroundActive(false)
+                runCurrent()
+                assertEquals(0, source.activeCollectors)
+                viewModel.setForegroundActive(true)
+                runCurrent()
+                assertEquals(1, source.activeCollectors)
+            }
+
+            viewModel.setForegroundActive(false)
+            runCurrent()
+            assertEquals(0, source.activeCollectors)
+            collectors.forEach { it.cancel() }
+        }
 }

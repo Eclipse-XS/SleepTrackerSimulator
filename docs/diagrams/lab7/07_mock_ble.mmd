@@ -1,0 +1,8 @@
+stateDiagram-v2
+  [*] --> Disconnected
+  Disconnected --> Scanning: startScan
+  Scanning --> DeviceFound: virtual Sleep Band emitted
+  DeviceFound --> Connected: connect
+  Connected --> AlertAcknowledged: DeviceCommand.ALERT
+  AlertAcknowledged --> Connected: acknowledgement logged
+  Connected --> Disconnected: disconnect

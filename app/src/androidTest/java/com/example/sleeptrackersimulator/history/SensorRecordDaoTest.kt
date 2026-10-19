@@ -52,4 +52,12 @@ class SensorRecordDaoTest {
         assertEquals(1, dao.deleteOlderThan(2_000))
         assertEquals(2, dao.observeCount(1).first())
     }
+
+    @Test
+    fun actuatorEventsAreStoredIndividually() = runBlocking {
+        dao.insertActuatorEvent(ActuatorEvent("e1", 1_000, "VIBRATION_PULSE", "MANUAL", true, "SUCCESS"))
+        dao.insertActuatorEvent(ActuatorEvent("e2", 1_001, "FLASHLIGHT_ENABLED", "REMOTE", true, "SUCCESS"))
+
+        assertEquals(2, dao.observeActuatorEventCount(1).first())
+    }
 }

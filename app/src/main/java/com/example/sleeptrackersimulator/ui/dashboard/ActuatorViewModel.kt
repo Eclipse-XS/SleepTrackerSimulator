@@ -17,6 +17,8 @@ import com.example.sleeptrackersimulator.actuator.TriggerSource
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
+import com.example.sleeptrackersimulator.ml.ActivityClass
+import com.example.sleeptrackersimulator.ml.MlUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +45,7 @@ class ActuatorViewModel(
         )
     },
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    mlState: StateFlow<MlUiState>? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         ActuatorUiState(
@@ -58,6 +61,7 @@ class ActuatorViewModel(
     private var receivedInitialRemoteSnapshot = false
     private var manualVibrationBeforeInitialRemoteSnapshot = false
     private var manualFlashlightBeforeInitialRemoteSnapshot = false
+    private var lastMlCritical = false
 
     init {
         viewModelScope.launch {
@@ -75,6 +79,25 @@ class ActuatorViewModel(
                     DiagnosticLog.event(DiagnosticTags.ACTUATORS, "automaticMovementAlert", DiagnosticResult.STARTED, source = TriggerSource.LOCAL_AUTOMATIC.name)
                     applyPulse(actuator.triggerVibrationPulse(), TriggerSource.LOCAL_AUTOMATIC)
                 }
+            }
+        }
+        if (mlState != null) viewModelScope.launch {
+            mlState.collect { ml ->
+                val prediction = (ml as? MlUiState.Ready)?.prediction
+                val critical = prediction?.activity == ActivityClass.ACTIVE && prediction.confidence >= ML_ALERT_CONFIDENCE
+                if (critical && !lastMlCritical && foregroundActive &&
+                    _state.value.automaticControlEnabled && !_state.value.vibrationEnabled
+                ) {
+                    DiagnosticLog.event(
+                        DiagnosticTags.ACTUATORS,
+                        "automaticMlAlert",
+                        DiagnosticResult.STARTED,
+                        source = TriggerSource.LOCAL_AUTOMATIC.name,
+                        details = mapOf("class" to prediction.activity.name, "confidence" to prediction.confidence),
+                    )
+                    applyPulse(actuator.triggerVibrationPulse(), TriggerSource.LOCAL_AUTOMATIC)
+                }
+                lastMlCritical = critical
             }
         }
         viewModelScope.launch {
@@ -152,6 +175,23 @@ class ActuatorViewModel(
         if (!receivedInitialRemoteSnapshot) manualFlashlightBeforeInitialRemoteSnapshot = true
         DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.STARTED, source = TriggerSource.MANUAL.name, details = mapOf("enabled" to enabled))
         applyFlashlight(enabled, TriggerSource.MANUAL)
+    }
+
+    fun reportFlashlightPermissionDenied() {
+        _state.update {
+            it.copy(
+                flashlightEnabled = false,
+                lastError = "Camera permission denied; flashlight remains disabled",
+            )
+        }
+        log("Camera permission denied", null)
+    }
+
+    fun triggerSmartRulePulse(): ActuatorResult {
+        if (!foregroundActive) return ActuatorResult(ActuatorOperationStatus.ERROR, "APP_NOT_IN_FOREGROUND")
+        val result = actuator.triggerVibrationPulse()
+        applyPulse(result, TriggerSource.LOCAL_AUTOMATIC)
+        return result
     }
 
     private fun applyPulse(result: ActuatorResult, source: TriggerSource) {
@@ -253,16 +293,18 @@ class ActuatorViewModel(
     companion object {
         private const val MAX_REMOTE_RECONNECT_ATTEMPTS = 3L
         private const val REMOTE_RECONNECT_DELAY_MILLIS = 1_000L
+        private const val ML_ALERT_CONFIDENCE = 0.75f
 
         fun factory(
             sensorState: StateFlow<SensorUiState>,
             actuator: SmartActuator,
             remoteRepository: RemoteControlRepository,
+            mlState: StateFlow<MlUiState>? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(ActuatorViewModel::class.java))
-                return ActuatorViewModel(sensorState, actuator, remoteRepository) as T
+                return ActuatorViewModel(sensorState, actuator, remoteRepository, mlState = mlState) as T
             }
         }
     }

@@ -1,0 +1,16 @@
+flowchart LR
+    S[Android SensorManager] --> DS[AndroidAccelerometerDataSource]
+    DS --> SV[SensorViewModel]
+    SV --> BUF[20 sample circular buffer]
+    BUF --> TFL[TFLite ActivityClassifier]
+    TFL --> ML[MlViewModel AI Insights]
+    SV --> ROOM[(Room sensor history)]
+    ML --> ACT[ActuatorViewModel]
+    ACT --> HW[Vibration and torch]
+    ACT --> ROOM
+    BLE[Virtual Sleep Band] --> BV[BleViewModel]
+    SV --> CLOUD[CloudSyncViewModel]
+    BV --> CLOUD
+    CLOUD --> OUT[(Room durable outbox)]
+    OUT --> WM[WorkManager]
+    WM --> FB[(Firebase RTDB)]
