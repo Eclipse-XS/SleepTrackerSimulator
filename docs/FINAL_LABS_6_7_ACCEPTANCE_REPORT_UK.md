@@ -8,7 +8,9 @@
 - Гілка: `release/labs-1-7-verified`.
 - Original verified SHA: `ab0bda4bf739422f52d1ed1719fbcefea1d257a1`.
 - Final implementation SHA: `1bcec9ea7ebc86f2a65302a44a7cc96fab5d294d`.
+- Publication checkpoint SHA: `3b19dfc66ae74aa58dcd33e5f2bdd8ffeecb12ea`.
 - PR: `https://github.com/Eclipse-XS/SleepTrackerSimulator/pull/1`.
+- GitHub Actions run `39416894511`: `android` PASS, `firebase-rules` PASS.
 - `main` не змінювався; merge і force-push не виконувалися.
 - До початку робіт у worktree були сторонні untracked Lab 5/QA/tool artifacts. Вони не входять до release-набору.
 
@@ -139,4 +141,4 @@ Room transaction не охоплює Bluetooth, Android actuator або Firebase
 - **Lab 6: READY WITH LIMITATIONS.**
 - **Lab 7: READY WITH LIMITATIONS.**
 - **Production: NO-GO.** Причини: performance FAIL, відсутня реальна ML validation, physical BLE і physical-device release benchmark.
-- **GitHub: LOCAL VERIFIED; publication/CI verdict встановлюється тільки після commit, push і перевірки remote SHA та Actions.**
+- **GitHub: PUBLISHED; PR #1 OPEN; Android CI PASS; Firebase Rules CI PASS; merge не виконано.**
