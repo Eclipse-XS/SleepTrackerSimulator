@@ -7,7 +7,7 @@
 - Репозиторій: `Eclipse-XS/SleepTrackerSimulator`.
 - Гілка: `release/labs-1-7-verified`.
 - Original verified SHA: `ab0bda4bf739422f52d1ed1719fbcefea1d257a1`.
-- Final implementation SHA: буде зафіксовано після створення release commit; це не є доказом до push.
+- Final implementation SHA: `1bcec9ea7ebc86f2a65302a44a7cc96fab5d294d`.
 - PR: `https://github.com/Eclipse-XS/SleepTrackerSimulator/pull/1`.
 - `main` не змінювався; merge і force-push не виконувалися.
 - До початку робіт у worktree були сторонні untracked Lab 5/QA/tool artifacts. Вони не входять до release-набору.
