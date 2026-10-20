@@ -35,6 +35,14 @@ const validSession = {
   }
 };
 
+const validRuleEvent = {
+  eventId: "e1", ruleId: "r1", ruleName: "Movement alert", timestamp: 1001,
+  source: "ML_CLASS", sourceValue: "ACTIVE", sensorTimestampNanos: 100,
+  predictionId: "p1", mlClass: "ACTIVE", mlConfidence: 0.91,
+  requestedAction: "MOCK_BLE_ALERT", actuatorResult: "NOT_REQUESTED",
+  bleDeliveryResult: "ALERT_ACK:e1", schemaVersion: 1
+};
+
 test("owner can write and read a valid session", async () => {
   const db = env.authenticatedContext("owner").database();
   await assertSucceeds(db.ref("users/owner/sessions/s1").set(validSession));
@@ -65,12 +73,27 @@ test("remote controls accept only booleans and known fields", async () => {
 test("owner can write a schema-validated smart-rule event", async () => {
   const ref = env.authenticatedContext("owner").database().ref("users/owner/sessions/s1");
   await assertSucceeds(ref.set(validSession));
-  await assertSucceeds(ref.child("ruleEvents/e1").set({
-    eventId: "e1", ruleId: "r1", ruleName: "Movement alert", timestamp: 1001,
-    source: "MOVEMENT_INTENSITY", sourceValue: "1.5", sensorTimestampNanos: 100,
-    requestedAction: "MOCK_BLE_ALERT", actuatorResult: "NOT_REQUESTED",
-    bleDeliveryResult: "ALERT_ACK:e1", schemaVersion: 1
-  }));
+  await assertSucceeds(ref.child("ruleEvents/e1").set(validRuleEvent));
+});
+
+test("smart-rule validation rejects invalid action, confidence, timestamp, id and extra fields", async () => {
+  const ref = env.authenticatedContext("owner").database().ref("users/owner/sessions/s1");
+  await assertSucceeds(ref.set(validSession));
+  await assertFails(ref.child("ruleEvents/e1").set({ ...validRuleEvent, requestedAction: "DELETE_DATA" }));
+  await assertFails(ref.child("ruleEvents/e1").set({ ...validRuleEvent, mlConfidence: 1.01 }));
+  await assertFails(ref.child("ruleEvents/e1").set({ ...validRuleEvent, timestamp: 0 }));
+  await assertFails(ref.child("ruleEvents/e1").set({ ...validRuleEvent, eventId: "other" }));
+  await assertFails(ref.child("ruleEvents/e1").set({ ...validRuleEvent, unexpected: true }));
+});
+
+test("same event UUID is idempotent; overwrite and cross-user delete are rejected", async () => {
+  const ref = env.authenticatedContext("owner").database().ref("users/owner/sessions/s1");
+  await assertSucceeds(ref.set(validSession));
+  await assertSucceeds(ref.child("ruleEvents/e1").set(validRuleEvent));
+  await assertSucceeds(ref.child("ruleEvents/e1").set(validRuleEvent));
+  await assertFails(ref.child("ruleEvents/e1").set({ ...validRuleEvent, actuatorResult: "CHANGED" }));
+  await assertFails(env.authenticatedContext("attacker").database()
+    .ref("users/owner/sessions/s1/ruleEvents/e1").remove());
 });
 
 test("invalid and cross-user smart-rule events are denied", async () => {

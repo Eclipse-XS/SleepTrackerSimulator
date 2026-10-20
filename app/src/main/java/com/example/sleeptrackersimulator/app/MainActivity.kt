@@ -36,7 +36,6 @@ import com.example.sleeptrackersimulator.cloud.FirebaseCloudRepository
 import com.example.sleeptrackersimulator.cloud.FirebaseAnonymousAuthRepository
 import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
 import com.example.sleeptrackersimulator.cloud.WorkManagerCloudRecoveryScheduler
-import com.example.sleeptrackersimulator.cloud.OutboxSmartRuleCloudEventSink
 import com.example.sleeptrackersimulator.sensor.AndroidAccelerometerDataSource
 import com.example.sleeptrackersimulator.history.LocalHistoryRecorderViewModel
 import com.example.sleeptrackersimulator.history.RoomSensorHistoryRepository
@@ -57,6 +56,7 @@ import com.example.sleeptrackersimulator.ml.ActivityClassifier
 import com.example.sleeptrackersimulator.ml.MlViewModel
 import com.example.sleeptrackersimulator.smart.RoomSmartRuleRepository
 import com.example.sleeptrackersimulator.smart.SmartScenariosViewModel
+import com.example.sleeptrackersimulator.smart.RoomSmartRuleEventCoordinator
 import com.example.sleeptrackersimulator.ui.smart.SmartScenariosScreen
 import com.example.sleeptrackersimulator.ble.BleOperationResult
 
@@ -158,7 +158,8 @@ class MainActivity : ComponentActivity() {
                     is BleOperationResult.Error -> "ERROR:${result.message}"
                 }
             },
-            cloudEvents = OutboxSmartRuleCloudEventSink(cloudStateStore, cloudRecoveryScheduler),
+            eventCoordinator = RoomSmartRuleEventCoordinator(database.smartRuleEventCoordinatorDao()),
+            recoveryScheduler = cloudRecoveryScheduler,
         )
     }
 

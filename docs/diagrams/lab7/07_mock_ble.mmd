@@ -3,6 +3,7 @@ stateDiagram-v2
   Disconnected --> Scanning: startScan
   Scanning --> DeviceFound: virtual Sleep Band emitted
   DeviceFound --> Connected: connect
-  Connected --> AlertAcknowledged: DeviceCommand.ALERT
-  AlertAcknowledged --> Connected: acknowledgement logged
+  Connected --> AlertAcknowledged: sendAlert eventId
+  AlertAcknowledged --> Connected: ALERT_ACK eventId and revision
+  Connected --> Connected: repeated eventId returns duplicate ACK without revision increment
   Connected --> Disconnected: disconnect

@@ -1,16 +1,19 @@
 sequenceDiagram
-  participant VM as CloudSyncViewModel
+  participant Coordinator as SmartRuleEventCoordinator
   participant Room as Cloud outbox DAO
+  participant Reconciler
   participant Worker as WorkManager recovery
   participant Firebase as Realtime Database
-  VM->>Room: enqueue operation transactionally
-  VM->>Firebase: attempt delivery
+  Coordinator->>Room: insert execution and gated outbox atomically
+  Coordinator->>Room: finalize payload and set ready true atomically
+  Worker->>Reconciler: reconcile incomplete events before drain
+  Reconciler->>Room: mark ambiguous action OUTCOME_UNKNOWN
+  Worker->>Room: read FIFO head only when ready
+  Worker->>Firebase: put ruleEvents by stable eventId
   alt acknowledged
-    Firebase-->>VM: success
-    VM->>Room: mark delivered
+    Firebase-->>Worker: success
+    Worker->>Room: set execution SYNCED and remove head
   else offline or rejected
-    Firebase-->>VM: error
-    VM->>Room: keep pending and record attempt
-    Worker->>Room: load pending operations
-    Worker->>Firebase: retry when constraints allow
+    Firebase-->>Worker: error
+    Worker->>Room: keep pending or mark permanent failure
   end

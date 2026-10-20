@@ -28,7 +28,7 @@
 
 ## Room і Firebase
 
-Room — локальне джерело історії та durable outbox. Smart Rule спочатку отримує `PENDING` execution row, після чого виконується side effect. Окремий `UPLOAD_RULE_EVENT` синхронізує той самий UUID у `/ruleEvents/<eventId>`. Після Firebase ACK локальний cloud status стає `SYNCED`. Force-stop Android блокує фонову роботу до наступного запуску застосунку.
+Room — локальне джерело історії та durable outbox. Одна Room transaction створює `PENDING` execution і gated `UPLOAD_RULE_EVENT` з тим самим UUID. Outbox не доступний для доставки, доки друга transaction не збереже actual actuator/BLE outcome. WorkManager спочатку запускає reconciler, потім доставляє готовий FIFO head у `/ruleEvents/<eventId>`. Після Firebase ACK локальний cloud status стає `SYNCED`. Force-stop Android блокує фонову роботу до наступного запуску застосунку.
 
 ## Mock BLE
 
@@ -51,5 +51,6 @@ Room — локальне джерело історії та durable outbox. Sma
 
 - Дані синтетичні; польова валідація відсутня.
 - Фізичний BLE transport не реалізований.
-- Повний Android Profiler soak-run і відео мають виконуватися вручну та не можуть вважатися PASS без артефактів.
+- Контрольний debug AVD run має 90,99% modern jank; performance acceptance — FAIL, потрібні Perfetto root-cause і physical release benchmark.
+- Повне desktop video нового E2E відсутнє; наявні correlated record, Android instrumentation і Firebase Emulator evidence не є його заміною.
 - Release не має production hardening, user-facing export/delete і перевірки Play Console.

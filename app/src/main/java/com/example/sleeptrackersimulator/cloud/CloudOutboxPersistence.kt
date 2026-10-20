@@ -26,6 +26,7 @@ data class CloudOutboxEntity(
     val retryCount: Int,
     val lastError: String?,
     val deliveryState: String,
+    val readyForDelivery: Boolean = true,
 )
 
 @Entity(tableName = "cloud_active_session")
@@ -81,15 +82,18 @@ abstract class CloudOutboxDao {
 
     @Transaction
     open fun enqueue(entity: CloudOutboxEntity, maximumOperations: Int) {
-        val full = count() >= maximumOperations
-        val protectedOperation = when (entity.type) {
-            PendingOperationType.END_SESSION.name -> countTypeForSession(PendingOperationType.END_SESSION.name, entity.sessionId) == 0
-            PendingOperationType.UPLOAD_RULE_EVENT.name -> countTypeForSession(PendingOperationType.UPLOAD_RULE_EVENT.name, entity.sessionId) < maximumOperations
-            else -> false
+        val currentCount = count()
+        val limit = when (entity.type) {
+            PendingOperationType.UPLOAD_MEASUREMENT.name -> maximumOperations - RoomCloudStateStore.RESERVED_CRITICAL_SLOTS
+            PendingOperationType.UPLOAD_RULE_EVENT.name -> maximumOperations - RoomCloudStateStore.RESERVED_END_SESSION_SLOTS
+            PendingOperationType.END_SESSION.name -> maximumOperations
+            else -> maximumOperations
         }
-        if (full && !protectedOperation) {
+        val duplicateEnd = entity.type == PendingOperationType.END_SESSION.name &&
+            countTypeForSession(PendingOperationType.END_SESSION.name, entity.sessionId) > 0
+        if (duplicateEnd || currentCount >= limit) {
             throw CloudOutboxFullException(
-                "Cloud outbox limit ($maximumOperations) reached; collection was not acknowledged",
+                "Cloud outbox capacity policy rejected ${entity.type} at $currentCount/$maximumOperations",
             )
         }
         insert(entity)
@@ -147,7 +151,7 @@ class RoomCloudStateStore(
 
     override fun peek(): PendingCloudOperation? {
         ensureLegacyImported()
-        return dao.first()?.toModel()
+        return dao.first()?.takeIf { it.readyForDelivery }?.toModel()
     }
 
     override fun removeFirst() = dao.removeFirst()
@@ -204,6 +208,7 @@ class RoomCloudStateStore(
         retryCount = retryCount,
         lastError = lastError,
         deliveryState = deliveryState.name,
+        readyForDelivery = readyForDelivery,
     )
 
     private fun CloudOutboxEntity.toModel() = PendingCloudOperation(
@@ -217,6 +222,7 @@ class RoomCloudStateStore(
         retryCount = retryCount,
         lastError = lastError,
         deliveryState = DeliveryState.valueOf(deliveryState),
+        readyForDelivery = readyForDelivery,
     )
 
     private fun ActiveCloudSession.toEntity() = CloudSessionEntity(
@@ -233,5 +239,9 @@ class RoomCloudStateStore(
         monitoringActive = monitoringActive,
     )
 
-    companion object { const val DEFAULT_MAXIMUM_OPERATIONS = 10_000 }
+    companion object {
+        const val DEFAULT_MAXIMUM_OPERATIONS = 10_000
+        const val RESERVED_CRITICAL_SLOTS = 2
+        const val RESERVED_END_SESSION_SLOTS = 1
+    }
 }

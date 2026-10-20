@@ -6,7 +6,8 @@ sequenceDiagram
   participant TFLite
   SensorManager->>DataSource: SensorEvent(x,y,z,t)
   DataSource->>SensorVM: SensorSample
-  SensorVM-->>MlVM: StateFlow sample
-  MlVM->>MlVM: append to 20x3 circular window
+  SensorVM-->>MlVM: ordered SharedFlow sample
+  MlVM->>MlVM: validate timestamp and append to bounded 20x3 window
+  MlVM->>MlVM: discard non-monotonic or gap over 100 ms
   MlVM->>TFLite: float[1,20,3]
   TFLite-->>MlVM: probabilities[REST,RESTLESS,ACTIVE]

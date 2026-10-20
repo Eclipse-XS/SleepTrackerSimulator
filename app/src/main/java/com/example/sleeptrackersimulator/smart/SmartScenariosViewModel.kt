@@ -6,8 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.ml.ActivityPrediction
-import com.example.sleeptrackersimulator.cloud.NoOpSmartRuleCloudEventSink
-import com.example.sleeptrackersimulator.cloud.SmartRuleCloudEventSink
+import com.example.sleeptrackersimulator.cloud.CloudRecoveryScheduler
+import com.example.sleeptrackersimulator.cloud.NoOpCloudRecoveryScheduler
 import com.example.sleeptrackersimulator.cloud.SmartRuleEventPayload
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +35,8 @@ class SmartScenariosViewModel(
     private val repository: SmartRuleRepository,
     private val vibration: () -> String,
     private val bleAlert: (String) -> String,
-    private val cloudEvents: SmartRuleCloudEventSink = NoOpSmartRuleCloudEventSink,
+    private val eventCoordinator: SmartRuleEventCoordinator,
+    private val recoveryScheduler: CloudRecoveryScheduler = NoOpCloudRecoveryScheduler,
     private val engine: SmartRuleEngine = SmartRuleEngine(),
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val elapsedClock: () -> Long = SystemClock::elapsedRealtime,
@@ -55,10 +56,14 @@ class SmartScenariosViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SmartScenariosUiState())
 
     init {
+        val startupBoundary = wallClock()
         val events = Channel<EvaluationEvent>(Channel.BUFFERED)
-        viewModelScope.launch(dispatcher) { analyses.collect { events.send(EvaluationEvent.Sensor(it)) } }
-        viewModelScope.launch(dispatcher) { predictions.collect { events.send(EvaluationEvent.Prediction(it)) } }
         viewModelScope.launch(dispatcher) {
+            runCatching { eventCoordinator.reconcile(startupBoundary) }
+                .onSuccess { report -> if (report.recovered > 0) recoveryScheduler.schedule() }
+                .onFailure { error -> localState.update { it.copy(lastError = error.message ?: "Execution recovery failed") } }
+            launch { analyses.collect { events.send(EvaluationEvent.Sensor(it)) } }
+            launch { predictions.collect { events.send(EvaluationEvent.Prediction(it)) } }
             var latestMovement: MovementAnalysis? = null
             for (event in events) {
                 when (event) {
@@ -97,21 +102,36 @@ class SmartScenariosViewModel(
 
     private suspend fun execute(decision: SmartRuleDecision) {
         val executionId = UUID.randomUUID().toString()
-        val sessionId = cloudEvents.activeSessionId()
+        val eventTimestamp = wallClock()
+        val draftPayload = decision.toPayload(
+            executionId = executionId,
+            timestamp = eventTimestamp,
+            actuatorStatus = "PENDING",
+            bleStatus = "PENDING",
+        )
         try {
-            repository.record(
+            eventCoordinator.prepare(
                 SmartRuleExecutionEntity(
                     executionId = executionId, ruleId = decision.rule.id,
-                    timestamp = wallClock(), sourceValue = decision.sourceValue,
+                    timestamp = eventTimestamp, sourceValue = decision.sourceValue,
                     action = decision.rule.action.name, result = "PENDING", failureReason = null,
                     ruleNameSnapshot = decision.rule.name,
-                    sessionId = sessionId,
                     sensorTimestampNanos = decision.sensorTimestampNanos,
                     predictionId = decision.prediction?.predictionId,
+                    triggerSource = decision.rule.source.name,
+                    mlClass = decision.prediction?.activity?.name,
+                    mlConfidence = decision.prediction?.confidence,
                 ),
+                draftPayload,
             )
         } catch (error: Exception) {
-            localState.update { it.copy(lastError = error.message ?: "Execution intent persistence failed") }
+            localState.update { it.copy(lastError = error.message ?: "Atomic execution intent persistence failed") }
+            return
+        }
+        try {
+            eventCoordinator.markActionInProgress(executionId)
+        } catch (error: Exception) {
+            localState.update { it.copy(lastError = error.message ?: "Cannot start rule action") }
             return
         }
         var actuatorStatus = "NOT_REQUESTED"
@@ -131,45 +151,54 @@ class SmartScenariosViewModel(
         if (outcomes.any { it.startsWith("ERROR") || it == "NOT_CONNECTED" || it == "APP_NOT_IN_FOREGROUND" }) {
             failure = outcomes.joinToString("; ")
         }
-        val cloudResult = cloudEvents.enqueue(
-            SmartRuleEventPayload(
-                eventId = executionId,
-                ruleId = decision.rule.id,
-                ruleName = decision.rule.name,
-                timestamp = wallClock(),
-                source = decision.rule.source.name,
-                sourceValue = decision.sourceValue,
-                sensorTimestampNanos = decision.sensorTimestampNanos,
-                predictionId = decision.prediction?.predictionId,
-                mlClass = decision.prediction?.activity?.name,
-                mlConfidence = decision.prediction?.confidence,
-                requestedAction = decision.rule.action.name,
-                actuatorResult = actuatorStatus,
-                bleDeliveryResult = bleStatus,
-            ),
-        )
-        val combinedFailure = listOfNotNull(failure, cloudResult.error).joinToString("; ").ifBlank { null }
         runCatching {
-            repository.updateOutcome(
+            eventCoordinator.finalizeEvent(
                 executionId,
                 if (failure == null) "SUCCESS" else "FAILED",
-                combinedFailure,
+                failure,
                 actuatorStatus,
                 bleStatus,
-                cloudResult.status,
+                decision.toPayload(executionId, eventTimestamp, actuatorStatus, bleStatus),
             )
-        }.onFailure { error -> localState.update { it.copy(lastError = error.message ?: "Execution outcome persistence failed") } }
+        }.onSuccess { finalized ->
+            if (finalized.cloudStatus == "PENDING") recoveryScheduler.schedule()
+        }.onFailure { error -> localState.update { it.copy(lastError = error.message ?: "Execution outcome finalization failed") } }
     }
+
+    private fun SmartRuleDecision.toPayload(
+        executionId: String,
+        timestamp: Long,
+        actuatorStatus: String,
+        bleStatus: String,
+    ) = SmartRuleEventPayload(
+        eventId = executionId,
+        ruleId = rule.id,
+        ruleName = rule.name,
+        timestamp = timestamp,
+        source = rule.source.name,
+        sourceValue = sourceValue,
+        sensorTimestampNanos = sensorTimestampNanos,
+        predictionId = prediction?.predictionId,
+        mlClass = prediction?.activity?.name,
+        mlConfidence = prediction?.confidence,
+        requestedAction = rule.action.name,
+        actuatorResult = actuatorStatus,
+        bleDeliveryResult = bleStatus,
+    )
 
     companion object {
         fun factory(
             analyses: Flow<MovementAnalysis>, predictions: Flow<ActivityPrediction>, repository: SmartRuleRepository,
             vibration: () -> String, bleAlert: (String) -> String,
-            cloudEvents: SmartRuleCloudEventSink = NoOpSmartRuleCloudEventSink,
+            eventCoordinator: SmartRuleEventCoordinator,
+            recoveryScheduler: CloudRecoveryScheduler = NoOpCloudRecoveryScheduler,
         ) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                SmartScenariosViewModel(analyses, predictions, repository, vibration, bleAlert, cloudEvents) as T
+                SmartScenariosViewModel(
+                    analyses, predictions, repository, vibration, bleAlert,
+                    eventCoordinator, recoveryScheduler,
+                ) as T
         }
     }
 }

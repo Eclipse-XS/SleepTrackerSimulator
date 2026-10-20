@@ -43,6 +43,9 @@ data class SmartRuleExecutionEntity(
     val actuatorStatus: String = "NOT_REQUESTED",
     val bleStatus: String = "NOT_REQUESTED",
     val cloudStatus: String = "NOT_QUEUED",
+    val triggerSource: String = "",
+    val mlClass: String? = null,
+    val mlConfidence: Float? = null,
 )
 
 data class SmartRule(

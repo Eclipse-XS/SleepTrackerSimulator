@@ -15,16 +15,18 @@ import com.example.sleeptrackersimulator.cloud.CloudSessionEntity
 import com.example.sleeptrackersimulator.smart.SmartRuleDao
 import com.example.sleeptrackersimulator.smart.SmartRuleEntity
 import com.example.sleeptrackersimulator.smart.SmartRuleExecutionEntity
+import com.example.sleeptrackersimulator.smart.SmartRuleEventCoordinatorDao
 
 @Database(
     entities = [SensorRecord::class, ActuatorEvent::class, CloudOutboxEntity::class, CloudSessionEntity::class, SmartRuleEntity::class, SmartRuleExecutionEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class SleepTrackerDatabase : RoomDatabase() {
     abstract fun sensorRecordDao(): SensorRecordDao
     abstract fun cloudOutboxDao(): CloudOutboxDao
     abstract fun smartRuleDao(): SmartRuleDao
+    abstract fun smartRuleEventCoordinatorDao(): SmartRuleEventCoordinatorDao
 
     companion object {
         const val DATABASE_NAME = "sleep_tracker.db"
@@ -38,7 +40,7 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                     context.applicationContext,
                     SleepTrackerDatabase::class.java,
                     DATABASE_NAME,
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).addCallback(object : Callback() {
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).addCallback(object : Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         DiagnosticLog.event(DiagnosticTags.ROOM, "openDatabase", DiagnosticResult.SUCCESS, details = mapOf("database" to DATABASE_NAME, "version" to db.version))
                     }
@@ -139,6 +141,15 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_ruleId` ON `smart_rule_executions` (`ruleId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_timestamp` ON `smart_rule_executions` (`timestamp`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_cloudStatus` ON `smart_rule_executions` (`cloudStatus`)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `cloud_outbox` ADD COLUMN `readyForDelivery` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `smart_rule_executions` ADD COLUMN `triggerSource` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `smart_rule_executions` ADD COLUMN `mlClass` TEXT")
+                db.execSQL("ALTER TABLE `smart_rule_executions` ADD COLUMN `mlConfidence` REAL")
             }
         }
     }

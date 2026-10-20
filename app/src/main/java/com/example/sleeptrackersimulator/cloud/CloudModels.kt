@@ -80,6 +80,7 @@ data class PendingCloudOperation(
     val retryCount: Int = 0,
     val lastError: String? = null,
     val deliveryState: DeliveryState = DeliveryState.PENDING,
+    val readyForDelivery: Boolean = true,
 )
 
 data class ActiveCloudSession(

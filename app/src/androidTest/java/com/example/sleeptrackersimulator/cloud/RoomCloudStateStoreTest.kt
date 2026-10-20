@@ -26,7 +26,7 @@ class RoomCloudStateStoreTest {
             ApplicationProvider.getApplicationContext<Context>(),
             SleepTrackerDatabase::class.java,
         ).build()
-        store = RoomCloudStateStore(database.cloudOutboxDao(), maximumOperations = 3)
+        store = RoomCloudStateStore(database.cloudOutboxDao(), maximumOperations = 4)
     }
 
     @After fun closeDatabase() = database.close()
@@ -51,14 +51,14 @@ class RoomCloudStateStoreTest {
 
     @Test
     fun fullTelemetryQueueStillAcceptsOneTerminalSessionOperation() = runBlocking(Dispatchers.IO) {
-        val smallStore = RoomCloudStateStore(database.cloudOutboxDao(), maximumOperations = 2)
+        val smallStore = RoomCloudStateStore(database.cloudOutboxDao(), maximumOperations = 4)
         smallStore.enqueue(upload("m1", 1))
         smallStore.enqueue(upload("m2", 2))
         assertThrows(CloudOutboxFullException::class.java) { smallStore.enqueue(upload("m3", 3)) }
-
+        smallStore.enqueue(ruleEvent("rule-e1", 3))
         smallStore.enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 4, createdAt = 4))
 
-        assertEquals(listOf("m1", "m2", "end-s"), smallStore.pendingOperations().map { it.operationId })
+        assertEquals(listOf("m1", "m2", "rule-e1", "end-s"), smallStore.pendingOperations().map { it.operationId })
         assertThrows(CloudOutboxFullException::class.java) {
             smallStore.enqueue(PendingCloudOperation("end-s-2", PendingOperationType.END_SESSION, "s", endedAt = 5, createdAt = 5))
         }
@@ -70,6 +70,14 @@ class RoomCloudStateStoreTest {
         type = PendingOperationType.UPLOAD_MEASUREMENT,
         sessionId = "s",
         payload = SensorPayload(id, CLOUD_DEVICE_ID, "ACCELEROMETER", timestamp = timestamp, movementState = "STILL", restState = "MONITORING"),
+        createdAt = timestamp,
+    )
+
+    private fun ruleEvent(id: String, timestamp: Long) = PendingCloudOperation(
+        operationId = id,
+        type = PendingOperationType.UPLOAD_RULE_EVENT,
+        sessionId = "s",
+        ruleEvent = SmartRuleEventPayload(eventId = id.removePrefix("rule-"), timestamp = timestamp),
         createdAt = timestamp,
     )
 }

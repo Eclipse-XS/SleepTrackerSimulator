@@ -13,6 +13,7 @@ import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.example.sleeptrackersimulator.smart.RoomSmartRuleEventCoordinator
 import java.util.concurrent.TimeUnit
 
 fun interface CloudRecoveryScheduler {
@@ -56,6 +57,14 @@ class CloudOutboxWorker(
             dao = database.cloudOutboxDao(),
             legacyFile = applicationContext.filesDir.resolve("cloud/cloud-state.json"),
         )
+        try {
+            RoomSmartRuleEventCoordinator(database.smartRuleEventCoordinatorDao())
+                .reconcile(System.currentTimeMillis())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return@withLock Result.retry()
+        }
         drain(
             store = store,
             repository = FirebaseCloudRepository(),

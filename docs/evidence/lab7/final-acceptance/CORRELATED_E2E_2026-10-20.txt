@@ -1,0 +1,18 @@
+Status: PASS
+Environment: Pixel_10_Pro AVD, Android API 36; Firebase Auth and Realtime Database emulators
+Test: CorrelatedPipelineE2ETest.sensorThroughTfliteRuleRoomBleOutboxAndFirebaseUsesOneEventId
+Duration: 3.568 s
+
+executionId=566d57f1-ace6-4476-aae8-b74c343a63b8
+ruleId=rule-active
+sensorTimestampNanos=9000000
+predictionId=prediction-9000000
+TFLite class=ACTIVE
+BLE ACK=ALERT_ACK:566d57f1-ace6-4476-aae8-b74c343a63b8:REV=1
+outbox operationId=rule-566d57f1-ace6-4476-aae8-b74c343a63b8
+Firebase path=/users/mk5uOKu9yFSI0FZ7CFv1TKX1zyfV/sessions/e2e-defa2dbf-a940-4827-8e08-e9412ff27630/ruleEvents/566d57f1-ace6-4476-aae8-b74c343a63b8
+final local cloudStatus=SYNCED
+pending outbox count=0
+remote idempotent retry=succeeded without duplicate logical event
+
+The remote row was deleted in test cleanup. This record is copied from the device E2E_EVIDENCE log line and the Android test XML.

@@ -3,7 +3,8 @@ sequenceDiagram
   participant ML
   participant Rules
   participant Room
-  participant Cloud
+  participant Outbox
+  participant Firebase
   participant Actuator
   participant BLE
   participant UI
@@ -11,13 +12,16 @@ sequenceDiagram
   ML-->>Rules: class and confidence
   Sensor-->>Rules: axes and intensity
   Sensor->>Room: persist sample
-  Sensor->>Cloud: enqueue monitoring snapshot
   Rules->>Rules: consecutive matches, edge, cooldown
-  par side effects
-    Rules->>Actuator: request pulse
-    Rules->>BLE: send ALERT
-    Rules->>Room: save execution with actual result
-  end
+  Rules->>Room: atomic execution and gated outbox with eventId
+  Room-->>Rules: durable commit
+  Rules->>Actuator: request allowed action
+  Rules->>BLE: send ALERT with eventId
+  BLE-->>Rules: ACK with eventId and revision
+  Rules->>Room: finalize actual outcomes and payload atomically
+  Room->>Outbox: ready true
+  Outbox->>Firebase: idempotent write by eventId
+  Firebase-->>Room: ACK then local SYNCED
   Room-->>UI: recent records and executions
   Cloud-->>UI: sync state
   BLE-->>UI: connection and acknowledgement

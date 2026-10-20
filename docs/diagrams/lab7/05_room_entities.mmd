@@ -1,6 +1,9 @@
 erDiagram
   SENSOR_RECORDS { long id PK long timestamp float x float y float z float intensity }
   SMART_RULES { string id PK string source string operator float threshold string targetClass string action boolean enabled long cooldownMillis int requiredConsecutiveMatches }
-  SMART_RULE_EXECUTIONS { string id PK string ruleId FK long timestamp string sourceValue string action string result string failureReason }
-  CLOUD_OUTBOX { string id PK string operationType string payload string state int attempts }
+  SMART_RULE_EXECUTIONS { string executionId PK string ruleId long timestamp string triggerSource string sourceValue string action string result string actuatorStatus string bleStatus string cloudStatus string predictionId string mlClass float mlConfidence }
+  CLOUD_OUTBOX { long sequence PK string operationId UK string type string sessionId string payloadJson string deliveryState boolean readyForDelivery int retryCount }
+  CLOUD_ACTIVE_SESSION { int singletonId PK string sessionId string ownerUid boolean monitoringActive }
   SMART_RULES ||--o{ SMART_RULE_EXECUTIONS : produces
+  SMART_RULE_EXECUTIONS ||--o| CLOUD_OUTBOX : shares_event_uuid
+  CLOUD_ACTIVE_SESSION ||--o{ CLOUD_OUTBOX : scopes
