@@ -3,6 +3,7 @@ package com.example.sleeptrackersimulator.ml
 import com.example.sleeptrackersimulator.core.model.SensorSample
 
 class SensorWindowBuffer(private val capacity: Int = 20) {
+    data class CompleteWindow(val values: Array<FloatArray>, val endTimestampNanos: Long)
     init { require(capacity > 0) }
 
     private val values = Array(capacity) { FloatArray(3) }
@@ -11,7 +12,7 @@ class SensorWindowBuffer(private val capacity: Int = 20) {
     private var lastTimestampNanos = 0L
 
     @Synchronized
-    fun add(sample: SensorSample): Array<FloatArray>? {
+    fun add(sample: SensorSample): CompleteWindow? {
         require(sample.x.isFinite() && sample.y.isFinite() && sample.z.isFinite())
         require(sample.timestampNanos > 0L)
         if (lastTimestampNanos != 0L) {
@@ -25,7 +26,10 @@ class SensorWindowBuffer(private val capacity: Int = 20) {
         next = (next + 1) % capacity
         if (size < capacity) size++
         if (size < capacity) return null
-        return Array(capacity) { offset -> values[(next + offset) % capacity].copyOf() }
+        return CompleteWindow(
+            values = Array(capacity) { offset -> values[(next + offset) % capacity].copyOf() },
+            endTimestampNanos = sample.timestampNanos,
+        )
     }
 
     @Synchronized

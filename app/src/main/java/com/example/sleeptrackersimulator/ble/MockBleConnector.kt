@@ -35,6 +35,7 @@ class MockBleConnector(
     override val heartRateHistory: StateFlow<List<Int>> = _heartRateHistory.asStateFlow()
     private val _notificationsEnabled = MutableStateFlow(false)
     override val notificationsEnabled: StateFlow<Boolean> = _notificationsEnabled.asStateFlow()
+    override val alertState: StateFlow<DeviceAlertState> = band.alertState
     private var lifecycleJob: Job? = null
     private var measurementJob: Job? = null
 
@@ -44,6 +45,7 @@ class MockBleConnector(
             return
         }
         stopTelemetry()
+        band.clearAlert()
         clearSessionMeasurements()
         lifecycleJob?.cancel()
         _state.value = BleConnectionState.Scanning
@@ -102,6 +104,7 @@ class MockBleConnector(
             else -> null
         }
         stopTelemetry()
+        band.clearAlert()
         clearSessionMeasurements()
         _state.value = BleConnectionState.Disconnected(device)
         diagnostic("disconnect", DiagnosticResult.SUCCESS, mapOf("deviceName" to device?.name))
@@ -124,7 +127,7 @@ class MockBleConnector(
                 log("WRITE ERROR: UNKNOWN_COMMAND [$command]")
             }
         log("WRITE command: ${parsed.name}")
-        return when (parsed) {
+        val result = when (parsed) {
             DeviceCommand.START_STREAM -> {
                 startTelemetry()
                 BleOperationResult.Success("STREAM_STARTED")
@@ -136,18 +139,36 @@ class MockBleConnector(
             DeviceCommand.REQUEST_STATUS -> BleOperationResult.Success(
                 "CONNECTED; STREAM=${if (band.isStreaming) "ON" else "OFF"}; HR=${band.currentMeasurement.beatsPerMinute}",
             )
-            DeviceCommand.ALERT -> BleOperationResult.Success("ALERT_ACKNOWLEDGED")
-        }.also { result ->
-            log("WRITE result: ${result.message}")
-            diagnostic("write", DiagnosticResult.SUCCESS, mapOf("command" to parsed.name, "resultMessage" to result.message))
+            DeviceCommand.ALERT -> sendAlert("manual-${System.nanoTime()}")
         }
+        val message = when (result) {
+            is BleOperationResult.Success -> result.message
+            is BleOperationResult.Error -> result.message
+        }
+        log("WRITE result: $message")
+        diagnostic("write", DiagnosticResult.SUCCESS, mapOf("command" to parsed.name, "resultMessage" to message))
+        return result
     }
 
     override fun sendData(data: String): BleOperationResult = writeCommand(data)
 
+    override fun sendAlert(eventId: String): BleOperationResult {
+        if (_state.value !is BleConnectionState.Connected) return notConnected("alert")
+        val before = band.alertState.value
+        val state = runCatching { band.processAlert(eventId) }.getOrElse {
+            return BleOperationResult.Error("INVALID_EVENT_ID")
+        }
+        val duplicate = before.active && before.eventId == eventId
+        val message = if (duplicate) "ALERT_DUPLICATE_ACK:$eventId" else "ALERT_ACK:$eventId:REV=${state.revision}"
+        log("WRITE result: $message")
+        diagnostic("alert", DiagnosticResult.SUCCESS, mapOf("eventId" to eventId, "duplicate" to duplicate, "revision" to state.revision))
+        return BleOperationResult.Success(message)
+    }
+
     override fun close() {
         lifecycleJob?.cancel()
         stopTelemetry()
+        band.clearAlert()
         clearSessionMeasurements()
         band.close()
     }

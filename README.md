@@ -230,7 +230,7 @@ Educational simulation; not a medical sleep-stage detector.
 
 `ml/train_activity_model.py` reproducibly generates synthetic accelerometer windows, trains a three-class model and exports `app/src/main/assets/activity_classifier.tflite`. The model receives `float32[1,20,3]` and returns probabilities for `REST`, `RESTLESS`, and `ACTIVE`. The committed evaluation evidence is in `docs/ml_evaluation.json`; its 97.22% test accuracy applies only to the independent synthetic test set.
 
-`SensorWindowBuffer` maintains the latest 20 XYZ samples. `MlViewModel` invokes the real TensorFlow Lite interpreter on `Dispatchers.Default`, exposes the prediction to the AI Insights card, and closes the interpreter on lifecycle cleanup. An `ACTIVE` transition with confidence at least 0.75 can request one automatic vibration pulse. Instrumentation tests execute the packaged model, rather than replacing inference with thresholds. The exported float model is 11,368 bytes.
+`SensorWindowBuffer` maintains the latest 20 timestamp-valid XYZ samples. Sensor ingestion and inference run in separate coroutines. A bounded latest-complete-window channel prevents sensor callbacks from waiting for TFLite, records dropped stale windows and gives one serial consumer exclusive use of the Interpreter. Every prediction carries the source window timestamp and a stable prediction ID. An `ACTIVE` transition with confidence at least 0.75 can request one automatic vibration pulse. Instrumentation tests execute the packaged model, rather than replacing inference with thresholds. The exported float model is 11,368 bytes.
 
 Reproduce the model with:
 
@@ -242,7 +242,7 @@ py -3.11 -m venv ml\.venv
 
 ## Lab 7 — Integrated system
 
-The dashboard combines phone sensor state, AI Insights, virtual BLE state, heart rate, cloud/outbox status and actuator controls. Room stores sensor history, typed actuator events and the durable cloud outbox. WorkManager recovers queued Firebase delivery when platform constraints permit. Architecture sources and defense instructions are under `docs/`.
+The dashboard combines phone sensor state, AI Insights, virtual BLE state, heart rate, cloud/outbox status and actuator controls. Smart Rules consume unique sensor or prediction events rather than combined UI states. Before any rule side effect, Room v5 stores a `PENDING` execution snapshot. The same UUID identifies actuator results, the processed `VirtualSleepBand` alert, a durable `UPLOAD_RULE_EVENT` outbox row and `/ruleEvents/<eventId>` in Firebase. WorkManager recovers queued idempotent delivery and updates the local cloud status after acknowledgement. Architecture sources, the remediation report and defense instructions are under `docs/`.
 
 ## Privacy and backup policy
 

@@ -15,3 +15,7 @@
 ## Висновок
 
 Результат відтворює проблемний debug AVD run, але не ізолює workload і не доводить аналогічну поведінку release build на фізичному пристрої. Виправлення sensor ownership усуває UI StateFlow як ML sampling source, але повторний segmented Perfetto/FrameMetrics benchmark не виконано. Production performance лишається непідтвердженою.
+
+## Стан після remediation 20 жовтня 2026
+
+Новий device benchmark не виконано: Android SDK доступний, але `adb devices -l` не показав жодного підключеного пристрою. Тому попередні 92,02% не можна подавати ані як поточний результат, ані як доказ regression improvement. CI виконує build, JVM tests, lint і Firebase Rules tests, але не підміняє frame benchmark. Статус performance acceptance: **BLOCKED**.

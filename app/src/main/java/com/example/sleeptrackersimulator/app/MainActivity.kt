@@ -36,6 +36,7 @@ import com.example.sleeptrackersimulator.cloud.FirebaseCloudRepository
 import com.example.sleeptrackersimulator.cloud.FirebaseAnonymousAuthRepository
 import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
 import com.example.sleeptrackersimulator.cloud.WorkManagerCloudRecoveryScheduler
+import com.example.sleeptrackersimulator.cloud.OutboxSmartRuleCloudEventSink
 import com.example.sleeptrackersimulator.sensor.AndroidAccelerometerDataSource
 import com.example.sleeptrackersimulator.history.LocalHistoryRecorderViewModel
 import com.example.sleeptrackersimulator.history.RoomSensorHistoryRepository
@@ -60,6 +61,15 @@ import com.example.sleeptrackersimulator.ui.smart.SmartScenariosScreen
 import com.example.sleeptrackersimulator.ble.BleOperationResult
 
 class MainActivity : ComponentActivity() {
+    private val database by lazy { SleepTrackerDatabase.getInstance(applicationContext) }
+    private val cloudStateStore by lazy {
+        RoomCloudStateStore(
+            dao = database.cloudOutboxDao(),
+            legacyFile = applicationContext.filesDir.resolve("cloud/cloud-state.json"),
+        )
+    }
+    private val cloudRecoveryScheduler by lazy { WorkManagerCloudRecoveryScheduler(applicationContext) }
+    private val smartRuleRepository by lazy { RoomSmartRuleRepository(database.smartRuleDao()) }
     private var pendingFlashlightEnable = false
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -93,20 +103,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private val cloudSyncViewModel: CloudSyncViewModel by viewModels {
-        val database = SleepTrackerDatabase.getInstance(applicationContext)
         CloudSyncViewModel.factory(
             repository = FirebaseCloudRepository(),
             authRepository = FirebaseAnonymousAuthRepository(),
             networkMonitor = AndroidNetworkMonitor(applicationContext),
-            stateStore = RoomCloudStateStore(
-                dao = database.cloudOutboxDao(),
-                legacyFile = applicationContext.filesDir.resolve("cloud/cloud-state.json"),
-            ),
+            stateStore = cloudStateStore,
             sensorState = viewModel.uiState,
             bleState = bleViewModel.state,
             heartRate = bleViewModel.heartRate,
             restState = restStateViewModel.state,
-            recoveryScheduler = WorkManagerCloudRecoveryScheduler(applicationContext),
+            recoveryScheduler = cloudRecoveryScheduler,
+            ruleEventStatusUpdater = { eventId -> smartRuleRepository.updateCloudStatus(eventId, "SYNCED") },
         )
     }
 
@@ -137,20 +144,21 @@ class MainActivity : ComponentActivity() {
 
     private val smartScenariosViewModel: SmartScenariosViewModel by viewModels {
         SmartScenariosViewModel.factory(
-            sensorState = viewModel.uiState,
-            mlState = mlViewModel.state,
-            repository = RoomSmartRuleRepository(SleepTrackerDatabase.getInstance(applicationContext).smartRuleDao()),
+            analyses = viewModel.analyses,
+            predictions = mlViewModel.predictions,
+            repository = smartRuleRepository,
             vibration = {
                 actuatorViewModel.triggerSmartRulePulse().let { result ->
                     if (result.successful) result.message else "ERROR:${result.message}"
                 }
             },
-            bleAlert = {
-                when (val result = bleViewModel.sendAlert()) {
+            bleAlert = { eventId ->
+                when (val result = bleViewModel.sendAlert(eventId)) {
                     is BleOperationResult.Success -> result.message
                     is BleOperationResult.Error -> "ERROR:${result.message}"
                 }
             },
+            cloudEvents = OutboxSmartRuleCloudEventSink(cloudStateStore, cloudRecoveryScheduler),
         )
     }
 

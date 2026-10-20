@@ -1,28 +1,32 @@
-# Перевірка GitHub-публікації
+# Перевірка GitHub публікації Labs 6 і 7
 
-- Початкова локальна гілка: `fix/pre-lab6-reliability`.
-- Original HEAD: `f1fb5805cefbebaa39fb87cc4ff357a91459ffb5`.
+## Ідентифікація
+
 - Verification branch: `release/labs-1-7-verified`.
-- Implementation commit: `021e884`.
-- Report-containing commit: визначається як HEAD цієї гілки; remote SHA перевірено після push командою `git ls-remote`.
-- Remote URL: `https://github.com/Eclipse-XS/SleepTrackerSimulator/tree/release/labs-1-7-verified`.
+- Original remediation HEAD: `c779be381ccd812e8c79ce246d32ebc281709caf`.
+- Pull request: `https://github.com/Eclipse-XS/SleepTrackerSimulator/pull/1`.
+- Base branch: `main`.
 
-## Опубліковано
+## Локальні перевірки фінального diff
 
-Android source, executable TFLite asset, labels, Room schemas 2–4, migrations, outbox/WorkManager, Smart Rule Engine/UI, Firebase Rules/tests, ML training script та evaluation metadata, JVM/instrumentation tests, diagrams, reports, screenshots, profiling evidence, video і PPTX.
-
-## Перевірки
-
-- `testDebugUnitTest`, `assembleDebug`, `assembleRelease`, `lintDebug`, `compileDebugAndroidTestSources`, `connectedDebugAndroidTest`: BUILD SUCCESSFUL.
-- Firebase Emulator Suite: 4 tests, 0 failures.
-- Secrets scan: збігів private keys, service-account secrets, OAuth secrets або tokens не знайдено.
-- `git diff --cached --check`: clean перед implementation commit.
+- JVM: 161 tests, 0 failures, 0 skipped.
+- `assembleDebug`: PASS.
+- `assembleRelease`: PASS.
+- `lintDebug`: PASS із warnings про доступні dependency updates та TFLite 2.16.1 16 KB alignment.
+- `compileDebugAndroidTestSources`: PASS.
+- `connectedDebugAndroidTest`: BLOCKED, підключений device відсутній.
+- Firebase Realtime Database Emulator: 6 tests, 0 failures.
 - TFLite SHA-256: `1CF844F774355E54F820C4860304DC43E42A4015F57C7097CEE9D16227858311`.
+- Secret-pattern scan: private keys і access tokens не знайдені.
 
-## Не опубліковано
+## CI
 
-Локальні QA/temp каталоги `.codex-*`, `database-debug.log`, Firebase client config `google-services.json`, Gradle/build caches, `node_modules`, локальні keystores та unrelated Lab 5 working artifacts.
+`.github/workflows/android-ci.yml` запускає Android unit tests, debug build, lint і окремий Firebase Emulator job без production credentials. Instrumentation лишається manual gate, бо workflow не створює Android emulator.
 
-## Відкриті питання
+GitHub CI можна вважати PASS лише після завершення checks для опублікованого commit. Локальна наявність workflow не є доказом remote success.
 
-Smart Rule execution не має окремого durable Firebase event payload. Full correlated desktop E2E video відсутнє. Performance evidence стосується debug AVD, не фізичного release device.
+## Межі публікації
+
+До commit включаються лише source, Room schema 5, Firebase Rules/tests, CI та Markdown reports. Незв’язані Lab 5 deliverables, локальні QA tools, build outputs, `google-services.json`, keystores і `local.properties` не включаються.
+
+`main` не змінюється, PR не merge-иться, force-push не використовується.

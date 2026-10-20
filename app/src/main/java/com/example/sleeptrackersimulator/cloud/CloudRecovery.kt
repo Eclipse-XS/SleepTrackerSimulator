@@ -60,6 +60,7 @@ class CloudOutboxWorker(
             store = store,
             repository = FirebaseCloudRepository(),
             authRepository = FirebaseAnonymousAuthRepository(),
+            statusUpdater = { eventId -> database.smartRuleDao().updateCloudStatus(eventId, "SYNCED") },
         )
     }
 
@@ -67,6 +68,7 @@ class CloudOutboxWorker(
         store: CloudStateStore,
         repository: CloudRepository,
         authRepository: AuthRepository,
+        statusUpdater: suspend (String) -> Unit,
     ): Result {
         val session = try {
             store.activeSession()
@@ -104,6 +106,12 @@ class CloudOutboxWorker(
                 when (operation.type) {
                     PendingOperationType.UPLOAD_MEASUREMENT -> {
                         repository.uploadMeasurement(uid, operation.sessionId, requireNotNull(operation.payload))
+                        store.removeFirst()
+                    }
+                    PendingOperationType.UPLOAD_RULE_EVENT -> {
+                        val event = requireNotNull(operation.ruleEvent)
+                        repository.uploadRuleEvent(uid, operation.sessionId, event)
+                        statusUpdater(event.eventId)
                         store.removeFirst()
                     }
                     PendingOperationType.END_SESSION -> {

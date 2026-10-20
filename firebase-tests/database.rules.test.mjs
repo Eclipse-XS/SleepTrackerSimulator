@@ -61,3 +61,25 @@ test("remote controls accept only booleans and known fields", async () => {
   await assertFails(ref.set({ vibrationEnabled: "yes" }));
   await assertFails(ref.set({ vibrationEnabled: true, unknown: false }));
 });
+
+test("owner can write a schema-validated smart-rule event", async () => {
+  const ref = env.authenticatedContext("owner").database().ref("users/owner/sessions/s1");
+  await assertSucceeds(ref.set(validSession));
+  await assertSucceeds(ref.child("ruleEvents/e1").set({
+    eventId: "e1", ruleId: "r1", ruleName: "Movement alert", timestamp: 1001,
+    source: "MOVEMENT_INTENSITY", sourceValue: "1.5", sensorTimestampNanos: 100,
+    requestedAction: "MOCK_BLE_ALERT", actuatorResult: "NOT_REQUESTED",
+    bleDeliveryResult: "ALERT_ACK:e1", schemaVersion: 1
+  }));
+});
+
+test("invalid and cross-user smart-rule events are denied", async () => {
+  const owner = env.authenticatedContext("owner").database();
+  await assertSucceeds(owner.ref("users/owner/sessions/s1").set(validSession));
+  const invalid = { eventId: "wrong", ruleId: "r1", ruleName: "R", timestamp: 1001,
+    source: "INVALID", sourceValue: "x", requestedAction: "MOCK_BLE_ALERT",
+    actuatorResult: "NOT_REQUESTED", bleDeliveryResult: "NOT_CONNECTED", schemaVersion: 1 };
+  await assertFails(owner.ref("users/owner/sessions/s1/ruleEvents/e1").set(invalid));
+  await assertFails(env.authenticatedContext("attacker").database()
+    .ref("users/owner/sessions/s1/ruleEvents/e2").set({ ...invalid, eventId: "e2", source: "ML_CLASS" }));
+});

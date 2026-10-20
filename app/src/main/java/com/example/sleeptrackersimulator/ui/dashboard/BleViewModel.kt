@@ -13,13 +13,14 @@ class BleViewModel(private val connector: IBleConnector) : ViewModel() {
     val heartRate = connector.heartRate
     val heartRateHistory = connector.heartRateHistory
     val notificationsEnabled = connector.notificationsEnabled
+    val alertState = connector.alertState
 
     fun startScan() = connector.startScan()
     fun connect(device: BleDevice) = connector.connect(device)
     fun disconnect() = connector.disconnect()
     fun readBodySensorLocation() = connector.readBodySensorLocation()
     fun writeCommand(command: String) = connector.writeCommand(command.trim())
-    fun sendAlert() = connector.sendData("ALERT")
+    fun sendAlert(eventId: String = "manual-${System.nanoTime()}") = connector.sendAlert(eventId)
 
     override fun onCleared() {
         connector.close()

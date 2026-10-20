@@ -3,6 +3,8 @@ package com.example.sleeptrackersimulator.ml
 enum class ActivityClass { REST, RESTLESS, ACTIVE }
 
 data class ActivityPrediction(
+    val predictionId: String,
+    val windowEndTimestampNanos: Long,
     val activity: ActivityClass,
     val confidence: Float,
     val probabilities: Map<ActivityClass, Float>,

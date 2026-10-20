@@ -76,7 +76,12 @@ class MockBleConnectorTest {
         assertFalse(subject.notificationsEnabled.value)
         assertEquals(BleOperationResult.Success("STREAM_STARTED"), subject.writeCommand("START_STREAM"))
         assertTrue(subject.sendData("REQUEST_STATUS") is BleOperationResult.Success)
-        assertEquals(BleOperationResult.Success("ALERT_ACKNOWLEDGED"), subject.sendData("ALERT"))
+        assertTrue(subject.sendData("ALERT") is BleOperationResult.Success)
+        assertTrue(subject.alertState.value.active)
+        assertTrue(subject.sendAlert("rule-event-1") is BleOperationResult.Success)
+        val revision = subject.alertState.value.revision
+        assertEquals(BleOperationResult.Success("ALERT_DUPLICATE_ACK:rule-event-1"), subject.sendAlert("rule-event-1"))
+        assertEquals(revision, subject.alertState.value.revision)
         assertTrue(subject.logs.value.any { it.contains("WRITE command: ALERT") })
         assertEquals(BleOperationResult.Error("UNKNOWN_COMMAND"), subject.writeCommand("HELLO"))
     }

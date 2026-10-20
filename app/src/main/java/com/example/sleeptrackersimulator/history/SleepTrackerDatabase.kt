@@ -18,7 +18,7 @@ import com.example.sleeptrackersimulator.smart.SmartRuleExecutionEntity
 
 @Database(
     entities = [SensorRecord::class, ActuatorEvent::class, CloudOutboxEntity::class, CloudSessionEntity::class, SmartRuleEntity::class, SmartRuleExecutionEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class SleepTrackerDatabase : RoomDatabase() {
@@ -38,7 +38,7 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                     context.applicationContext,
                     SleepTrackerDatabase::class.java,
                     DATABASE_NAME,
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).addCallback(object : Callback() {
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).addCallback(object : Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         DiagnosticLog.event(DiagnosticTags.ROOM, "openDatabase", DiagnosticResult.SUCCESS, details = mapOf("database" to DATABASE_NAME, "version" to db.version))
                     }
@@ -116,6 +116,29 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_ruleId` ON `smart_rule_executions` (`ruleId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_timestamp` ON `smart_rule_executions` (`timestamp`)")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `smart_rule_executions` RENAME TO `smart_rule_executions_legacy`")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `smart_rule_executions` (
+                        `executionId` TEXT NOT NULL, `ruleId` TEXT NOT NULL, `timestamp` INTEGER NOT NULL,
+                        `sourceValue` TEXT NOT NULL, `action` TEXT NOT NULL, `result` TEXT NOT NULL,
+                        `failureReason` TEXT, `ruleNameSnapshot` TEXT NOT NULL, `sessionId` TEXT,
+                        `sensorTimestampNanos` INTEGER, `predictionId` TEXT, `actuatorStatus` TEXT NOT NULL,
+                        `bleStatus` TEXT NOT NULL, `cloudStatus` TEXT NOT NULL, PRIMARY KEY(`executionId`)
+                    )""".trimIndent(),
+                )
+                db.execSQL("""INSERT INTO `smart_rule_executions`
+                    (`executionId`,`ruleId`,`timestamp`,`sourceValue`,`action`,`result`,`failureReason`,`ruleNameSnapshot`,`sessionId`,`sensorTimestampNanos`,`predictionId`,`actuatorStatus`,`bleStatus`,`cloudStatus`)
+                    SELECT `executionId`,`ruleId`,`timestamp`,`sourceValue`,`action`,`result`,`failureReason`,'',NULL,NULL,NULL,'UNKNOWN','UNKNOWN','NOT_QUEUED'
+                    FROM `smart_rule_executions_legacy`""")
+                db.execSQL("DROP TABLE `smart_rule_executions_legacy`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_ruleId` ON `smart_rule_executions` (`ruleId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_timestamp` ON `smart_rule_executions` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_rule_executions_cloudStatus` ON `smart_rule_executions` (`cloudStatus`)")
             }
         }
     }

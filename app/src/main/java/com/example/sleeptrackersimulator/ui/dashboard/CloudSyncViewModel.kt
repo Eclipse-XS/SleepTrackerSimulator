@@ -40,6 +40,7 @@ class CloudSyncViewModel(
     private val newId: () -> String = { UUID.randomUUID().toString() },
     private val intervalMillis: Long = CLOUD_SYNC_INTERVAL_MS,
     private val recoveryScheduler: CloudRecoveryScheduler = NoOpCloudRecoveryScheduler,
+    private val ruleEventStatusUpdater: SmartRuleCloudStatusUpdater = NoOpSmartRuleCloudStatusUpdater,
     private val storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val log: (String, String, Throwable?) -> Unit = { level, message, error ->
         DiagnosticLog.event(
@@ -314,6 +315,11 @@ class CloudSyncViewModel(
                 retryPolicy.execute {
                     when (operation.type) {
                         PendingOperationType.UPLOAD_MEASUREMENT -> repository.uploadMeasurement(uid, operation.sessionId, requireNotNull(operation.payload))
+                        PendingOperationType.UPLOAD_RULE_EVENT -> {
+                            val event = requireNotNull(operation.ruleEvent)
+                            repository.uploadRuleEvent(uid, operation.sessionId, event)
+                            ruleEventStatusUpdater.markSynced(event.eventId)
+                        }
                         PendingOperationType.END_SESSION -> repository.endSession(uid, operation.sessionId, requireNotNull(operation.endedAt))
                     }
                 }
@@ -400,12 +406,14 @@ class CloudSyncViewModel(
             stateStore: CloudStateStore, sensorState: StateFlow<SensorUiState>, bleState: StateFlow<BleConnectionState>,
             heartRate: StateFlow<HeartRateMeasurement?>, restState: StateFlow<RestStateResult>,
             recoveryScheduler: CloudRecoveryScheduler = NoOpCloudRecoveryScheduler,
+            ruleEventStatusUpdater: SmartRuleCloudStatusUpdater = NoOpSmartRuleCloudStatusUpdater,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(CloudSyncViewModel::class.java))
                 return CloudSyncViewModel(
                     repository, authRepository, networkMonitor, sensorState, bleState, heartRate,
                     restState, stateStore, recoveryScheduler = recoveryScheduler,
+                    ruleEventStatusUpdater = ruleEventStatusUpdater,
                 ) as T
             }
         }

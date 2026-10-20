@@ -20,7 +20,7 @@
 
 ## Потоки виконання
 
-Збір сенсора прив’язаний до foreground-життєвого циклу Activity. TFLite inference виконується через `Dispatchers.Default`, а Room і cloud persistence — поза UI-потоком. Interpreter створюється один раз у `MlViewModel` і закривається в `onCleared()`.
+Збір сенсора прив’язаний до foreground-життєвого циклу Activity. Швидкий ingestion формує timestamp-valid windows, а окремий bounded channel передає лише найсвіжіше завершене вікно одному serial inference consumer. Interpreter не виконується конкурентно і закривається в `onCleared()`.
 
 ## Як прогноз запускає актуатор
 
@@ -28,11 +28,11 @@
 
 ## Room і Firebase
 
-Room — локальне джерело історії та durable outbox. Firebase — віддалена owner-scoped копія сесій. Втрата мережі не видаляє pending operations. Відновлення мережі запускає FIFO-drain; WorkManager продовжує доставку після recreation процесу. Force-stop Android блокує фонову роботу до наступного запуску застосунку.
+Room — локальне джерело історії та durable outbox. Smart Rule спочатку отримує `PENDING` execution row, після чого виконується side effect. Окремий `UPLOAD_RULE_EVENT` синхронізує той самий UUID у `/ruleEvents/<eventId>`. Після Firebase ACK локальний cloud status стає `SYNCED`. Force-stop Android блокує фонову роботу до наступного запуску застосунку.
 
 ## Mock BLE
 
-`MockBleConnector` реалізує discovery, connect, disconnect, read, write і notify без фізичного пристрою. Він передає симульований пульс у `RestStateClassifier` і показує BLE terminal. Це лабораторний транспорт, а не підтвердження роботи з реальним BLE hardware.
+`MockBleConnector` реалізує discovery, connect, disconnect, read, write і notify без фізичного пристрою. `ALERT` змінює `DeviceAlertState` у `VirtualSleepBand`; ACK повертається після processing і містить event ID. Повтор команди має duplicate ACK без нового revision. Це лабораторний транспорт, а не підтвердження роботи з реальним BLE hardware.
 
 ## Демонстрація
 

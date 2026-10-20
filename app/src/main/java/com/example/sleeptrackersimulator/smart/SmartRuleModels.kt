@@ -1,7 +1,6 @@
 package com.example.sleeptrackersimulator.smart
 
 import androidx.room.Entity
-import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -27,13 +26,7 @@ data class SmartRuleEntity(
 
 @Entity(
     tableName = "smart_rule_executions",
-    foreignKeys = [ForeignKey(
-        entity = SmartRuleEntity::class,
-        parentColumns = ["id"],
-        childColumns = ["ruleId"],
-        onDelete = ForeignKey.CASCADE,
-    )],
-    indices = [Index("ruleId"), Index("timestamp")],
+    indices = [Index("ruleId"), Index("timestamp"), Index("cloudStatus")],
 )
 data class SmartRuleExecutionEntity(
     @PrimaryKey val executionId: String,
@@ -43,6 +36,13 @@ data class SmartRuleExecutionEntity(
     val action: String,
     val result: String,
     val failureReason: String?,
+    val ruleNameSnapshot: String = "",
+    val sessionId: String? = null,
+    val sensorTimestampNanos: Long? = null,
+    val predictionId: String? = null,
+    val actuatorStatus: String = "NOT_REQUESTED",
+    val bleStatus: String = "NOT_REQUESTED",
+    val cloudStatus: String = "NOT_QUEUED",
 )
 
 data class SmartRule(

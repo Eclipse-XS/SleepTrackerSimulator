@@ -49,7 +49,24 @@ class CloudOperationException(
     val retriable: Boolean get() = type == CloudErrorType.NETWORK || type == CloudErrorType.SERVER
 }
 
-enum class PendingOperationType { UPLOAD_MEASUREMENT, END_SESSION }
+data class SmartRuleEventPayload(
+    val eventId: String = "",
+    val ruleId: String = "",
+    val ruleName: String = "",
+    val timestamp: Long = 0L,
+    val source: String = "",
+    val sourceValue: String = "",
+    val sensorTimestampNanos: Long? = null,
+    val predictionId: String? = null,
+    val mlClass: String? = null,
+    val mlConfidence: Float? = null,
+    val requestedAction: String = "",
+    val actuatorResult: String = "NOT_REQUESTED",
+    val bleDeliveryResult: String = "NOT_REQUESTED",
+    val schemaVersion: Int = 1,
+)
+
+enum class PendingOperationType { UPLOAD_MEASUREMENT, UPLOAD_RULE_EVENT, END_SESSION }
 enum class DeliveryState { PENDING, PERMANENT_FAILURE }
 
 data class PendingCloudOperation(
@@ -57,6 +74,7 @@ data class PendingCloudOperation(
     val type: PendingOperationType = PendingOperationType.UPLOAD_MEASUREMENT,
     val sessionId: String = "",
     val payload: SensorPayload? = null,
+    val ruleEvent: SmartRuleEventPayload? = null,
     val endedAt: Long? = null,
     val createdAt: Long = 0L,
     val retryCount: Int = 0,

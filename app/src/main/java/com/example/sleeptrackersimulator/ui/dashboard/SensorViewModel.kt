@@ -7,6 +7,7 @@ import com.example.sleeptrackersimulator.sensor.AccelerometerDataSource
 import com.example.sleeptrackersimulator.sensor.AccelerometerEvent
 import com.example.sleeptrackersimulator.sensor.MovementClassifier
 import com.example.sleeptrackersimulator.core.model.MovementState
+import com.example.sleeptrackersimulator.core.model.MovementAnalysis
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
@@ -34,6 +35,9 @@ class SensorViewModel(
     )
     /** Ordered, non-conflated valid measurements from the single owned SensorManager listener. */
     val samples: SharedFlow<com.example.sleeptrackersimulator.core.model.SensorSample> = mutableSamples.asSharedFlow()
+    private val mutableAnalyses = MutableSharedFlow<MovementAnalysis>(extraBufferCapacity = 64)
+    /** One event per accepted physical sensor measurement; never emits for UI-only state changes. */
+    val analyses: SharedFlow<MovementAnalysis> = mutableAnalyses.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -59,8 +63,10 @@ class SensorViewModel(
                             lastMovementState = null
                             SensorUiState.Error("Invalid accelerometer measurement")
                         } else {
+                            val analysis = classifier.analyze(event.sample)
                             mutableSamples.emit(event.sample)
-                            SensorUiState.Active(classifier.analyze(event.sample).also { analysis ->
+                            mutableAnalyses.emit(analysis)
+                            SensorUiState.Active(analysis.also { analysis ->
                             val previous = lastMovementState
                             if (previous != null && previous != analysis.state) {
                                 DiagnosticLog.event(DiagnosticTags.SENSORS, "movementTransition", DiagnosticResult.SUCCESS, details = mapOf("from" to previous, "to" to analysis.state))

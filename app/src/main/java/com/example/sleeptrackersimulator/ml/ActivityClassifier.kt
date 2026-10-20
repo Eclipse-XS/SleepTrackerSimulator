@@ -30,7 +30,7 @@ class ActivityClassifier(context: Context) : Closeable {
         }
     }
 
-    fun classify(window: Array<FloatArray>): ActivityPrediction {
+    fun classify(window: Array<FloatArray>, windowEndTimestampNanos: Long = System.nanoTime()): ActivityPrediction {
         require(window.size == 20 && window.all { it.size == 3 && it.all(Float::isFinite) })
         val input = Array(1) { Array(20) { FloatArray(3) } }
         window.forEachIndexed { index, sample -> sample.copyInto(input[0][index]) }
@@ -40,9 +40,17 @@ class ActivityClassifier(context: Context) : Closeable {
         val elapsed = System.nanoTime() - started
         require(output[0].all(Float::isFinite)) { "Model returned non-finite probabilities" }
         require(output[0].all { it in 0f..1f }) { "Model returned invalid probabilities" }
+        require(output[0].sum() in 0.999f..1.001f) { "Model probabilities are not normalized" }
         val probabilities = ActivityClass.entries.associateWith { output[0][it.ordinal] }
         val best = probabilities.maxBy { it.value }
-        return ActivityPrediction(best.key, best.value, probabilities, elapsed)
+        return ActivityPrediction(
+            predictionId = "prediction-$windowEndTimestampNanos",
+            windowEndTimestampNanos = windowEndTimestampNanos,
+            activity = best.key,
+            confidence = best.value,
+            probabilities = probabilities,
+            inferenceNanos = elapsed,
+        )
     }
 
     override fun close() = interpreter.close()

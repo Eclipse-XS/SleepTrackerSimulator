@@ -28,8 +28,16 @@ interface SmartRuleDao {
     @Insert
     suspend fun insertExecution(entity: SmartRuleExecutionEntity)
 
+    @Query("""UPDATE smart_rule_executions SET result = :result, failureReason = :failureReason,
+        actuatorStatus = :actuatorStatus, bleStatus = :bleStatus, cloudStatus = :cloudStatus
+        WHERE executionId = :executionId""")
+    suspend fun updateExecutionOutcome(executionId: String, result: String, failureReason: String?, actuatorStatus: String, bleStatus: String, cloudStatus: String): Int
+
     @Query("SELECT * FROM smart_rule_executions ORDER BY timestamp DESC LIMIT :limit")
     fun observeRecentExecutions(limit: Int): Flow<List<SmartRuleExecutionEntity>>
+
+    @Query("UPDATE smart_rule_executions SET cloudStatus = :status WHERE executionId = :executionId")
+    suspend fun updateCloudStatus(executionId: String, status: String): Int
 }
 
 interface SmartRuleRepository {
@@ -39,6 +47,8 @@ interface SmartRuleRepository {
     suspend fun save(rule: SmartRule)
     suspend fun delete(id: String)
     suspend fun record(execution: SmartRuleExecutionEntity)
+    suspend fun updateOutcome(executionId: String, result: String, failureReason: String?, actuatorStatus: String, bleStatus: String, cloudStatus: String)
+    suspend fun updateCloudStatus(executionId: String, status: String)
 }
 
 class RoomSmartRuleRepository(
@@ -51,4 +61,10 @@ class RoomSmartRuleRepository(
     override suspend fun save(rule: SmartRule) { rule.validate(); withContext(dispatcher) { dao.upsert(rule.toEntity()) } }
     override suspend fun delete(id: String) { require(id.isNotBlank()); withContext(dispatcher) { dao.delete(id) } }
     override suspend fun record(execution: SmartRuleExecutionEntity) = withContext(dispatcher) { dao.insertExecution(execution) }
+    override suspend fun updateOutcome(executionId: String, result: String, failureReason: String?, actuatorStatus: String, bleStatus: String, cloudStatus: String) = withContext(dispatcher) {
+        check(dao.updateExecutionOutcome(executionId, result, failureReason, actuatorStatus, bleStatus, cloudStatus) == 1) { "Execution $executionId was not found" }
+    }
+    override suspend fun updateCloudStatus(executionId: String, status: String) = withContext(dispatcher) {
+        check(dao.updateCloudStatus(executionId, status) == 1) { "Execution $executionId was not found" }
+    }
 }

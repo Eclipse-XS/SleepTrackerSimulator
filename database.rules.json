@@ -32,6 +32,26 @@
                 "$other": { ".validate": false }
               }
             },
+            "ruleEvents": {
+              "$eventId": {
+                ".validate": "newData.hasChildren(['eventId','ruleId','ruleName','timestamp','source','sourceValue','requestedAction','actuatorResult','bleDeliveryResult','schemaVersion'])",
+                "eventId": { ".validate": "newData.isString() && newData.val() === $eventId" },
+                "ruleId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
+                "ruleName": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
+                "timestamp": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 60000" },
+                "source": { ".validate": "newData.isString() && (newData.val() === 'ACCELEROMETER_X' || newData.val() === 'ACCELEROMETER_Y' || newData.val() === 'ACCELEROMETER_Z' || newData.val() === 'MOVEMENT_INTENSITY' || newData.val() === 'ML_CLASS')" },
+                "sourceValue": { ".validate": "newData.isString() && newData.val().length <= 128" },
+                "sensorTimestampNanos": { ".validate": "newData.isNumber() && newData.val() > 0" },
+                "predictionId": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128" },
+                "mlClass": { ".validate": "newData.isString() && (newData.val() === 'REST' || newData.val() === 'RESTLESS' || newData.val() === 'ACTIVE')" },
+                "mlConfidence": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+                "requestedAction": { ".validate": "newData.isString() && (newData.val() === 'VIBRATION_PULSE' || newData.val() === 'MOCK_BLE_ALERT' || newData.val() === 'VISIBLE_ALERT' || newData.val() === 'CRITICAL_ALERT')" },
+                "actuatorResult": { ".validate": "newData.isString() && newData.val().length <= 256" },
+                "bleDeliveryResult": { ".validate": "newData.isString() && newData.val().length <= 256" },
+                "schemaVersion": { ".validate": "newData.isNumber() && newData.val() === 1" },
+                "$other": { ".validate": false }
+              }
+            },
             "$other": { ".validate": false }
           }
         },

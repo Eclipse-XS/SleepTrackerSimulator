@@ -13,10 +13,12 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOf
+import java.util.concurrent.atomic.AtomicLong
 
 class AndroidAccelerometerDataSource(context: Context) : AccelerometerDataSource {
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val droppedSamples = AtomicLong(0)
 
     override fun observe(): Flow<AccelerometerEvent> {
         val manager = sensorManager
@@ -31,7 +33,7 @@ class AndroidAccelerometerDataSource(context: Context) : AccelerometerDataSource
                 override fun onSensorChanged(event: SensorEvent) {
                     if (event.sensor.type != Sensor.TYPE_ACCELEROMETER || event.values.size < 3) return
 
-                    trySend(
+                    val result = trySend(
                         AccelerometerEvent.Measurement(
                             SensorSample(
                                 x = event.values[0],
@@ -41,6 +43,15 @@ class AndroidAccelerometerDataSource(context: Context) : AccelerometerDataSource
                             ),
                         ),
                     )
+                    if (result.isFailure) {
+                        val count = droppedSamples.incrementAndGet()
+                        DiagnosticLog.event(
+                            DiagnosticTags.SENSORS,
+                            "sampleDropped",
+                            DiagnosticResult.FAILED,
+                            details = mapOf("droppedCount" to count, "reason" to "callback_buffer_full_or_closed"),
+                        )
+                    }
                 }
 
                 override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

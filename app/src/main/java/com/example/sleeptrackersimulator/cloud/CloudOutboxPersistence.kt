@@ -82,9 +82,12 @@ abstract class CloudOutboxDao {
     @Transaction
     open fun enqueue(entity: CloudOutboxEntity, maximumOperations: Int) {
         val full = count() >= maximumOperations
-        val oneTerminalOperation = entity.type == PendingOperationType.END_SESSION.name &&
-            countTypeForSession(PendingOperationType.END_SESSION.name, entity.sessionId) == 0
-        if (full && !oneTerminalOperation) {
+        val protectedOperation = when (entity.type) {
+            PendingOperationType.END_SESSION.name -> countTypeForSession(PendingOperationType.END_SESSION.name, entity.sessionId) == 0
+            PendingOperationType.UPLOAD_RULE_EVENT.name -> countTypeForSession(PendingOperationType.UPLOAD_RULE_EVENT.name, entity.sessionId) < maximumOperations
+            else -> false
+        }
+        if (full && !protectedOperation) {
             throw CloudOutboxFullException(
                 "Cloud outbox limit ($maximumOperations) reached; collection was not acknowledged",
             )
@@ -191,7 +194,11 @@ class RoomCloudStateStore(
         operationId = operationId,
         type = type.name,
         sessionId = sessionId,
-        payloadJson = payload?.let(gson::toJson),
+        payloadJson = when (type) {
+            PendingOperationType.UPLOAD_MEASUREMENT -> payload?.let(gson::toJson)
+            PendingOperationType.UPLOAD_RULE_EVENT -> ruleEvent?.let(gson::toJson)
+            PendingOperationType.END_SESSION -> null
+        },
         endedAt = endedAt,
         createdAt = createdAt,
         retryCount = retryCount,
@@ -203,7 +210,8 @@ class RoomCloudStateStore(
         operationId = operationId,
         type = PendingOperationType.valueOf(type),
         sessionId = sessionId,
-        payload = payloadJson?.let { gson.fromJson(it, SensorPayload::class.java) },
+        payload = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_MEASUREMENT.name }?.let { gson.fromJson(it, SensorPayload::class.java) },
+        ruleEvent = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_RULE_EVENT.name }?.let { gson.fromJson(it, SmartRuleEventPayload::class.java) },
         endedAt = endedAt,
         createdAt = createdAt,
         retryCount = retryCount,

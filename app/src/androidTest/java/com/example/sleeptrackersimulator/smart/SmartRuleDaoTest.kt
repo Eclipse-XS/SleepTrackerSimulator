@@ -27,9 +27,12 @@ class SmartRuleDaoTest {
         repository.save(rule.copy(threshold = 12f, updatedAt = 2))
         assertEquals(12f, repository.observeAll().first().single().threshold)
         repository.record(SmartRuleExecutionEntity("e1", "r1", 3, "13.0", "VIBRATION_PULSE", "SUCCESS", null))
+        repository.updateOutcome("e1", "SUCCESS", null, "PULSE_OK", "NOT_REQUESTED", "PENDING")
         assertEquals("e1", repository.observeRecentExecutions(5).first().single().executionId)
         repository.delete("r1")
         assertEquals(emptyList<SmartRule>(), repository.observeAll().first())
-        assertEquals(emptyList<SmartRuleExecutionEntity>(), repository.observeRecentExecutions(5).first())
+        val preserved = repository.observeRecentExecutions(5).first().single()
+        assertEquals("e1", preserved.executionId)
+        assertEquals("PENDING", preserved.cloudStatus)
     }
 }
