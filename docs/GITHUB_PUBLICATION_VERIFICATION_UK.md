@@ -21,7 +21,7 @@
 
 ## CI
 
-`.github/workflows/android-ci.yml` запускає Android unit tests, debug build, lint і окремий Firebase Emulator job без production credentials. Instrumentation лишається manual gate, бо workflow не створює Android emulator.
+`.github/workflows/android-ci.yml` запускає Android unit tests, debug build, lint і окремий Firebase Emulator job без production credentials. Android job створює непублічний dummy `google-services.json` лише в runner workspace, тому build не залежить від локального live client config. Instrumentation лишається manual gate, бо workflow не створює Android emulator.
 
 GitHub CI можна вважати PASS лише після завершення checks для опублікованого commit. Локальна наявність workflow не є доказом remote success.
 
