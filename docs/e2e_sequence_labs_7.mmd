@@ -1,0 +1,23 @@
+sequenceDiagram
+    participant Sensor as Accelerometer
+    participant VM as SensorViewModel
+    participant ML as TFLite pipeline
+    participant Room as Room DB
+    participant Act as Actuator
+    participant Outbox as Durable outbox
+    participant Cloud as Firebase
+    Sensor->>VM: x y z timestamp
+    VM->>Room: sampled movement record
+    VM->>ML: sample
+    ML->>ML: circular buffer and inference
+    ML-->>Act: ACTIVE confidence at least 0.75
+    Act->>Act: vibration pulse
+    Act->>Room: typed actuator event
+    VM->>Outbox: stable upload operation
+    alt network available
+        Outbox->>Cloud: owner scoped write
+        Cloud-->>Outbox: acknowledge FIFO head
+    else offline
+        Outbox->>Outbox: retain pending operation
+        Outbox->>Cloud: WorkManager retry after reconnect
+    end

@@ -7,6 +7,7 @@ import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.ble.IBleConnector
 import com.example.sleeptrackersimulator.ble.BleOperationResult
 import com.example.sleeptrackersimulator.ble.HeartRateMeasurement
+import com.example.sleeptrackersimulator.ble.DeviceAlertState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
@@ -24,6 +25,7 @@ class BleViewModelTest {
         override val heartRate = MutableStateFlow<HeartRateMeasurement?>(null)
         override val heartRateHistory = MutableStateFlow<List<Int>>(emptyList())
         override val notificationsEnabled = MutableStateFlow(false)
+        override val alertState = MutableStateFlow(DeviceAlertState())
 
         var scanCalls = 0
         val connectedDevices = mutableListOf<BleDevice>()
@@ -52,6 +54,11 @@ class BleViewModelTest {
         override fun writeCommand(command: String): BleOperationResult {
             commands.add(command)
             return BleOperationResult.Success("OK")
+        }
+
+        override fun sendAlert(eventId: String): BleOperationResult {
+            commands.add("ALERT:$eventId")
+            return BleOperationResult.Success("ALERT_ACK:$eventId")
         }
 
         override fun close() {

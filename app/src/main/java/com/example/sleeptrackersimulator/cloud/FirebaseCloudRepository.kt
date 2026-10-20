@@ -16,7 +16,6 @@ class FirebaseCloudRepository(
                 "schemaVersion" to CLOUD_SCHEMA_VERSION,
                 "deviceId" to deviceId,
                 "startedAt" to startedAt,
-                "endedAt" to null,
             ),
         ).await(); Unit
     }
@@ -24,6 +23,11 @@ class FirebaseCloudRepository(
     override suspend fun uploadMeasurement(ownerUid: String, sessionId: String, payload: SensorPayload) = databaseCall {
         users.child(ownerUid).child("sessions").child(sessionId).child("measurements")
             .child(payload.measurementId).setValue(payload).await(); Unit
+    }
+
+    override suspend fun uploadRuleEvent(ownerUid: String, sessionId: String, payload: SmartRuleEventPayload) = databaseCall {
+        users.child(ownerUid).child("sessions").child(sessionId).child("ruleEvents")
+            .child(payload.eventId).setValue(payload).await(); Unit
     }
 
     override suspend fun endSession(ownerUid: String, sessionId: String, endedAt: Long) = databaseCall {

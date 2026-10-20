@@ -1,8 +1,8 @@
 package com.example.sleeptrackersimulator.actuator
 
 data class RemoteControlState(
-    val vibrationEnabled: Boolean = false,
-    val flashlightEnabled: Boolean = false,
+    val vibrationEnabled: Boolean? = null,
+    val flashlightEnabled: Boolean? = null,
 )
 
 sealed interface RemoteControlEvent {

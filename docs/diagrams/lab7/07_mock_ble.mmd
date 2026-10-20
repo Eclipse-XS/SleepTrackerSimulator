@@ -1,0 +1,9 @@
+stateDiagram-v2
+  [*] --> Disconnected
+  Disconnected --> Scanning: startScan
+  Scanning --> DeviceFound: virtual Sleep Band emitted
+  DeviceFound --> Connected: connect
+  Connected --> AlertAcknowledged: sendAlert eventId
+  AlertAcknowledged --> Connected: ALERT_ACK eventId and revision
+  Connected --> Connected: repeated eventId returns duplicate ACK without revision increment
+  Connected --> Disconnected: disconnect

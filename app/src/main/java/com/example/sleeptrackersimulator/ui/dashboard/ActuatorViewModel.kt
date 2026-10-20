@@ -1,6 +1,5 @@
 package com.example.sleeptrackersimulator.ui.dashboard
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -15,6 +14,11 @@ import com.example.sleeptrackersimulator.actuator.RemoteControlEvent
 import com.example.sleeptrackersimulator.actuator.RemoteControlRepository
 import com.example.sleeptrackersimulator.actuator.SmartActuator
 import com.example.sleeptrackersimulator.actuator.TriggerSource
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
+import com.example.sleeptrackersimulator.ml.ActivityClass
+import com.example.sleeptrackersimulator.ml.MlUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +26,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ActuatorViewModel(
@@ -30,9 +36,16 @@ class ActuatorViewModel(
     private val remoteRepository: RemoteControlRepository,
     private val decisionEngine: DecisionEngine = DecisionEngine(),
     private val log: (String, Throwable?) -> Unit = { message, error ->
-        if (error == null) Log.i(TAG, message) else Log.e(TAG, message, error)
+        DiagnosticLog.event(
+            DiagnosticTags.ACTUATORS,
+            "actuatorCommand",
+            if (error == null) DiagnosticResult.SUCCESS else DiagnosticResult.FAILED,
+            details = mapOf("message" to message, "reason" to error?.javaClass?.simpleName),
+            error = error,
+        )
     },
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
+    mlState: StateFlow<MlUiState>? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         ActuatorUiState(
@@ -43,27 +56,73 @@ class ActuatorViewModel(
     val state: StateFlow<ActuatorUiState> = _state
     private val activationChannel = Channel<ActuatorActivation>(Channel.UNLIMITED)
     val activations: Flow<ActuatorActivation> = activationChannel.receiveAsFlow()
+    private var foregroundActive = false
+    private var latestRemoteControls: com.example.sleeptrackersimulator.actuator.RemoteControlState? = null
+    private var receivedInitialRemoteSnapshot = false
+    private var manualVibrationBeforeInitialRemoteSnapshot = false
+    private var manualFlashlightBeforeInitialRemoteSnapshot = false
+    private var lastMlCritical = false
 
     init {
         viewModelScope.launch {
             sensorState.collect { sensor ->
-                val analysis = (sensor as? SensorUiState.Active)?.analysis ?: return@collect
+                val analysis = (sensor as? SensorUiState.Active)?.analysis
+                if (analysis == null) {
+                    decisionEngine.reset()
+                    return@collect
+                }
                 val decision = decisionEngine.evaluate(analysis.motionIntensity, analysis.state)
-                if (decision == Decision.TRIGGER_MOVEMENT_ALERT && _state.value.automaticControlEnabled) {
-                    log("Local movement threshold crossed", null)
+                if (decision == Decision.TRIGGER_MOVEMENT_ALERT &&
+                    foregroundActive && _state.value.automaticControlEnabled &&
+                    !_state.value.vibrationEnabled
+                ) {
+                    DiagnosticLog.event(DiagnosticTags.ACTUATORS, "automaticMovementAlert", DiagnosticResult.STARTED, source = TriggerSource.LOCAL_AUTOMATIC.name)
                     applyPulse(actuator.triggerVibrationPulse(), TriggerSource.LOCAL_AUTOMATIC)
                 }
             }
         }
+        if (mlState != null) viewModelScope.launch {
+            mlState.collect { ml ->
+                val prediction = (ml as? MlUiState.Ready)?.prediction
+                val critical = prediction?.activity == ActivityClass.ACTIVE && prediction.confidence >= ML_ALERT_CONFIDENCE
+                if (critical && !lastMlCritical && foregroundActive &&
+                    _state.value.automaticControlEnabled && !_state.value.vibrationEnabled
+                ) {
+                    DiagnosticLog.event(
+                        DiagnosticTags.ACTUATORS,
+                        "automaticMlAlert",
+                        DiagnosticResult.STARTED,
+                        source = TriggerSource.LOCAL_AUTOMATIC.name,
+                        details = mapOf("class" to prediction.activity.name, "confidence" to prediction.confidence),
+                    )
+                    applyPulse(actuator.triggerVibrationPulse(), TriggerSource.LOCAL_AUTOMATIC)
+                }
+                lastMlCritical = critical
+            }
+        }
         viewModelScope.launch {
             try {
-                remoteRepository.events.collect { event ->
+                remoteRepository.events.retryWhen { error, attempt ->
+                    log("Remote listener disconnected; retry ${attempt + 1}", error)
+                    if (attempt >= MAX_REMOTE_RECONNECT_ATTEMPTS - 1) false
+                    else {
+                        delay(REMOTE_RECONNECT_DELAY_MILLIS)
+                        true
+                    }
+                }.collect { event ->
                     when (event) {
                         is RemoteControlEvent.Updated -> {
+                            val initialSnapshot = !receivedInitialRemoteSnapshot
+                            receivedInitialRemoteSnapshot = true
+                            latestRemoteControls = event.controls
                             _state.update { it.copy(remoteListenerConnected = true, lastError = null) }
-                            log("Remote control updated", null)
-                            applyPersistentVibration(event.controls.vibrationEnabled, TriggerSource.REMOTE)
-                            applyFlashlight(event.controls.flashlightEnabled, TriggerSource.REMOTE)
+                            log(
+                                "Remote command received: initial=$initialSnapshot " +
+                                    "vibration=${event.controls.vibrationEnabled} " +
+                                    "flashlight=${event.controls.flashlightEnabled}",
+                                null,
+                            )
+                            if (foregroundActive) applyRemoteControls(event.controls, initialSnapshot)
                         }
                         is RemoteControlEvent.Error -> {
                             _state.update {
@@ -86,16 +145,53 @@ class ActuatorViewModel(
 
     fun setAutomaticControlEnabled(enabled: Boolean) {
         _state.update { it.copy(automaticControlEnabled = enabled) }
+        decisionEngine.reset()
+    }
+
+    fun setForegroundActive(active: Boolean) {
+        if (foregroundActive == active) return
+        foregroundActive = active
+        decisionEngine.reset()
+        if (!active) {
+            DiagnosticLog.event(DiagnosticTags.ACTUATORS, "stopAll", DiagnosticResult.STARTED, source = "LIFECYCLE", details = mapOf("reason" to "foreground_false"))
+            actuator.stopAll()
+            _state.update {
+                it.copy(vibrationEnabled = false, flashlightEnabled = false)
+            }
+        } else {
+            latestRemoteControls?.let(::applyRemoteControls)
+        }
     }
 
     fun setManualVibration(enabled: Boolean) {
-        log("Manual vibration ${if (enabled) "enabled" else "disabled"}", null)
+        if (!foregroundActive) return
+        if (!receivedInitialRemoteSnapshot) manualVibrationBeforeInitialRemoteSnapshot = true
+        DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setVibration", DiagnosticResult.STARTED, source = TriggerSource.MANUAL.name, details = mapOf("enabled" to enabled))
         applyPersistentVibration(enabled, TriggerSource.MANUAL)
     }
 
     fun setManualFlashlight(enabled: Boolean) {
-        log("Manual flashlight ${if (enabled) "enabled" else "disabled"}", null)
+        if (!foregroundActive) return
+        if (!receivedInitialRemoteSnapshot) manualFlashlightBeforeInitialRemoteSnapshot = true
+        DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.STARTED, source = TriggerSource.MANUAL.name, details = mapOf("enabled" to enabled))
         applyFlashlight(enabled, TriggerSource.MANUAL)
+    }
+
+    fun reportFlashlightPermissionDenied() {
+        _state.update {
+            it.copy(
+                flashlightEnabled = false,
+                lastError = "Camera permission denied; flashlight remains disabled",
+            )
+        }
+        log("Camera permission denied", null)
+    }
+
+    fun triggerSmartRulePulse(): ActuatorResult {
+        if (!foregroundActive) return ActuatorResult(ActuatorOperationStatus.ERROR, "APP_NOT_IN_FOREGROUND")
+        val result = actuator.triggerVibrationPulse()
+        applyPulse(result, TriggerSource.LOCAL_AUTOMATIC)
+        return result
     }
 
     private fun applyPulse(result: ActuatorResult, source: TriggerSource) {
@@ -108,8 +204,28 @@ class ActuatorViewModel(
         }
     }
 
+    private fun applyRemoteControls(
+        controls: com.example.sleeptrackersimulator.actuator.RemoteControlState,
+        initialSnapshot: Boolean = false,
+    ) {
+        if (initialSnapshot && manualVibrationBeforeInitialRemoteSnapshot) {
+            log("Initial remote vibration state ignored: a manual command was already issued", null)
+        } else {
+            controls.vibrationEnabled?.let { applyPersistentVibration(it, TriggerSource.REMOTE) }
+        }
+        if (initialSnapshot && manualFlashlightBeforeInitialRemoteSnapshot) {
+            log("Initial remote flashlight state ignored: a manual command was already issued", null)
+        } else {
+            controls.flashlightEnabled?.let { applyFlashlight(it, TriggerSource.REMOTE) }
+        }
+    }
+
     private fun applyPersistentVibration(enabled: Boolean, source: TriggerSource) {
-        if (_state.value.vibrationEnabled == enabled) return
+        if (_state.value.vibrationEnabled == enabled) {
+            DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setVibration", DiagnosticResult.SKIPPED, source = source.name, details = mapOf("enabled" to enabled, "reason" to "duplicate"))
+            return
+        }
+        DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setVibration", DiagnosticResult.STARTED, source = source.name, details = mapOf("enabled" to enabled))
         val activation = if (enabled) ActuatorAction.VIBRATION_ENABLED else null
         applyResult(actuator.setPersistentVibration(enabled), activation, source) {
             it.copy(
@@ -126,7 +242,11 @@ class ActuatorViewModel(
     }
 
     private fun applyFlashlight(enabled: Boolean, source: TriggerSource) {
-        if (_state.value.flashlightEnabled == enabled) return
+        if (_state.value.flashlightEnabled == enabled) {
+            DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.SKIPPED, source = source.name, details = mapOf("enabled" to enabled, "reason" to "duplicate"))
+            return
+        }
+        DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.STARTED, source = source.name, details = mapOf("enabled" to enabled))
         val activation = if (enabled) ActuatorAction.FLASHLIGHT_ENABLED else null
         applyResult(actuator.setFlashlightEnabled(enabled), activation, source) {
             it.copy(
@@ -164,23 +284,27 @@ class ActuatorViewModel(
 
     override fun onCleared() {
         decisionEngine.reset()
+        DiagnosticLog.event(DiagnosticTags.ACTUATORS, "stopAll", DiagnosticResult.STARTED, source = "LIFECYCLE", details = mapOf("reason" to "view_model_cleared"))
         actuator.stopAll()
         activationChannel.close()
         super.onCleared()
     }
 
     companion object {
-        private const val TAG = "ActuatorControl"
+        private const val MAX_REMOTE_RECONNECT_ATTEMPTS = 3L
+        private const val REMOTE_RECONNECT_DELAY_MILLIS = 1_000L
+        private const val ML_ALERT_CONFIDENCE = 0.75f
 
         fun factory(
             sensorState: StateFlow<SensorUiState>,
             actuator: SmartActuator,
             remoteRepository: RemoteControlRepository,
+            mlState: StateFlow<MlUiState>? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(ActuatorViewModel::class.java))
-                return ActuatorViewModel(sensorState, actuator, remoteRepository) as T
+                return ActuatorViewModel(sensorState, actuator, remoteRepository, mlState = mlState) as T
             }
         }
     }

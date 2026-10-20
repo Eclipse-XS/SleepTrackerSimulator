@@ -18,9 +18,13 @@ sealed interface BleConnectionState {
     data class Error(val message: String) : BleConnectionState
 }
 
-data class HeartRateMeasurement(val beatsPerMinute: Int, val sequence: Long)
+data class HeartRateMeasurement(
+    val beatsPerMinute: Int,
+    val sequence: Long,
+    val timestampNanos: Long = System.nanoTime(),
+)
 
-enum class DeviceCommand { START_STREAM, STOP_STREAM, REQUEST_STATUS }
+enum class DeviceCommand { START_STREAM, STOP_STREAM, REQUEST_STATUS, ALERT }
 
 sealed interface BleOperationResult {
     data class Success(val message: String) : BleOperationResult
@@ -32,9 +36,12 @@ object HeartRateProfile {
     val SERVICE_UUID: UUID = standardUuid("180d")
     val MEASUREMENT_UUID: UUID = standardUuid("2a37")
     val BODY_SENSOR_LOCATION_UUID: UUID = standardUuid("2a38")
+    /** Custom writable command characteristic; this is not a Bluetooth SIG UUID. */
+    val COMMAND_UUID: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
     const val SERVICE_SHORT_ID = "180D"
     const val MEASUREMENT_SHORT_ID = "2A37"
     const val BODY_SENSOR_LOCATION_SHORT_ID = "2A38"
+    const val COMMAND_ID = "7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e"
 
     private fun standardUuid(shortId: String): UUID = UUID.fromString("0000$shortId$BASE_SUFFIX")
 }

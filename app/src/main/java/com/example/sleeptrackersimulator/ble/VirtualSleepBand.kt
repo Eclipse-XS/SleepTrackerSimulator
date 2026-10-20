@@ -6,6 +6,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -27,6 +30,8 @@ class VirtualSleepBand(
     private var streamJob: Job? = null
     private var currentBpm = initialBpm.coerceIn(minBpm, maxBpm)
     private var sequence = 0L
+    private val _alertState = MutableStateFlow(DeviceAlertState())
+    val alertState: StateFlow<DeviceAlertState> = _alertState.asStateFlow()
     val isStreaming: Boolean get() = streamJob?.isActive == true
     val currentMeasurement: HeartRateMeasurement get() = HeartRateMeasurement(currentBpm, sequence)
 
@@ -51,6 +56,15 @@ class VirtualSleepBand(
         streamJob?.cancel()
         streamJob = null
     }
+
+    fun processAlert(eventId: String): DeviceAlertState {
+        require(eventId.isNotBlank())
+        val current = _alertState.value
+        if (current.active && current.eventId == eventId) return current
+        return DeviceAlertState(true, eventId, System.nanoTime(), current.revision + 1).also { _alertState.value = it }
+    }
+
+    fun clearAlert() { _alertState.value = DeviceAlertState(revision = _alertState.value.revision) }
 
     fun close() = stopStreaming()
 }

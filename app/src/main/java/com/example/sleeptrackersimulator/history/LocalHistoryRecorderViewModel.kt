@@ -16,6 +16,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.UUID
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 data class LocalRecordingState(
     val savedCount: Long = 0,
@@ -32,7 +36,8 @@ class LocalHistoryRecorderViewModel(
 ) : ViewModel() {
     private val writeMutex = Mutex()
     private var pendingActivation = false
-    private var latestActiveState: SensorUiState.Active? = null
+    private val pendingEvents = ArrayDeque<ActuatorEvent>()
+    @Volatile private var latestActiveState: SensorUiState.Active? = null
     private var lastRecordedSensorTimestampNanos: Long? = null
     private val _state = MutableStateFlow(LocalRecordingState())
     val state: StateFlow<LocalRecordingState> = _state
@@ -44,14 +49,34 @@ class LocalHistoryRecorderViewModel(
             sensorState.collect { state -> latestActiveState = state as? SensorUiState.Active }
         }
         viewModelScope.launch(dispatcher) {
-            actuatorActivations.collect {
-                writeMutex.withLock { pendingActivation = true }
+            actuatorActivations.collect { activation ->
+                writeMutex.withLock {
+                    pendingActivation = true
+                    pendingEvents.addLast(
+                        ActuatorEvent(
+                            eventId = UUID.randomUUID().toString(),
+                            timestamp = activation.timestamp,
+                            action = activation.action.name,
+                            triggerSource = activation.source.name,
+                            requestedState = true,
+                            result = "SUCCESS",
+                        ),
+                    )
+                    persistPendingEventsLocked()
+                }
             }
         }
         viewModelScope.launch(dispatcher) {
             while (isActive) {
                 delay(sampleIntervalMillis)
                 recordLatestIfNew()
+            }
+        }
+        viewModelScope.launch(dispatcher) {
+            while (isActive) {
+                runCatching { repository.deleteOlderThan((clock() - LOCAL_RETENTION_MILLIS).coerceAtLeast(1L)) }
+                    .onFailure { error -> _state.update { it.copy(lastError = error.message ?: "Local retention failed") } }
+                delay(RETENTION_CHECK_INTERVAL_MILLIS)
             }
         }
     }
@@ -65,6 +90,7 @@ class LocalHistoryRecorderViewModel(
         if (!value.isFinite() || value < 0f || sensorTimestamp <= 0L) return
 
         writeMutex.withLock {
+            persistPendingEventsLocked()
             val actionForRecord = pendingActivation
             try {
                 repository.addMeasurement(clock(), value, actionForRecord)
@@ -72,13 +98,29 @@ class LocalHistoryRecorderViewModel(
                 if (actionForRecord) pendingActivation = false
                 _state.update { it.copy(savedCount = it.savedCount + 1, lastError = null) }
             } catch (error: Exception) {
+                DiagnosticLog.event(DiagnosticTags.ROOM, "recordLatest", DiagnosticResult.FAILED, details = mapOf("reason" to error.javaClass.simpleName), error = error)
                 _state.update { it.copy(lastError = error.message ?: "Local database write failed") }
+            }
+        }
+    }
+
+    private suspend fun persistPendingEventsLocked() {
+        while (pendingEvents.isNotEmpty()) {
+            try {
+                repository.addActuatorEvent(pendingEvents.first())
+                pendingEvents.removeFirst()
+            } catch (error: Exception) {
+                DiagnosticLog.event(DiagnosticTags.ROOM, "recordActuatorEvent", DiagnosticResult.FAILED, details = mapOf("reason" to error.javaClass.simpleName), error = error)
+                _state.update { it.copy(lastError = error.message ?: "Actuator event write failed") }
+                return
             }
         }
     }
 
     companion object {
         const val DEFAULT_SAMPLE_INTERVAL_MILLIS = 1_000L
+        const val LOCAL_RETENTION_MILLIS = 30L * 24L * 60L * 60L * 1_000L
+        const val RETENTION_CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1_000L
 
         fun factory(
             sensorState: StateFlow<SensorUiState>,

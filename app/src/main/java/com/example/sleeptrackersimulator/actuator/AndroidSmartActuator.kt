@@ -5,11 +5,16 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioAttributes
+import android.os.Build
 import android.os.VibrationEffect
+import android.os.VibrationAttributes
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.Log
 import androidx.core.content.ContextCompat
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 class AndroidSmartActuator(context: Context) : SmartActuator {
     private val appContext = context.applicationContext
@@ -26,7 +31,8 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
     override fun triggerVibrationPulse(): ActuatorResult {
         if (!vibratorAvailable) return unavailable("Vibrator unavailable")
         return runOperation("Vibration pulse triggered") {
-            vibrator?.vibrate(VibrationEffect.createOneShot(PULSE_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE))
+            DiagnosticLog.event(TAG, "vibrate", DiagnosticResult.STARTED, source = "LOCAL_AUTOMATIC", details = mapOf("effect" to "oneShot", "durationMs" to PULSE_DURATION_MS, "usage" to "ALARM"))
+            vibrate(VibrationEffect.createOneShot(PULSE_DURATION_MS, VibrationEffect.DEFAULT_AMPLITUDE))
         }
     }
 
@@ -37,11 +43,15 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         if (!vibratorAvailable) return unavailable("Vibrator unavailable")
         return runOperation(if (enabled) "Vibration enabled" else "Vibration disabled") {
             if (enabled) {
-                vibrator?.vibrate(
-                    VibrationEffect.createWaveform(longArrayOf(0L, 300L, 700L), 0),
+                DiagnosticLog.event(TAG, "vibrate", DiagnosticResult.STARTED, details = mapOf("effect" to "waveform", "timingsMs" to PERSISTENT_TIMINGS_MS.contentToString(), "repeatIndex" to PERSISTENT_REPEAT_INDEX, "usage" to "ALARM"))
+                vibrate(
+                    VibrationEffect.createWaveform(
+                        PERSISTENT_TIMINGS_MS,
+                        PERSISTENT_REPEAT_INDEX,
+                    ),
                 )
             } else {
-                vibrator?.cancel()
+                cancelVibration("persistent vibration disabled")
             }
         }
     }
@@ -54,6 +64,7 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) !=
             PackageManager.PERMISSION_GRANTED
         ) {
+            DiagnosticLog.event(TAG, "setFlashlight", DiagnosticResult.FAILED, details = mapOf("reason" to "camera_permission_denied"))
             return ActuatorResult(ActuatorOperationStatus.ERROR, "Camera permission required")
         }
         return runOperation(if (enabled) "Flashlight enabled" else "Flashlight disabled") {
@@ -62,14 +73,32 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
     }
 
     override fun stopAll() {
-        vibrator?.cancel()
+        cancelVibration("stopAll")
         if (flashlightAvailable && ContextCompat.checkSelfPermission(
                 appContext, Manifest.permission.CAMERA,
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             runCatching { cameraManager.setTorchMode(requireNotNull(flashlightCameraId), false) }
-                .onFailure { Log.w(TAG, "Failed to disable flashlight during cleanup", it) }
+                .onFailure { DiagnosticLog.event(TAG, "setFlashlight", DiagnosticResult.FAILED, source = "LIFECYCLE", details = mapOf("reason" to it.javaClass.simpleName), error = it) }
         }
+    }
+
+    private fun vibrate(effect: VibrationEffect) {
+        val availableVibrator = requireNotNull(vibrator)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            availableVibrator.vibrate(
+                effect,
+                VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            availableVibrator.vibrate(effect, ALARM_AUDIO_ATTRIBUTES)
+        }
+    }
+
+    private fun cancelVibration(reason: String) {
+        DiagnosticLog.event(TAG, "cancel", DiagnosticResult.SUCCESS, details = mapOf("reason" to reason))
+        vibrator?.cancel()
     }
 
     private fun findFlashlightCameraId(): String? {
@@ -84,15 +113,16 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
                 .firstOrNull { (_, characteristics) ->
                     characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
                 }?.first
-        }.onFailure { Log.w(TAG, "Flashlight discovery failed", it) }.getOrNull()
+        }.onFailure { DiagnosticLog.event(TAG, "discoverFlashlight", DiagnosticResult.FAILED, details = mapOf("reason" to it.javaClass.simpleName), error = it) }.getOrNull()
     }
 
     private inline fun runOperation(successMessage: String, operation: () -> Unit): ActuatorResult =
         try {
             operation()
+            DiagnosticLog.event(TAG, "androidApiCall", DiagnosticResult.SUCCESS, details = mapOf("physicalEffectConfirmed" to false, "message" to successMessage))
             ActuatorResult(ActuatorOperationStatus.SUCCESS, successMessage)
         } catch (error: Exception) {
-            Log.e(TAG, "Actuator operation failed", error)
+            DiagnosticLog.event(TAG, "androidApiCall", DiagnosticResult.FAILED, details = mapOf("reason" to error.javaClass.simpleName), error = error)
             ActuatorResult(
                 ActuatorOperationStatus.ERROR,
                 error.message ?: error.javaClass.simpleName,
@@ -100,12 +130,19 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         }
 
     private fun unavailable(message: String): ActuatorResult {
-        Log.w(TAG, message)
+        DiagnosticLog.event(TAG, "hardwareAvailability", DiagnosticResult.SKIPPED, details = mapOf("reason" to message))
         return ActuatorResult(ActuatorOperationStatus.UNAVAILABLE, message)
     }
 
     companion object {
-        private const val TAG = "ActuatorControl"
-        private const val PULSE_DURATION_MS = 250L
+        private const val TAG = DiagnosticTags.ACTUATORS
+        internal const val PULSE_DURATION_MS = 250L
+        internal val PERSISTENT_TIMINGS_MS = longArrayOf(0L, 300L, 700L)
+        internal const val PERSISTENT_REPEAT_INDEX = 1
+        private val ALARM_AUDIO_ATTRIBUTES by lazy {
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .build()
+        }
     }
 }

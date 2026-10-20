@@ -1,0 +1,14 @@
+flowchart TD
+  I[Sensor or ML state] --> E[Pure rule evaluation]
+  E -->|no trigger| N[Update runtime state]
+  E -->|trigger| C[SmartScenariosViewModel coordinator]
+  C --> T[Atomic Room transaction]
+  T --> X[Execution PREPARING]
+  T --> O[Gated outbox ready false]
+  T --> A[Vibration result]
+  T --> B[Mock BLE ALERT acknowledgement]
+  C --> V[Visible AlertDialog]
+  A --> R[Atomic finalization]
+  B --> R
+  V --> R
+  R --> F[Final payload and ready true]

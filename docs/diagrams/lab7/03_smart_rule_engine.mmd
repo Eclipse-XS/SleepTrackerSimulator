@@ -1,0 +1,15 @@
+stateDiagram-v2
+  [*] --> Armed
+  Armed --> Counting: condition true
+  Counting --> Counting: true and count below required
+  Counting --> Triggered: required consecutive matches
+  Triggered --> DurableIntent: atomic execution and gated outbox transaction
+  DurableIntent --> ActionInProgress: mark before physical action
+  ActionInProgress --> Finalized: persist actual actuator and BLE outcome
+  ActionInProgress --> OutcomeUnknown: process death and restart
+  Finalized --> WaitingForReset: release finalized outbox payload
+  OutcomeUnknown --> WaitingForReset: release recovery payload without replay
+  WaitingForReset --> WaitingForReset: condition remains true
+  WaitingForReset --> Cooldown: condition false
+  Cooldown --> Armed: elapsed time reaches cooldown
+  Counting --> Armed: condition false

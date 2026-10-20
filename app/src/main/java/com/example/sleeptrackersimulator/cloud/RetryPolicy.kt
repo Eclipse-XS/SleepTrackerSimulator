@@ -2,6 +2,9 @@ package com.example.sleeptrackersimulator.cloud
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 class RetryPolicy(
     val delaysMillis: List<Long> = listOf(500L, 1_000L, 2_000L),
@@ -16,7 +19,10 @@ class RetryPolicy(
                 throw cancelled
             } catch (failure: CloudOperationException) {
                 if (!failure.retriable || attempt >= delaysMillis.size) throw failure
-                sleeper(delaysMillis[attempt++])
+                val delayMillis = delaysMillis[attempt]
+                DiagnosticLog.event(DiagnosticTags.CLOUD, "retryBackoff", DiagnosticResult.STARTED, details = mapOf("attempt" to attempt + 1, "delayMs" to delayMillis, "errorType" to failure.type))
+                attempt++
+                sleeper(delayMillis)
             }
         }
     }

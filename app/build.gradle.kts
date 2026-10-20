@@ -38,10 +38,13 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 dependencies {
+    implementation(platform("org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -51,6 +54,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.database)
@@ -62,6 +66,8 @@ dependencies {
     implementation(libs.vico.compose)
     implementation(libs.vico.compose.m3)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.tensorflow.lite)
     ksp(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
@@ -71,4 +77,5 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.work.testing)
 }

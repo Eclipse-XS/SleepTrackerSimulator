@@ -23,11 +23,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -97,6 +99,28 @@ class ActuatorViewModelTest {
     }
 
     @Test
+    fun `sensor loss rearms automatic decision after recovery`() = actuatorTest { fixture ->
+        fixture.sensor.value = sensor(.8f, MovementState.MOVEMENT)
+        runCurrent()
+        fixture.sensor.value = SensorUiState.Unavailable
+        runCurrent()
+        fixture.sensor.value = sensor(.9f, MovementState.MOVEMENT)
+        runCurrent()
+        assertEquals(2, fixture.actuator.pulseCount)
+    }
+
+    @Test
+    fun `enabling automatic control while movement stays high rearms next sample`() = actuatorTest { fixture ->
+        fixture.viewModel.setAutomaticControlEnabled(false)
+        fixture.sensor.value = sensor(.8f, MovementState.MOVEMENT)
+        runCurrent()
+        fixture.viewModel.setAutomaticControlEnabled(true)
+        fixture.sensor.value = sensor(.9f, MovementState.MOVEMENT)
+        runCurrent()
+        assertEquals(1, fixture.actuator.pulseCount)
+    }
+
+    @Test
     fun `manual vibration on and off calls actuator and updates state`() = actuatorTest { fixture ->
         fixture.viewModel.setManualVibration(true)
         fixture.viewModel.setManualVibration(false)
@@ -111,6 +135,15 @@ class ActuatorViewModelTest {
         fixture.viewModel.setManualFlashlight(false)
         assertEquals(listOf(true, false), fixture.actuator.flashlightStates)
         assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+    }
+
+    @Test
+    fun `camera permission denial leaves flashlight off without hardware call`() = actuatorTest { fixture ->
+        fixture.viewModel.reportFlashlightPermissionDenied()
+
+        assertTrue(fixture.actuator.flashlightStates.isEmpty())
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+        assertTrue(fixture.viewModel.state.value.lastError!!.contains("permission denied"))
     }
 
     @Test
@@ -135,6 +168,76 @@ class ActuatorViewModelTest {
     }
 
     @Test
+    fun `partial remote snapshot changes only the addressed actuator`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualVibration(true)
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(flashlightEnabled = true)))
+        runCurrent()
+        assertTrue(fixture.viewModel.state.value.vibrationEnabled)
+        assertTrue(fixture.viewModel.state.value.flashlightEnabled)
+        assertEquals(listOf(true), fixture.actuator.vibrationStates)
+    }
+
+    @Test
+    fun `missing Firebase control node does not change hardware state`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualVibration(true)
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState()))
+        runCurrent()
+        assertEquals(listOf(true), fixture.actuator.vibrationStates)
+        assertTrue(fixture.viewModel.state.value.vibrationEnabled)
+    }
+
+    @Test
+    fun `duplicate remote snapshot does not repeat hardware command`() = actuatorTest { fixture ->
+        val command = RemoteControlEvent.Updated(RemoteControlState(flashlightEnabled = true))
+        fixture.remote.emit(command)
+        runCurrent()
+        fixture.remote.emit(command)
+        runCurrent()
+        assertEquals(listOf(true), fixture.actuator.flashlightStates)
+    }
+
+    @Test
+    fun `initial remote snapshot does not cancel a manual command issued while Firebase connects`() =
+        actuatorTest { fixture ->
+            fixture.viewModel.setManualVibration(true)
+            fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = false)))
+            runCurrent()
+            assertTrue(fixture.viewModel.state.value.vibrationEnabled)
+            assertEquals(listOf(true), fixture.actuator.vibrationStates)
+        }
+
+    @Test
+    fun `remote update after initial snapshot overrides manual state`() = actuatorTest { fixture ->
+            fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState()))
+            runCurrent()
+            fixture.viewModel.setManualVibration(true)
+            fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = false)))
+            runCurrent()
+            assertFalse(fixture.viewModel.state.value.vibrationEnabled)
+            assertEquals(listOf(true, false), fixture.actuator.vibrationStates)
+        }
+
+    @Test
+    fun `background transition stops hardware and suppresses automatic pulses`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualVibration(true)
+        fixture.viewModel.setForegroundActive(false)
+        fixture.sensor.value = sensor(.9f, MovementState.MOVEMENT)
+        runCurrent()
+        assertEquals(0, fixture.actuator.pulseCount)
+        assertFalse(fixture.viewModel.state.value.vibrationEnabled)
+        assertTrue(fixture.actuator.stopCalls >= 1)
+    }
+
+    @Test
+    fun `automatic pulse is suppressed while persistent vibration is active`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualVibration(true)
+        fixture.sensor.value = sensor(.9f, MovementState.MOVEMENT)
+        runCurrent()
+        assertEquals(0, fixture.actuator.pulseCount)
+        assertTrue(fixture.viewModel.state.value.vibrationEnabled)
+    }
+
+    @Test
     fun `remote error updates diagnostic while local control remains functional`() = actuatorTest { fixture ->
         fixture.remote.emit(RemoteControlEvent.Error("permission denied"))
         runCurrent()
@@ -143,6 +246,33 @@ class ActuatorViewModelTest {
 
         fixture.viewModel.setManualVibration(true)
         assertTrue(fixture.viewModel.state.value.vibrationEnabled)
+    }
+
+    @Test
+    fun `remote listener reconnects after unexpected failure`() = runTest(dispatcher) {
+        var subscriptions = 0
+        val repository = object : RemoteControlRepository {
+            override val events: Flow<RemoteControlEvent> = flow {
+                subscriptions++
+                if (subscriptions == 1) error("listener cancelled")
+                emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = true)))
+            }
+        }
+        val actuator = FakeSmartActuator(true, true)
+        val store = ViewModelStore()
+        val viewModel = ViewModelProvider(store, object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = ActuatorViewModel(
+                MutableStateFlow(SensorUiState.Initializing), actuator, repository, log = { _, _ -> },
+            ) as T
+        })[ActuatorViewModel::class.java]
+        viewModel.setForegroundActive(true)
+        runCurrent()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(2, subscriptions)
+        assertTrue(viewModel.state.value.vibrationEnabled)
+        store.clear()
     }
 
     @Test
@@ -251,6 +381,7 @@ class ActuatorViewModelTest {
                 ) as T
             }
             viewModel = ViewModelProvider(store, factory)[ActuatorViewModel::class.java]
+            viewModel.setForegroundActive(true)
         }
     }
 

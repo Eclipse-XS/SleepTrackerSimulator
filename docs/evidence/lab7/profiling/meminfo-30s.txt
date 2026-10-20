@@ -1,0 +1,71 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 23014398 Realtime: 23014398
+
+** MEMINFO in pid 14672 [com.example.sleeptrackersimulator] **
+                   Pss  Private  Private     Swap      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    13063    13016        0        0    16812    26484    20571     1976
+  Dalvik Heap     9837     9724        0        0    17452    12979     6490     6489
+ Dalvik Other    12373     5896        0        0    19428
+        Stack     2792     2792        0        0     2796
+       Ashmem       10        0        0        0      600
+    Other dev       13        0       12        0      304
+     .so mmap     2188      320       16        0    45720
+    .jar mmap     2540        0      156        0    50288
+    .apk mmap    73165       44    72952        0    74728
+    .ttf mmap      385        0       92        0     1220
+    .dex mmap       14        0        0        0      912
+    .oat mmap       36        0        0        0     1920
+    .art mmap     9518     9136       16        0    32980
+   Other mmap     3545       68       24        0     8572
+      Unknown      614      604        0        0     2136
+        TOTAL   130093    41600    73268        0   275868    39463    27061     8465
+
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    18876                          50432
+         Native Heap:    13016                          16812
+                Code:    73768                         187920
+               Stack:     2792                           2796
+            Graphics:        0                              0
+       Private Other:     6416
+              System:    15225
+             Unknown:                                   17908
+
+           TOTAL PSS:   130093            TOTAL RSS:   275868      TOTAL SWAP (KB):        0
+
+ Objects
+               Views:        8         ViewRootImpl:        1
+         AppContexts:        5           Activities:        1
+              Assets:       20        AssetManagers:        0
+       Local Binders:       27        Proxy Binders:       65
+       Parcel memory:       12         Parcel count:       51
+    Death Recipients:        1             WebViews:        0
+
+ Native Allocations
+                         Count                       Total(kB)
+                        ------                         ------
+    Other (malloced):      520                             48
+ Other (nonmalloced):       88                             64
+   Bitmap (malloced):       20                             51
+
+ SQL
+         MEMORY_USED:      767
+  PAGECACHE_OVERFLOW:      231          MALLOC_SIZE:       46
+
+ DATABASES
+      pgsz     dbsz   Lookaside(b) cache hits cache misses cache size  Dbname
+PER CONNECTION STATS
+         4      104            107   433   341    25  /data/user/0/com.example.sleeptrackersimulator/no_backup/androidx.work.workdb
+         4        8                    0     0     0    (attached) temp
+         4      104             78    65    29     8  /data/user/0/com.example.sleeptrackersimulator/no_backup/androidx.work.workdb (1)
+         4       84            114   400   259    17  /data/user/0/com.example.sleeptrackersimulator/databases/sleep_tracker.db
+         4        8                    0     0     0    (attached) temp
+         4       84             40    97   136     3  /data/user/0/com.example.sleeptrackersimulator/databases/sleep_tracker.db (2)
+         4       84            123   379    35    13  /data/user/0/com.example.sleeptrackersimulator/databases/sleep_tracker.db (1)
+POOL STATS
+     cache hits  cache misses    cache size  Dbname
+            498           374            33  /data/user/0/com.example.sleeptrackersimulator/no_backup/androidx.work.workdb
+            876           435            33  /data/user/0/com.example.sleeptrackersimulator/databases/sleep_tracker.db

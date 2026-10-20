@@ -17,13 +17,14 @@ class PendingPayloadQueueTest {
     }
 
     @Test
-    fun `queue drops oldest payload at capacity`() {
+    fun `queue never drops unacknowledged payload at legacy capacity`() {
         val queue = PendingPayloadQueue(capacity = 2)
         queue.add(payload(1L))
         queue.add(payload(2L))
         queue.add(payload(3L))
 
-        assertEquals(2, queue.size)
+        assertEquals(3, queue.size)
+        assertEquals(1L, queue.removeFirst().timestamp)
         assertEquals(2L, queue.removeFirst().timestamp)
         assertEquals(3L, queue.removeFirst().timestamp)
     }
