@@ -103,7 +103,7 @@ class SessionCoordinatorImpl(
         }
     }
 
-    suspend fun ingestSensorEvent(
+    override suspend fun ingestSensorEvent(
         sourceId: String,
         elapsedNanos: Long,
         x: Float,

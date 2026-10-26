@@ -48,6 +48,8 @@ interface AppContainer {
     val smartRuleEventCoordinator: SmartRuleEventCoordinator
     val activityClassifier: ActivityClassifier
     val sessionRepository: com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
+    val analyticsRepository: com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
+    val sessionCoordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
     val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
 }
 
@@ -123,6 +125,16 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             sessionSummaryDao = database.sessionSummaryDao(),
             personalBaselineDao = database.personalBaselineDao(),
             deviceDao = database.deviceDao(),
+        )
+    }
+
+    override val analyticsRepository: com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
+        get() = sessionRepository
+
+    override val sessionCoordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator by lazy {
+        com.example.sleeptrackersimulator.domain.recording.SessionCoordinatorImpl(
+            sessionRepository = sessionRepository,
+            activityClassifier = activityClassifier,
         )
     }
 

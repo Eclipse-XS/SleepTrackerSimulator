@@ -25,4 +25,14 @@ interface SessionCoordinator {
     suspend fun stopSession(): Result<RecordingSession>
     suspend fun recoverSession(sessionId: String): Result<RecordingSession>
     suspend fun discardSession(): Result<Unit>
+
+    suspend fun ingestSensorEvent(
+        sourceId: String,
+        elapsedNanos: Long,
+        x: Float,
+        y: Float,
+        z: Float,
+        accuracy: Int,
+        sourceKind: com.example.sleeptrackersimulator.core.model.SourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.PHONE_REAL,
+    )
 }

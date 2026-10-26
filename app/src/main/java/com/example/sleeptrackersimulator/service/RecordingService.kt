@@ -40,11 +40,11 @@ class RecordingService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private var coordinator: SessionCoordinatorImpl? = null
+    private var coordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): RecordingService = this@RecordingService
-        fun getCoordinator(): SessionCoordinatorImpl? = coordinator
+        fun getCoordinator(): com.example.sleeptrackersimulator.domain.recording.SessionCoordinator? = coordinator
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -61,10 +61,7 @@ class RecordingService : Service(), SensorEventListener {
 
         val app = application as? SleepTrackerApplication
         if (app != null) {
-            coordinator = SessionCoordinatorImpl(
-                sessionRepository = app.container.sessionRepository,
-                activityClassifier = app.container.activityClassifier,
-            )
+            coordinator = app.container.sessionCoordinator
         }
 
         createNotificationChannel()
@@ -224,5 +221,35 @@ class RecordingService : Service(), SensorEventListener {
         const val EXTRA_SOURCE_MODE = "extra_source_mode"
         const val EXTRA_PLACEMENT = "extra_placement"
         const val EXTRA_SAMPLING_HZ = "extra_sampling_hz"
+
+        fun start(
+            context: Context,
+            mode: SourceMode = SourceMode.PHONE_ONLY,
+            placement: DevicePlacement = DevicePlacement.MATTRESS,
+            samplingHz: Int = 20,
+        ) {
+            val intent = Intent(context, RecordingService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_SOURCE_MODE, mode.name)
+                putExtra(EXTRA_PLACEMENT, placement.name)
+                putExtra(EXTRA_SAMPLING_HZ, samplingHz)
+            }
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun pause(context: Context) {
+            val intent = Intent(context, RecordingService::class.java).apply { action = ACTION_PAUSE }
+            context.startService(intent)
+        }
+
+        fun resume(context: Context) {
+            val intent = Intent(context, RecordingService::class.java).apply { action = ACTION_RESUME }
+            context.startService(intent)
+        }
+
+        fun stop(context: Context) {
+            val intent = Intent(context, RecordingService::class.java).apply { action = ACTION_STOP }
+            context.startService(intent)
+        }
     }
 }
