@@ -28,6 +28,20 @@ PLAN.md
 .codex-doc/
 .codex-docx-qa/
 .codex-pptx/
+.codex-artifacts/
 database-debug.log
 tools/word_lock_backup.tmp
 node_modules/
+
+# Local document QA renders and intermediate inspection output
+tools/qa_*/
+tools/qa_*.pdf
+tools/doc*.json
+tools/*_final.json
+tools/inspect_*.json
+tools/screen_*.png
+tools/emulator_current.png
+tools/logcat_screen.png
+tools/device_found_cropped.png
+tools/lr2_final.pdf
+tools/test_omml.docx

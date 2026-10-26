@@ -242,7 +242,7 @@ py -3.11 -m venv ml\.venv
 
 ## Lab 7 — Integrated system
 
-The dashboard combines phone sensor state, AI Insights, virtual BLE state, heart rate, cloud/outbox status and actuator controls. Smart Rules consume unique sensor or prediction events rather than combined UI states. Before any rule side effect, Room v5 stores a `PENDING` execution snapshot. The same UUID identifies actuator results, the processed `VirtualSleepBand` alert, a durable `UPLOAD_RULE_EVENT` outbox row and `/ruleEvents/<eventId>` in Firebase. WorkManager recovers queued idempotent delivery and updates the local cloud status after acknowledgement. Architecture sources, the remediation report and defense instructions are under `docs/`.
+The dashboard combines phone sensor state, AI Insights, virtual BLE state, heart rate, cloud/outbox status and actuator controls. Smart Rules consume unique sensor or prediction events rather than combined UI states. Before any rule side effect, Room v6 atomically stores a `PENDING` execution snapshot and a gated `UPLOAD_RULE_EVENT` outbox row. The same UUID identifies actuator results, the processed `VirtualSleepBand` alert, the outbox operation and `/ruleEvents/<eventId>` in Firebase. WorkManager reconciles interrupted preparations, recovers queued idempotent delivery and updates the local cloud status after acknowledgement. Current architecture sources, evidence, the requirements matrix and defense instructions are under `docs/`.
 
 ## Privacy and backup policy
 
