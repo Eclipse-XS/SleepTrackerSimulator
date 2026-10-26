@@ -47,6 +47,8 @@ interface AppContainer {
     val smartRuleRepository: SmartRuleRepository
     val smartRuleEventCoordinator: SmartRuleEventCoordinator
     val activityClassifier: ActivityClassifier
+    val sessionRepository: com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
+    val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -109,5 +111,27 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
 
     override val activityClassifier: ActivityClassifier by lazy {
         ActivityClassifier(context)
+    }
+
+    override val sessionRepository: com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository by lazy {
+        com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository(
+            sessionDao = database.sessionDao(),
+            sensorSampleDao = database.sensorSampleDao(),
+            heartRateSampleDao = database.heartRateSampleDao(),
+            featureWindowDao = database.featureWindowDao(),
+            predictionDao = database.predictionDao(),
+            sessionSummaryDao = database.sessionSummaryDao(),
+            personalBaselineDao = database.personalBaselineDao(),
+            deviceDao = database.deviceDao(),
+        )
+    }
+
+    override val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy by lazy {
+        com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy(
+            sensorSampleDao = database.sensorSampleDao(),
+            heartRateSampleDao = database.heartRateSampleDao(),
+            featureWindowDao = database.featureWindowDao(),
+            predictionDao = database.predictionDao(),
+        )
     }
 }
