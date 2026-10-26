@@ -106,3 +106,36 @@ test("invalid and cross-user smart-rule events are denied", async () => {
   await assertFails(env.authenticatedContext("attacker").database()
     .ref("users/owner/sessions/s1/ruleEvents/e2").set({ ...invalid, eventId: "e2", source: "ML_CLASS" }));
 });
+
+const validSummary = {
+  sessionId: "summary-s1",
+  startedAt: 1000,
+  endedAt: 2000,
+  observationDurationMs: 1000,
+  lowMotionFraction: 0.85,
+  restlessFraction: 0.10,
+  activeFraction: 0.05,
+  sourceMode: "PHONE_ONLY",
+  placement: "MATTRESS",
+  qualityStatus: "VALID",
+  schemaVersion: 2
+};
+
+test("owner can write and read a valid SleepSense session summary", async () => {
+  const db = env.authenticatedContext("owner").database();
+  await assertSucceeds(db.ref("users/owner/sessionSummaries/summary-s1").set(validSummary));
+  await assertSucceeds(db.ref("users/owner/sessionSummaries/summary-s1").get());
+});
+
+test("session summary validation rejects invalid fractions, mismatching id or extra properties", async () => {
+  const db = env.authenticatedContext("owner").database();
+  await assertFails(db.ref("users/owner/sessionSummaries/summary-s1").set({ ...validSummary, lowMotionFraction: 1.5 }));
+  await assertFails(db.ref("users/owner/sessionSummaries/summary-s1").set({ ...validSummary, sessionId: "other-id" }));
+  await assertFails(db.ref("users/owner/sessionSummaries/summary-s1").set({ ...validSummary, unexpectedProp: true }));
+});
+
+test("attacker cannot read or write owner session summaries", async () => {
+  const attackerDb = env.authenticatedContext("attacker").database();
+  await assertFails(attackerDb.ref("users/owner/sessionSummaries/summary-s1").set(validSummary));
+  await assertFails(attackerDb.ref("users/owner/sessionSummaries/summary-s1").get());
+});

@@ -55,6 +55,24 @@
             "$other": { ".validate": false }
           }
         },
+        "sessionSummaries": {
+          "$sessionId": {
+            ".validate": "newData.hasChildren(['sessionId','startedAt','endedAt','observationDurationMs','lowMotionFraction','restlessFraction','activeFraction','sourceMode','qualityStatus','schemaVersion'])",
+            "sessionId": { ".validate": "newData.isString() && newData.val() === $sessionId" },
+            "startedAt": { ".validate": "newData.isNumber() && newData.val() > 0 && (!data.exists() || newData.val() === data.val())" },
+            "endedAt": { ".validate": "newData.isNumber() && newData.val() >= newData.parent().child('startedAt').val() && (!data.exists() || newData.val() === data.val())" },
+            "observationDurationMs": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "lowMotionFraction": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "restlessFraction": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "activeFraction": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+            "meanHeartRateBpm": { ".validate": "newData.isNumber() && newData.val() >= 20 && newData.val() <= 250" },
+            "sourceMode": { ".validate": "newData.isString()" },
+            "placement": { ".validate": "newData.isString()" },
+            "qualityStatus": { ".validate": "newData.isString()" },
+            "schemaVersion": { ".validate": "newData.isNumber() && newData.val() === 2" },
+            "$other": { ".validate": false }
+          }
+        },
         "control": {
           "sleep-tracker-simulator": {
             "vibrationEnabled": { ".validate": "newData.isBoolean()" },

@@ -30,6 +30,10 @@ class FirebaseCloudRepository(
             .child(payload.eventId).setValue(payload).await(); Unit
     }
 
+    override suspend fun uploadSessionSummary(ownerUid: String, payload: SessionSummaryPayload) = databaseCall {
+        users.child(ownerUid).child("sessionSummaries").child(payload.sessionId).setValue(payload).await(); Unit
+    }
+
     override suspend fun endSession(ownerUid: String, sessionId: String, endedAt: Long) = databaseCall {
         users.child(ownerUid).child("sessions").child(sessionId).child("endedAt").setValue(endedAt).await(); Unit
     }

@@ -89,3 +89,18 @@ data class ActiveCloudSession(
     val ownerUid: String = "",
     val monitoringActive: Boolean = true,
 )
+
+data class SessionSummaryPayload(
+    val sessionId: String = "",
+    val startedAt: Long = 0L,
+    val endedAt: Long = 0L,
+    val observationDurationMs: Long = 0L,
+    val lowMotionFraction: Float = 0f,
+    val restlessFraction: Float = 0f,
+    val activeFraction: Float = 0f,
+    val meanHeartRateBpm: Int? = null,
+    val sourceMode: String = "",
+    val placement: String = "",
+    val qualityStatus: String = "",
+    val schemaVersion: Int = 2,
+)
