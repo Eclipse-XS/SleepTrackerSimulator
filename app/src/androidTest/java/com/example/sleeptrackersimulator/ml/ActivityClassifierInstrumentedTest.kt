@@ -45,4 +45,43 @@ class ActivityClassifierInstrumentedTest {
             }
         }
     }
+
+    @Test fun androidInferenceMatchesAllTwelveGoldenVectors() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val jsonContent = context.assets.open("ml_golden_vectors.json").bufferedReader().use { it.readText() }
+        val root = org.json.JSONObject(jsonContent)
+        val tolerance = root.getDouble("tolerance")
+        val vectorsArray = root.getJSONArray("vectors")
+
+        ActivityClassifier(context).use { classifier ->
+            for (i in 0 until vectorsArray.length()) {
+                val item = vectorsArray.getJSONObject(i)
+                val name = item.getString("name")
+                val expectedClass = item.getString("expected_predicted_class")
+                val expectedProbsObj = item.getJSONObject("expected_probabilities")
+                val rawInput = item.getJSONArray("input_window")
+
+                val window = Array(20) { r ->
+                    val sample = rawInput.getJSONArray(r)
+                    floatArrayOf(
+                        sample.getDouble(0).toFloat(),
+                        sample.getDouble(1).toFloat(),
+                        sample.getDouble(2).toFloat(),
+                    )
+                }
+
+                val result = classifier.classify(window)
+                assertEquals("Mismatch in predicted class for $name", expectedClass, result.activity.name)
+
+                for (activity in ActivityClass.entries) {
+                    val expectedP = expectedProbsObj.getDouble(activity.name).toFloat()
+                    val actualP = result.probabilities[activity] ?: 0f
+                    assertTrue(
+                        "Discrepancy in probability for $name on class ${activity.name}: expected $expectedP, actual $actualP",
+                        abs(actualP - expectedP) < tolerance,
+                    )
+                }
+            }
+        }
+    }
 }

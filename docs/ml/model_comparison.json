@@ -1,0 +1,110 @@
+{
+  "Rule-Based Baseline": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "macro_precision": 1.0,
+    "macro_recall": 1.0,
+    "latency_us": 38.10839995276183,
+    "size_kb": 0.0,
+    "confusion_matrix": [
+      [
+        250,
+        0,
+        0
+      ],
+      [
+        0,
+        250,
+        0
+      ],
+      [
+        0,
+        0,
+        250
+      ]
+    ],
+    "architecture": "Deterministic thresholds on RMS and Variance",
+    "battery_impact": "Negligible (<0.1% per hr)"
+  },
+  "Random Forest (Handcrafted Features)": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "macro_precision": 1.0,
+    "macro_recall": 1.0,
+    "latency_us": 3362.518799956888,
+    "size_kb": 142.5,
+    "confusion_matrix": [
+      [
+        250,
+        0,
+        0
+      ],
+      [
+        0,
+        250,
+        0
+      ],
+      [
+        0,
+        0,
+        250
+      ]
+    ],
+    "architecture": "40 trees, depth 6 on 10 statistical & dynamic features",
+    "battery_impact": "Low (~0.3% per hr)"
+  },
+  "Dense TFLite (Production On-Device)": {
+    "accuracy": 0.9826666666666667,
+    "macro_f1": 0.982664638960623,
+    "macro_precision": 0.9829238678343537,
+    "macro_recall": 0.9826666666666667,
+    "latency_us": 6.0677999863401055,
+    "size_kb": 11.1015625,
+    "confusion_matrix": [
+      [
+        250,
+        0,
+        0
+      ],
+      [
+        5,
+        245,
+        0
+      ],
+      [
+        0,
+        8,
+        242
+      ]
+    ],
+    "architecture": "Input(20x3) -> MeanNorm -> Dense(32, ReLU) -> Dense(3, Softmax)",
+    "battery_impact": "Very Low (~0.15% per hr)"
+  },
+  "1D CNN TFLite (Deep Temporal Model)": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "macro_precision": 1.0,
+    "macro_recall": 1.0,
+    "latency_us": 5.063800024800003,
+    "size_kb": 14.0703125,
+    "confusion_matrix": [
+      [
+        250,
+        0,
+        0
+      ],
+      [
+        0,
+        250,
+        0
+      ],
+      [
+        0,
+        0,
+        250
+      ]
+    ],
+    "architecture": "Conv1D(16) -> MaxPool -> Conv1D(32) -> GlobalAvgPool -> Dense(16) -> Dense(3)",
+    "battery_impact": "Moderate (~0.5% per hr)"
+  }
+}
