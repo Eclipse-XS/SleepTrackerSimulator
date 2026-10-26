@@ -17,7 +17,7 @@ data class ClockAnchor(
 
     companion object {
         fun current(): ClockAnchor = ClockAnchor(
-            elapsedRealtimeNanos = android.os.SystemClock.elapsedRealtimeNanos(),
+            elapsedRealtimeNanos = runCatching { android.os.SystemClock.elapsedRealtimeNanos() }.getOrDefault(System.nanoTime()),
             utcTimestampMillis = System.currentTimeMillis(),
         )
     }
