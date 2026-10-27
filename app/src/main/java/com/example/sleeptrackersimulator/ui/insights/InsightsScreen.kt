@@ -17,8 +17,6 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -40,7 +38,6 @@ import com.example.sleeptrackersimulator.ui.theme.NightBlue
 @Composable
 fun InsightsScreen(
     state: InsightsUiState,
-    onSelectRange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -62,23 +59,19 @@ fun InsightsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Range switcher
-            Row(modifier = Modifier.fillMaxWidth()) {
-                listOf(7, 30, 90).forEach { days ->
-                    FilterChip(
-                        selected = state.timeRangeDays == days,
-                        onClick = { onSelectRange(days) },
-                        label = { Text("$days Days") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MoonBlue.copy(alpha = 0.2f),
-                            selectedLabelColor = MistBlue,
-                        ),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-            }
-
+            Text(
+                text = "All recorded history (real observations only)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MistBlue.copy(alpha = 0.75f),
+            )
             Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "${state.summaries.size} sessions stored, ${state.comparableSessionCount} suitable for your personal baseline",
+                style = MaterialTheme.typography.bodySmall,
+                color = MistBlue,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (!state.isQualityGateSatisfied) {
                 // Quality Gate Notice

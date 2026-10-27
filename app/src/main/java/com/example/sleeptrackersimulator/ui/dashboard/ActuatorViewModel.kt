@@ -62,6 +62,8 @@ class ActuatorViewModel(
     private var manualVibrationBeforeInitialRemoteSnapshot = false
     private var manualFlashlightBeforeInitialRemoteSnapshot = false
     private var lastMlCritical = false
+    // A local OFF is a safety command: stale remote ON snapshots cannot immediately undo it.
+    private var manualFlashlightOffLatch = false
 
     init {
         viewModelScope.launch {
@@ -171,7 +173,9 @@ class ActuatorViewModel(
     }
 
     fun setManualFlashlight(enabled: Boolean) {
-        if (!foregroundActive) return
+        // Allow OFF while backgrounded, e.g. after launching a screen recorder.
+        if (enabled && !foregroundActive) return
+        manualFlashlightOffLatch = !enabled
         if (!receivedInitialRemoteSnapshot) manualFlashlightBeforeInitialRemoteSnapshot = true
         DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.STARTED, source = TriggerSource.MANUAL.name, details = mapOf("enabled" to enabled))
         applyFlashlight(enabled, TriggerSource.MANUAL)
@@ -216,7 +220,13 @@ class ActuatorViewModel(
         if (initialSnapshot && manualFlashlightBeforeInitialRemoteSnapshot) {
             log("Initial remote flashlight state ignored: a manual command was already issued", null)
         } else {
-            controls.flashlightEnabled?.let { applyFlashlight(it, TriggerSource.REMOTE) }
+            controls.flashlightEnabled?.let { enabled ->
+                if (enabled && manualFlashlightOffLatch) {
+                    log("Remote flashlight ON ignored after explicit local OFF", null)
+                } else {
+                    applyFlashlight(enabled, TriggerSource.REMOTE)
+                }
+            }
         }
     }
 
@@ -242,7 +252,8 @@ class ActuatorViewModel(
     }
 
     private fun applyFlashlight(enabled: Boolean, source: TriggerSource) {
-        if (_state.value.flashlightEnabled == enabled) {
+        // OFF must always reach CameraManager: UI state can diverge from hardware state.
+        if (enabled && _state.value.flashlightEnabled) {
             DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.SKIPPED, source = source.name, details = mapOf("enabled" to enabled, "reason" to "duplicate"))
             return
         }

@@ -210,15 +210,10 @@ fun VirtualBandScreen(
                         )
                     }
 
-                    Slider(
-                        value = state.currentBpm.toFloat(),
-                        onValueChange = { onSetBpm(it.toInt()) },
-                        valueRange = 40f..180f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = CoralRed,
-                            activeTrackColor = CoralRed,
-                            inactiveTrackColor = CardBorder,
-                        ),
+                    Text(
+                        "Automatic simulated waveform; values are generated independently of user input.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -274,15 +269,10 @@ fun VirtualBandScreen(
                         )
                     }
 
-                    Slider(
-                        value = state.batteryLevel.toFloat(),
-                        onValueChange = { onSetBattery(it.toInt()) },
-                        valueRange = 0f..100f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = EmeraldGreen,
-                            activeTrackColor = EmeraldGreen,
-                            inactiveTrackColor = CardBorder,
-                        ),
+                    Text(
+                        "Simulated battery drain (not a hardware reading).",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }

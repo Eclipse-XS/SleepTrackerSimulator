@@ -141,7 +141,9 @@ class RoomSessionRepository(
     }
 
     override suspend fun getRecentSummaries(days: Int): List<SessionSummary> = withContext(dispatcher) {
-        val sinceUtc = System.currentTimeMillis() - (days * 24 * 60 * 60 * 1000L)
+        // 0 means full retained history; calculate positive ranges using Long to avoid overflow.
+        val sinceUtc = if (days <= 0) 0L else
+            (System.currentTimeMillis() - days.toLong() * 24L * 60L * 60L * 1000L).coerceAtLeast(0L)
         sessionSummaryDao.getSummariesSince(sinceUtc).map { it.toDomain() }
     }
 

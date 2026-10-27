@@ -33,7 +33,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import kotlin.random.Random
 
 data class CommandLogEntry(
     val timestamp: String,
@@ -66,6 +65,8 @@ class VirtualGattServer(
     private var gattServer: BluetoothGattServer? = null
     private val connectedDevices = mutableSetOf<BluetoothDevice>()
     private var streamJob: Job? = null
+    private val syntheticHeartRate = SimulatedHeartRate()
+    private var simulationSeconds = 0L
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
@@ -193,12 +194,12 @@ class VirtualGattServer(
             .build()
 
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
+            .setIncludeDeviceName(false)
             .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
-            .addServiceUuid(ParcelUuid(UUID_BATTERY_SERVICE))
             .build()
 
         advertiser.startAdvertising(settings, data, advertiseCallback)
+        simulationSeconds = 0L
         startTransmissionLoop()
 
         return Result.success(Unit)
@@ -300,9 +301,10 @@ class VirtualGattServer(
         streamJob = scope.launch {
             while (isActive) {
                 delay(_state.value.packetIntervalMs)
-                val currentBpm = _state.value.currentBpm
-                val jitter = Random.nextInt(-1, 2)
-                val emittedBpm = (currentBpm + jitter).coerceIn(40, 180)
+                simulationSeconds += (_state.value.packetIntervalMs / 1000L).coerceAtLeast(1L)
+                val emittedBpm = syntheticHeartRate.bpm(simulationSeconds)
+                val battery = syntheticHeartRate.batteryPercent(simulationSeconds)
+                _state.value = _state.value.copy(currentBpm = emittedBpm, batteryLevel = battery)
 
                 if (connectedDevices.isNotEmpty() && hasPermissions()) {
                     val hrChar = gattServer?.getService(UUID_HEART_RATE_SERVICE)

@@ -137,6 +137,25 @@ class ActuatorViewModelTest {
         assertFalse(fixture.viewModel.state.value.flashlightEnabled)
     }
 
+
+    @Test
+    fun `explicit local flashlight OFF reaches hardware even when UI already says off`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualFlashlight(false)
+        assertEquals(listOf(false), fixture.actuator.flashlightStates)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+    }
+
+    @Test
+    fun `manual flashlight OFF cannot be undone by stale remote ON snapshot`() = actuatorTest { fixture ->
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(flashlightEnabled = true)))
+        runCurrent()
+        fixture.viewModel.setManualFlashlight(false)
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(flashlightEnabled = true)))
+        runCurrent()
+        assertEquals(listOf(true, false), fixture.actuator.flashlightStates)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+    }
+
     @Test
     fun `camera permission denial leaves flashlight off without hardware call`() = actuatorTest { fixture ->
         fixture.viewModel.reportFlashlightPermissionDenied()
