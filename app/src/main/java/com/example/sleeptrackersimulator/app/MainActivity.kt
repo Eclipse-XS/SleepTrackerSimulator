@@ -404,7 +404,10 @@ class MainActivity : ComponentActivity() {
                                     )
                                     NavigationBarItem(
                                         selected = selectedTab == AppTab.INSIGHTS,
-                                        onClick = { selectedTab = AppTab.INSIGHTS },
+                                        onClick = {
+                                            selectedTab = AppTab.INSIGHTS
+                                            insightsViewModel.refresh()
+                                        },
                                         icon = { Icon(Icons.Rounded.Analytics, contentDescription = "Insights") },
                                         label = { Text("Insights") },
                                         colors = NavigationBarItemDefaults.colors(
@@ -467,7 +470,6 @@ class MainActivity : ComponentActivity() {
                                     )
                                     AppTab.INSIGHTS -> InsightsScreen(
                                         state = insightsState,
-                                        onSelectRange = insightsViewModel::setTimeRange,
                                     )
                                     AppTab.DEVICES -> DevicesScreen(
                                         state = devicesState,
