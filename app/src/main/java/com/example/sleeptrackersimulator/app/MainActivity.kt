@@ -467,7 +467,6 @@ class MainActivity : ComponentActivity() {
                                     )
                                     AppTab.INSIGHTS -> InsightsScreen(
                                         state = insightsState,
-                                        onSelectRange = insightsViewModel::setTimeRange,
                                     )
                                     AppTab.DEVICES -> DevicesScreen(
                                         state = devicesState,
@@ -525,12 +524,13 @@ class MainActivity : ComponentActivity() {
         mode: com.example.sleeptrackersimulator.core.model.SourceMode,
         placement: com.example.sleeptrackersimulator.core.model.DevicePlacement,
     ) {
-        val start = {
+        val start: () -> Unit = {
             RecordingService.start(
                 this,
                 mode = mode,
                 placement = placement,
             )
+            Unit
         }
         if (ContextCompat.checkSelfPermission(
                 this,

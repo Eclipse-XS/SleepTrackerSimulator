@@ -12,6 +12,7 @@ interface AnalyticsRepository {
     fun observeRecentSessions(limit: Int = 30): Flow<List<RecordingSession>>
     suspend fun getSessionSummary(sessionId: String): SessionSummary?
     suspend fun getRecentSummaries(days: Int = 30): List<SessionSummary>
+    suspend fun getAllSummaries(): List<SessionSummary>
 
     suspend fun getPersonalBaseline(
         sourceMode: SourceMode = SourceMode.PHONE_ONLY,

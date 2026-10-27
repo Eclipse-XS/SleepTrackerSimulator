@@ -145,6 +145,10 @@ class RoomSessionRepository(
         sessionSummaryDao.getSummariesSince(sinceUtc).map { it.toDomain() }
     }
 
+    override suspend fun getAllSummaries(): List<SessionSummary> = withContext(dispatcher) {
+        sessionSummaryDao.getRecentSummaries(limit = MAX_ANALYTICS_SUMMARIES).map { it.toDomain() }
+    }
+
     override suspend fun getPersonalBaseline(
         sourceMode: SourceMode,
         placement: DevicePlacement,
@@ -197,3 +201,5 @@ class RoomSessionRepository(
         baseline.compare(summary)
     }
 }
+
+private const val MAX_ANALYTICS_SUMMARIES = 10_000

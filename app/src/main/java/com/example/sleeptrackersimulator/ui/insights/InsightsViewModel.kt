@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class InsightsUiState(
-    val timeRangeDays: Int = 7,
     val summaries: List<SessionSummary> = emptyList(),
     val averageLowMotionFraction: Float = 0.0f,
     val medianDurationMs: Long = 0L,
@@ -24,6 +23,7 @@ data class InsightsUiState(
     val latestComparison: BaselineComparison? = null,
     val isQualityGateSatisfied: Boolean = false,
     val isLoading: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 class InsightsViewModel(
@@ -34,18 +34,16 @@ class InsightsViewModel(
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
 
     init {
-        loadInsights(7)
+        loadInsights()
     }
 
-    fun setTimeRange(days: Int) {
-        loadInsights(days)
-    }
+    fun refresh() = loadInsights()
 
-    private fun loadInsights(days: Int) {
+    private fun loadInsights() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, timeRangeDays = days)
-
-            val summaries = analyticsRepository.getRecentSummaries(days)
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            runCatching {
+            val summaries = analyticsRepository.getAllSummaries()
             val comparable = summaries.filter { it.isComparableWithBaseline }
 
             val avgLowMotion = if (comparable.isNotEmpty()) {
@@ -64,7 +62,6 @@ class InsightsViewModel(
             val comparison = latestSummary?.let { s -> baseline?.compare(s) }
 
             _uiState.value = InsightsUiState(
-                timeRangeDays = days,
                 summaries = summaries,
                 averageLowMotionFraction = avgLowMotion,
                 medianDurationMs = medianDuration,
@@ -74,6 +71,12 @@ class InsightsViewModel(
                 isQualityGateSatisfied = comparable.size >= 3,
                 isLoading = false,
             )
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = error.message ?: "Unable to load history",
+                )
+            }
         }
     }
 
