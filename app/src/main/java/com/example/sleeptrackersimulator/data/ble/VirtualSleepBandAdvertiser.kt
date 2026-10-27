@@ -178,6 +178,7 @@ class VirtualSleepBandAdvertiser(
         _state.value = PeripheralAdvertiserState(isAdvertising = false)
     }
 
+    @SuppressLint("MissingPermission")
     private fun setupGattServices() {
         val service = BluetoothGattService(UUID_HEART_RATE_SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 

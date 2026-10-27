@@ -39,11 +39,17 @@ class TodayViewModel(
     init {
         // Observe active session from coordinator
         viewModelScope.launch {
+            var previousSession: RecordingSession? = null
             sessionCoordinator.activeSession.collect { session ->
                 _uiState.value = _uiState.value.copy(
                     activeSession = session,
                     sessionStatus = session?.status ?: SessionStatus.IDLE,
                 )
+                if (previousSession != null && session == null) {
+                    val recent = analyticsRepository.getRecentSummaries(days = 14)
+                    _uiState.value = _uiState.value.copy(lastSummary = recent.firstOrNull())
+                }
+                previousSession = session
             }
         }
 

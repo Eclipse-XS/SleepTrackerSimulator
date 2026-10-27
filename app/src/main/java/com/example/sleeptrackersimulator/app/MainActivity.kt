@@ -291,12 +291,22 @@ class MainActivity : ComponentActivity() {
                     }
                     AppOverlay.DEVELOPER_LAB -> {
                         BackHandler { activeOverlay = AppOverlay.NONE }
+                        val appContainer = (application as SleepTrackerApplication).container
+                        val bleAdvState by appContainer.virtualSleepBandAdvertiser.state.collectAsStateWithLifecycle()
                         DeveloperLabScreen(
                             onBack = { activeOverlay = AppOverlay.NONE },
                             onTriggerVibration = { actuatorViewModel.setManualVibration(true) },
                             onTriggerFlashlight = { requestFlashlightChange(true) },
                             onTriggerBleAlert = { bleViewModel.sendAlert("DEV_LAB") },
                             onOpenLegacyDashboard = { activeOverlay = AppOverlay.LEGACY_DASHBOARD },
+                            isBleAdvertising = bleAdvState.isAdvertising,
+                            onToggleBleAdvertising = {
+                                if (bleAdvState.isAdvertising) {
+                                    appContainer.virtualSleepBandAdvertiser.stopAdvertising()
+                                } else {
+                                    appContainer.virtualSleepBandAdvertiser.startAdvertising()
+                                }
+                            },
                         )
                     }
                     AppOverlay.LEGACY_DASHBOARD -> {
@@ -426,19 +436,15 @@ class MainActivity : ComponentActivity() {
                                                 mode = todayState.selectedSourceMode,
                                                 placement = todayState.selectedPlacement,
                                             )
-                                            todayViewModel.startRecording()
                                         },
                                         onPauseRecording = {
                                             RecordingService.pause(this@MainActivity)
-                                            todayViewModel.pauseRecording()
                                         },
                                         onResumeRecording = {
                                             RecordingService.resume(this@MainActivity)
-                                            todayViewModel.resumeRecording()
                                         },
                                         onStopRecording = {
                                             RecordingService.stop(this@MainActivity)
-                                            todayViewModel.stopRecording()
                                         },
                                         onOpenSettings = { activeOverlay = AppOverlay.SETTINGS },
                                         onOpenAutomations = { activeOverlay = AppOverlay.AUTOMATIONS },

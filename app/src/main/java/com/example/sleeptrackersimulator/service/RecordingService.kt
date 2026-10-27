@@ -27,6 +27,7 @@ import com.example.sleeptrackersimulator.core.model.SourceMode
 import com.example.sleeptrackersimulator.domain.recording.SessionCoordinatorImpl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -41,6 +42,7 @@ class RecordingService : Service(), SensorEventListener {
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var coordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator? = null
+    private var transportJob: Job? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): RecordingService = this@RecordingService
@@ -105,10 +107,30 @@ class RecordingService : Service(), SensorEventListener {
             val delayUs = (1_000_000 / samplingHz)
             sensorManager?.registerListener(this, accelerometer, delayUs)
         }
+
+        if (mode.requiresBleConnection) {
+            val app = application as? SleepTrackerApplication
+            val transport = app?.container?.deviceTransport
+            if (transport != null) {
+                transportJob?.cancel()
+                transportJob = serviceScope.launch {
+                    transport.heartRateStream.collect { hrSample ->
+                        coordinator?.ingestHeartRateSample(
+                            deviceId = hrSample.deviceId,
+                            bpm = hrSample.bpm,
+                            utcTimestampMillis = hrSample.utcTimestampMillis,
+                            timingUncertaintyMillis = hrSample.timingUncertaintyMillis,
+                            sourceKind = hrSample.sourceKind,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private fun pauseRecordingSession() {
         sensorManager?.unregisterListener(this)
+        transportJob?.cancel()
         serviceScope.launch {
             coordinator?.pauseSession()
         }
@@ -120,6 +142,22 @@ class RecordingService : Service(), SensorEventListener {
     private fun resumeRecordingSession() {
         val delayUs = 1_000_000 / 20
         sensorManager?.registerListener(this, accelerometer, delayUs)
+        val app = application as? SleepTrackerApplication
+        val transport = app?.container?.deviceTransport
+        if (transport != null) {
+            transportJob?.cancel()
+            transportJob = serviceScope.launch {
+                transport.heartRateStream.collect { hrSample ->
+                    coordinator?.ingestHeartRateSample(
+                        deviceId = hrSample.deviceId,
+                        bpm = hrSample.bpm,
+                        utcTimestampMillis = hrSample.utcTimestampMillis,
+                        timingUncertaintyMillis = hrSample.timingUncertaintyMillis,
+                        sourceKind = hrSample.sourceKind,
+                    )
+                }
+            }
+        }
         serviceScope.launch {
             coordinator?.resumeSession()
         }
@@ -130,6 +168,7 @@ class RecordingService : Service(), SensorEventListener {
 
     private fun stopRecordingSession() {
         sensorManager?.unregisterListener(this)
+        transportJob?.cancel()
         serviceScope.launch {
             coordinator?.stopSession()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -163,6 +202,7 @@ class RecordingService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         sensorManager?.unregisterListener(this)
+        transportJob?.cancel()
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }

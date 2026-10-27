@@ -1,9 +1,13 @@
 package com.example.sleeptrackersimulator.domain.recording
 
+import com.example.sleeptrackersimulator.cloud.AuthRepository
+import com.example.sleeptrackersimulator.cloud.CloudRepository
+import com.example.sleeptrackersimulator.cloud.SessionSummaryPayload
 import com.example.sleeptrackersimulator.core.model.ActivityClass
 import com.example.sleeptrackersimulator.core.model.ClockAnchor
 import com.example.sleeptrackersimulator.core.model.DevicePlacement
 import com.example.sleeptrackersimulator.core.model.FeatureWindow
+import com.example.sleeptrackersimulator.core.model.HeartRateSample
 import com.example.sleeptrackersimulator.core.model.Prediction
 import com.example.sleeptrackersimulator.core.model.RawSensorSample
 import com.example.sleeptrackersimulator.core.model.RecordingSession
@@ -33,6 +37,8 @@ class SessionCoordinatorImpl(
     private val sessionRepository: SessionRepository,
     private val activityClassifier: ActivityClassifier?,
     private val sampleValidator: SampleValidator = SampleValidator(),
+    private val cloudRepository: CloudRepository? = null,
+    private val authRepository: AuthRepository? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SessionCoordinator {
 
@@ -152,6 +158,27 @@ class SessionCoordinatorImpl(
                 // Drop corrupted sample silently or report to quality metrics
             }
         }
+    }
+
+    override suspend fun ingestHeartRateSample(
+        deviceId: String,
+        bpm: Int,
+        utcTimestampMillis: Long,
+        timingUncertaintyMillis: Long,
+        sourceKind: SourceKind,
+    ) = mutex.withLock {
+        val session = _activeSession.value ?: return@withLock
+        if (session.status != SessionStatus.RECORDING) return@withLock
+
+        val sample = HeartRateSample(
+            sessionId = session.sessionId,
+            deviceId = deviceId,
+            bpm = bpm,
+            utcTimestampMillis = utcTimestampMillis,
+            timingUncertaintyMillis = timingUncertaintyMillis,
+            sourceKind = sourceKind,
+        )
+        sessionRepository.insertHeartRateSamples(listOf(sample))
     }
 
     private suspend fun processWindow(samples: List<RawSensorSample>, session: RecordingSession) {
@@ -295,6 +322,34 @@ class SessionCoordinatorImpl(
 
             val completed = session.completed(endUtcMillis = endUtc, coverageFraction = coverageFraction)
             sessionRepository.updateSession(completed)
+
+            // Optional upload to cloud if authenticated and cloud repository available
+            val uid = authRepository?.currentUid
+            if (uid != null && cloudRepository != null) {
+                runCatching {
+                    val restlessCount = predictions.count { it.predictedClass == ActivityClass.RESTLESS }
+                    val activeCount = predictions.count { it.predictedClass == ActivityClass.ACTIVE }
+                    val total = maxOf(1, predictions.size)
+                    val hrSamples = sessionRepository.getHeartRateForSession(session.sessionId)
+                    val meanHr = if (hrSamples.isNotEmpty()) hrSamples.map { it.bpm }.average().toInt() else null
+
+                    val payload = SessionSummaryPayload(
+                        sessionId = summary.sessionId,
+                        startedAt = session.startUtcMillis,
+                        endedAt = endUtc,
+                        observationDurationMs = summary.observationDurationMs,
+                        lowMotionFraction = summary.lowMotionFraction,
+                        restlessFraction = restlessCount.toFloat() / total,
+                        activeFraction = activeCount.toFloat() / total,
+                        meanHeartRateBpm = meanHr,
+                        sourceMode = session.sourceMode.name,
+                        placement = summary.devicePlacement.name,
+                        qualityStatus = session.qualityStatus.name,
+                        schemaVersion = 2,
+                    )
+                    cloudRepository.uploadSessionSummary(uid, payload)
+                }
+            }
 
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE

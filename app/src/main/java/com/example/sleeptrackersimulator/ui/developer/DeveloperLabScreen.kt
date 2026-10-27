@@ -67,6 +67,8 @@ fun DeveloperLabScreen(
     onTriggerFlashlight: () -> Unit,
     onTriggerBleAlert: () -> Unit,
     onOpenLegacyDashboard: () -> Unit = {},
+    isBleAdvertising: Boolean = false,
+    onToggleBleAdvertising: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -142,7 +144,11 @@ fun DeveloperLabScreen(
         ) {
             when (tabs[selectedTabIndex]) {
                 DevLabTab.SENSORS -> SensorInspectorTab()
-                DevLabTab.BLE -> BleInspectorTab(onTriggerBleAlert)
+                DevLabTab.BLE -> BleInspectorTab(
+                    onSendAlert = onTriggerBleAlert,
+                    isAdvertising = isBleAdvertising,
+                    onToggleAdvertising = onToggleBleAdvertising,
+                )
                 DevLabTab.CLOUD -> CloudInspectorTab()
                 DevLabTab.ACTUATORS -> ActuatorInspectorTab(onTriggerVibration, onTriggerFlashlight)
                 DevLabTab.DATABASE -> DatabaseInspectorTab()
@@ -195,7 +201,11 @@ private fun SensorInspectorTab() {
 }
 
 @Composable
-private fun BleInspectorTab(onSendAlert: () -> Unit) {
+private fun BleInspectorTab(
+    onSendAlert: () -> Unit,
+    isAdvertising: Boolean = false,
+    onToggleAdvertising: () -> Unit = {},
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -211,7 +221,12 @@ private fun BleInspectorTab(onSendAlert: () -> Unit) {
         Row(modifier = Modifier.fillMaxWidth()) {
             MetricCard(title = "Service UUID", value = "0x180D", subtitle = "Heart Rate Service", modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.width(12.dp))
-            MetricCard(title = "GATT Status", value = "READY", accentColor = MoonBlue, modifier = Modifier.weight(1f))
+            MetricCard(
+                title = "GATT Status",
+                value = if (isAdvertising) "ADVERTISING" else "READY",
+                accentColor = if (isAdvertising) CalmGreen else MoonBlue,
+                modifier = Modifier.weight(1f),
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -230,6 +245,16 @@ private fun BleInspectorTab(onSendAlert: () -> Unit) {
                     colors = ButtonDefaults.buttonColors(containerColor = MoonBlue),
                 ) {
                     Text("Send Alert Command (0x2A37)", color = DarkSurface, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onToggleAdvertising,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text(
+                        if (isAdvertising) "Stop BLE Peripheral Advertiser" else "Start BLE Peripheral Advertiser (GATT Server)",
+                        color = MistBlue,
+                    )
                 }
             }
         }
