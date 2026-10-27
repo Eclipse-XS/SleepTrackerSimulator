@@ -8,7 +8,10 @@ const rules = fs.readFileSync(path.resolve("../database.rules.json"), "utf8");
 let env;
 
 before(async () => {
-  env = await initializeTestEnvironment({ projectId, database: { rules } });
+  env = await initializeTestEnvironment({
+    projectId,
+    database: { host: "127.0.0.1", port: 9000, rules },
+  });
 });
 beforeEach(async () => env.clearDatabase());
 after(async () => env.cleanup());
