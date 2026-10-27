@@ -31,6 +31,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
+import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 
 class RecordingService : Service(), SensorEventListener {
 
@@ -104,10 +107,20 @@ class RecordingService : Service(), SensorEventListener {
         activeMode = mode
         activeSamplingHz = samplingHz.coerceIn(1, 200)
         serviceScope.launch {
-            val result = coordinator?.startSession(mode, placement, activeSamplingHz)
-            if (result?.isSuccess == true) {
-                startSourcesForActiveMode()
-            } else {
+            try {
+                val result = coordinator?.startSession(mode, placement, activeSamplingHz)
+                if (result?.isSuccess == true) {
+                    startSourcesForActiveMode()
+                } else {
+                    DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "recordingStart", DiagnosticResult.FAILED,
+                        details = mapOf("reason" to (result?.exceptionOrNull()?.javaClass?.simpleName ?: "session_not_started")))
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    if (wakeLock?.isHeld == true) wakeLock?.release()
+                    stopSelf()
+                }
+            } catch (error: Exception) {
+                DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "recordingStart", DiagnosticResult.FAILED,
+                    details = mapOf("reason" to error.javaClass.simpleName), error = error)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 if (wakeLock?.isHeld == true) wakeLock?.release()
                 stopSelf()
@@ -177,16 +190,25 @@ class RecordingService : Service(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
+        // Android reuses SensorEvent buffers. Snapshot all fields on the callback thread.
+        val timestamp = event.timestamp
+        val x = event.values[0]
+        val y = event.values[1]
+        val z = event.values[2]
+        val accuracy = event.accuracy
         serviceScope.launch {
-            coordinator?.ingestSensorEvent(
-                sourceId = "phone_accelerometer",
-                elapsedNanos = event.timestamp,
-                x = event.values[0],
-                y = event.values[1],
-                z = event.values[2],
-                accuracy = event.accuracy,
-                sourceKind = SourceKind.PHONE_REAL,
-            )
+            try {
+                coordinator?.ingestSensorEvent(
+                    sourceId = "phone_accelerometer",
+                    elapsedNanos = timestamp,
+                    x = x, y = y, z = z,
+                    accuracy = accuracy,
+                    sourceKind = SourceKind.PHONE_REAL,
+                )
+            } catch (error: Exception) {
+                DiagnosticLog.event(DiagnosticTags.LIFECYCLE, "sensorIngest", DiagnosticResult.FAILED,
+                    details = mapOf("reason" to error.javaClass.simpleName), error = error)
+            }
         }
     }
 
