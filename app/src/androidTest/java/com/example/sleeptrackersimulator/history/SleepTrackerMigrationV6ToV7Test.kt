@@ -19,7 +19,7 @@ class SleepTrackerMigrationV6ToV7Test {
     @Test
     fun migration6To7CreatesNewTablesAndPreservesLegacyRows() {
         helper.createDatabase(NAME, 6).apply {
-            execSQL("INSERT INTO sensor_records (timestamp, sensorType, sensorValue, actionTriggered) VALUES (1000, 'ACCELEROMETER', 1.5, 0)")
+            execSQL("INSERT INTO sensor_records (timestamp, sensorValue, actionTriggered) VALUES (1000, 1.5, 0)")
             execSQL("""INSERT INTO smart_rule_executions
                 (executionId,ruleId,timestamp,sourceValue,action,result,failureReason,ruleNameSnapshot,sessionId,sensorTimestampNanos,predictionId,actuatorStatus,bleStatus,cloudStatus,triggerSource,mlClass,mlConfidence)
                 VALUES ('e1','r1',10,'ACTIVE','MOCK_BLE_ALERT','SUCCESS',NULL,'Rule 1','s1',9,'p1','NOT_REQUESTED','ACK','PENDING','ACCEL','ACTIVE',0.95)""")

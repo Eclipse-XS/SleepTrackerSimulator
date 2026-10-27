@@ -39,7 +39,14 @@ class SleepTrackerMigrationTest {
         helper.close()
 
         val migrated = Room.databaseBuilder(context, SleepTrackerDatabase::class.java, name)
-            .addMigrations(SleepTrackerDatabase.MIGRATION_1_2, SleepTrackerDatabase.MIGRATION_2_3, SleepTrackerDatabase.MIGRATION_3_4, SleepTrackerDatabase.MIGRATION_4_5, SleepTrackerDatabase.MIGRATION_5_6)
+            .addMigrations(
+                SleepTrackerDatabase.MIGRATION_1_2,
+                SleepTrackerDatabase.MIGRATION_2_3,
+                SleepTrackerDatabase.MIGRATION_3_4,
+                SleepTrackerDatabase.MIGRATION_4_5,
+                SleepTrackerDatabase.MIGRATION_5_6,
+                SleepTrackerDatabase.MIGRATION_6_7,
+            )
             .build()
         runBlocking(Dispatchers.IO) {
             val dao = migrated.sensorRecordDao()
@@ -70,7 +77,14 @@ class SleepTrackerMigrationTest {
         helper.writableDatabase.execSQL("INSERT INTO sensor_records(timestamp,sensorValue,actionTriggered) VALUES(1000,0.5,0)")
         helper.close()
         val migrated = Room.databaseBuilder(context, SleepTrackerDatabase::class.java, name)
-            .addMigrations(SleepTrackerDatabase.MIGRATION_1_2, SleepTrackerDatabase.MIGRATION_2_3, SleepTrackerDatabase.MIGRATION_3_4, SleepTrackerDatabase.MIGRATION_4_5, SleepTrackerDatabase.MIGRATION_5_6).build()
+            .addMigrations(
+                SleepTrackerDatabase.MIGRATION_1_2,
+                SleepTrackerDatabase.MIGRATION_2_3,
+                SleepTrackerDatabase.MIGRATION_3_4,
+                SleepTrackerDatabase.MIGRATION_4_5,
+                SleepTrackerDatabase.MIGRATION_5_6,
+                SleepTrackerDatabase.MIGRATION_6_7,
+            ).build()
         runBlocking(Dispatchers.IO) { assertEquals(1, migrated.sensorRecordDao().recordsBetween(1, 2_000).size) }
         migrated.close()
         context.deleteDatabase(name)
