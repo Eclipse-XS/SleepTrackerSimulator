@@ -194,9 +194,8 @@ class VirtualGattServer(
             .build()
 
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
+            .setIncludeDeviceName(false)
             .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
-            .addServiceUuid(ParcelUuid(UUID_BATTERY_SERVICE))
             .build()
 
         advertiser.startAdvertising(settings, data, advertiseCallback)
