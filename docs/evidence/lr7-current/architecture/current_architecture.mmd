@@ -1,0 +1,20 @@
+flowchart LR
+  UI[Compose: Today / History / Insights / Devices] --> VM[ViewModels]
+  LEGACY[Developer Lab / legacy lab screens] --> VM
+  VM --> RS[RecordingService]
+  RS --> SC[SessionCoordinatorImpl]
+  RS --> SM[Android SensorManager]
+  RS --> BLE[DeviceTransport / Android GATT]
+  SM --> PIPE[SignalProcessingPipeline]
+  BLE --> PIPE
+  PIPE --> BUF[SensorWindowBuffer]
+  BUF --> TFL[TFLite ActivityClassifier]
+  SC --> ROOM[(Room v7)]
+  PIPE --> SC
+  TFL --> SC
+  SC --> RULES[SmartRuleEngine]
+  RULES --> ACT[Actuators]
+  RULES --> COORD[SmartRuleEventCoordinator]
+  COORD --> ROOM
+  ROOM --> WM[WorkManager outbox drain]
+  WM --> FB[Firebase Auth + RTDB]

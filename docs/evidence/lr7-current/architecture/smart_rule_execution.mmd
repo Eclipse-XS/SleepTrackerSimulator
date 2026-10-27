@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> ARMED
+  ARMED --> COUNTING: condition true
+  COUNTING --> COUNTING: new unique match below required count
+  COUNTING --> PREPARED: required consecutive matches + cooldown passed
+  COUNTING --> ARMED: condition false / rearm
+  PREPARED --> ACTION_IN_PROGRESS: durable prepare committed
+  ACTION_IN_PROGRESS --> FINALIZED: actuator/BLE outcome persisted
+  FINALIZED --> DISARMED: trigger complete
+  DISARMED --> ARMED: condition false
+  ACTION_IN_PROGRESS --> OUTCOME_UNKNOWN: restart; physical action is not replayed

@@ -1,0 +1,12 @@
+sequenceDiagram
+  participant App
+  participant Room
+  participant Worker
+  participant Firebase
+  App->>Room: TX: persist SessionSummary + UPLOAD_SESSION_SUMMARY
+  Room-->>App: committed
+  Worker->>Room: read FIFO ready operation
+  Worker->>Firebase: owner-scoped idempotent write
+  Firebase-->>Worker: ACK
+  Worker->>Room: mark/remove delivered operation
+  Note over Room,Firebase: Offline/failure leaves operation pending for retry

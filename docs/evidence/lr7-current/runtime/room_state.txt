@@ -1,0 +1,6 @@
+Schema source: app/schemas/com.example.sleeptrackersimulator.history.SleepTrackerDatabase/7.json
+Room version: 7
+Entities: 14
+Runtime AVD database size from dumpsys meminfo: 204 KB
+Migration Android tests: 1->latest, 5->6, all published->7, 6->7 PASS
+No private database rows copied into evidence package.

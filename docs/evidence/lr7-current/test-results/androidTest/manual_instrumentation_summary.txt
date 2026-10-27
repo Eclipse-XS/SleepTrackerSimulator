@@ -1,0 +1,10 @@
+Command: adb shell am instrument -w -r com.example.sleeptrackersimulator.test/androidx.test.runner.AndroidJUnitRunner
+Date: 2026-10-27 Europe/Kyiv
+Device: emulator-5554, Pixel_10_Pro AVD, API 36
+Result: OK (22 tests)
+Time: 2.915 seconds
+Instrumentation code: -1 (AndroidJUnitRunner success convention)
+Passed: 22
+Failed: 0
+Skipped: 0
+Included: CloudOfflineE2E, CorrelatedPipelineE2E, DataFlowE2E, Room migrations/DAO, 4 ML tests, SmartRule persistence and durability coordinator.

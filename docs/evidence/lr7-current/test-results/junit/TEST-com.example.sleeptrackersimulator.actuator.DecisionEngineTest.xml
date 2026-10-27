@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:27.275Z" hostname="LAPTOP_ACER_5" time="0.042">
+  <properties/>
+  <testcase name="threshold crossing triggers alert" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.02"/>
+  <testcase name="below threshold does nothing" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.0"/>
+  <testcase name="reset restores initial armed state" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.004"/>
+  <testcase name="dropping below threshold rearms engine" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.001"/>
+  <testcase name="exact threshold triggers because semantics are greater than or equal" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.001"/>
+  <testcase name="second crossing triggers again" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.001"/>
+  <testcase name="staying above threshold does not spam" classname="com.example.sleeptrackersimulator.actuator.DecisionEngineTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

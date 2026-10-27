@@ -1,0 +1,4 @@
+EMULATOR TEST TRACE; production Firebase not used.
+Create local session -> record samples -> finish -> persist summary + queue UPLOAD_SESSION_SUMMARY -> simulate offline/restart -> pending Room operation survives -> local RTDB emulator write -> ACK -> delivered.
+Android test: CloudOfflineE2EIntegrationTest PASS.
+Rules tests: 11/11 PASS, including owner scope, smart-rule idempotency and session-summary validation.

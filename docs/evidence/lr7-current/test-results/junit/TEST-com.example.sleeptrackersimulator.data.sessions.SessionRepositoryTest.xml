@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.data.sessions.SessionRepositoryTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:31.642Z" hostname="LAPTOP_ACER_5" time="0.159">
+  <properties/>
+  <testcase name="save and retrieve session preserves all fields" classname="com.example.sleeptrackersimulator.data.sessions.SessionRepositoryTest" time="0.042"/>
+  <testcase name="data retention policy deletes expired samples while keeping summaries" classname="com.example.sleeptrackersimulator.data.sessions.SessionRepositoryTest" time="0.039"/>
+  <testcase name="recalculateBaseline computes median and MAD correctly" classname="com.example.sleeptrackersimulator.data.sessions.SessionRepositoryTest" time="0.024"/>
+  <testcase name="insert samples batch and retrieve for session" classname="com.example.sleeptrackersimulator.data.sessions.SessionRepositoryTest" time="0.016"/>
+  <testcase name="feature windows and predictions are mapped and stored correctly" classname="com.example.sleeptrackersimulator.data.sessions.SessionRepositoryTest" time="0.035"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

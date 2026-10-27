@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:31.492Z" hostname="LAPTOP_ACER_5" time="0.091">
+  <properties/>
+  <testcase name="disconnectTearsDownConnectionAndClearsDevice" classname="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" time="0.037"/>
+  <testcase name="executeCommandSucceedsWhenConnected" classname="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" time="0.011"/>
+  <testcase name="executeCommandFailsWhenDisconnected" classname="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" time="0.005"/>
+  <testcase name="startScanEmitsSimulatedDeviceWithCorrectCapabilities" classname="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" time="0.015"/>
+  <testcase name="connectEstablishesConnectionAndStreamsTelemetry" classname="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" time="0.012"/>
+  <testcase name="initialConnectionStateIsDisconnected" classname="com.example.sleeptrackersimulator.data.ble.MockDeviceTransportTest" time="0.008"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,9 @@
+Command: npx --yes firebase-tools@latest emulators:exec --only database "npm test --prefix firebase-tests"
+Date: 2026-10-27 Europe/Kyiv
+Environment: local Firebase Realtime Database emulator, demo-no-project
+Tests: 11
+Passed: 11
+Failed: 0
+Skipped: 0
+Exit code: 0
+Duration reported by node test runner: 3461.7097 ms

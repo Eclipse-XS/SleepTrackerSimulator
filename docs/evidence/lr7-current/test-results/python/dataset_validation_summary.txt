@@ -1,0 +1,8 @@
+Command: ml\.venv\Scripts\python.exe tools\verify_dataset_csv.py
+Date: 2026-10-27 Europe/Kyiv
+Input: generated synthetic benchmark, 1200 samples, 20 Hz, 60 s
+Schema: PASS
+Pandas ingestion: PASS
+ML window extraction: 59 windows
+Verification result: ALL CHECKS PASSED
+Limitation: validates schema/ingestion, not user-collected real-world accuracy.

@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> RECORDING: startSession
+  RECORDING --> PAUSED: pause
+  PAUSED --> RECORDING: resume
+  RECORDING --> FINALIZING: finish
+  PAUSED --> FINALIZING: finish
+  FINALIZING --> COMPLETED: summary + outbox transaction
+  RECORDING --> INTERRUPTED: process restart
+  PAUSED --> INTERRUPTED: process restart
+  INTERRUPTED --> COMPLETED: finish preserved session

@@ -1,0 +1,13 @@
+{
+  "collected_at": "2026-10-27T14:00:00+02:00",
+  "git_head": "78ba61213bbada19f69147572328d0eb2ea8263a",
+  "working_tree_clean": false,
+  "suites": [
+    {"name":"JVM unit","total":197,"passed":197,"failed":0,"skipped":0,"status":"PASS"},
+    {"name":"Android instrumentation","total":22,"passed":22,"failed":0,"skipped":0,"status":"PASS","runner":"direct AndroidJUnitRunner"},
+    {"name":"Firebase Rules","total":11,"passed":11,"failed":0,"skipped":0,"status":"PASS"},
+    {"name":"CSV validation","total":1,"passed":1,"failed":0,"skipped":0,"status":"PASS"}
+  ],
+  "build": {"app_debug":"PASS","app_release":"PASS","lint_debug":"PASS","lint_vital_release":"PASS","virtualsleepband_debug":"PASS"},
+  "ml": {"holdout":750,"production_dense_accuracy":0.98,"production_dense_macro_f1":0.98,"dataset":"synthetic"}
+}

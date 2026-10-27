@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:32.237Z" hostname="LAPTOP_ACER_5" time="0.027">
+  <properties/>
+  <testcase name="population standard deviation calculation is correct" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.003"/>
+  <testcase name="empty heart rate history is monitoring" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.015"/>
+  <testcase name="still before resting threshold remains monitoring" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="heart rate stability respects range boundary" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="missing movement data is monitoring" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.003"/>
+  <testcase name="configuration thresholds are respected" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.001"/>
+  <testcase name="prolonged stillness with unstable heart rate is not possible sleep" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.001"/>
+  <testcase name="movement with heart rate is active regardless of low bpm" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="movement after possible sleep becomes active" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="heart rate average uses configured recent window" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="insufficient heart rate samples are monitoring" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="single heart rate sample is insufficient" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="absolute bpm alone never produces possible sleep" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="movement resets still duration" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.001"/>
+  <testcase name="still at resting threshold becomes resting" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="prolonged stillness with stable heart rate is possible sleep" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <testcase name="unavailable heart rate is monitoring" classname="com.example.sleeptrackersimulator.rest.RestStateClassifierTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

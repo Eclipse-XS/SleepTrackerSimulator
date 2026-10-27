@@ -1,0 +1,39 @@
+flowchart TB
+    subgraph APP["SleepSense 2.0 (Host Application)"]
+        Consumer["SessionCoordinator / DevicesViewModel"]
+        Interface["DeviceTransport Interface\n(connect, disconnect, observeHeartRate, sendCommand)"]
+
+        subgraph TRANSPORTS["Transport Implementations"]
+            MockImpl["MockDeviceTransport\n- Deterministic Sinusoidal & Noise HR\n- Simulated Movement & Artifacts\n- Instant In-Memory Loopback"]
+            GattImpl["AndroidGattDeviceTransport\n- BluetoothAdapter & BluetoothLeScanner\n- BluetoothGatt Callback Protocol\n- Auto-reconnect & MTU Negotiation (512 bytes)"]
+        end
+    end
+
+    subgraph SIG["Standard Bluetooth SIG GATT Profile"]
+        HRS["Heart Rate Service\nUUID: 0000180d-0000-1000-8000-00805f9b34fb (0x180D)"]
+        HRM["Heart Rate Measurement\nUUID: 00002a37-0000-1000-8000-00805f9b34fb (0x2A37)\n[Notify, 8-bit/16-bit BPM + RR-intervals]"]
+        BSL["Body Sensor Location\nUUID: 00002a38-0000-1000-8000-00805f9b34fb (0x2A38)\n[Read: Wrist = 2]"]
+    end
+
+    subgraph CUSTOM["Proprietary Actuator Extension"]
+        CMD["Haptic / LED Command Characteristic\nUUID: 7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e\n[Write Without Response: VIBRATE, LED_PULSE, STOP]"]
+    end
+
+    subgraph PERIPHERAL["VirtualSleepBand Companion App (Standalone APK / Second Phone)"]
+        Adv["VirtualSleepBandAdvertiser\n- BluetoothLeAdvertiser\n- AdvertiseData (Service UUID 0x180D)\n- Connectable = true, TxPower = MEDIUM"]
+        Server["BluetoothGattServer\n- GATT Service 0x180D Hosted\n- Heart Rate Synthetic Generator Flow\n- Command Dispatcher to Device Vibrator"]
+    end
+
+    Consumer --> Interface
+    Interface -->|Mock Mode Selected| MockImpl
+    Interface -->|Real Hardware / Companion Mode| GattImpl
+
+    GattImpl <== Bluetooth Low Energy 5.4 Radio ==> Adv
+    GattImpl --> HRS
+    HRS --> HRM
+    HRS --> BSL
+    GattImpl --> CMD
+
+    Adv --> Server
+    Server --> HRS
+    Server --> CMD

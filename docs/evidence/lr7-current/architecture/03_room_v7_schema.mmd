@@ -1,0 +1,118 @@
+erDiagram
+    recording_sessions ||--o{ sensor_samples : "has raw accelerometer samples"
+    recording_sessions ||--o{ heart_rate_samples : "has BLE heart rate readings"
+    recording_sessions ||--o{ feature_windows : "aggregates into windows"
+    recording_sessions ||--o{ predictions : "generates ML classifications"
+    recording_sessions ||--o| session_summaries : "produces final summary"
+    recording_sessions ||--o{ smart_rule_executions : "triggers rule actions"
+
+    recording_sessions {
+        TEXT id PK
+        INTEGER startTime
+        INTEGER endTime
+        TEXT state
+        TEXT source
+        INTEGER targetDurationSeconds
+    }
+
+    sensor_samples {
+        INTEGER id PK
+        TEXT sessionId FK
+        INTEGER timestamp
+        REAL x
+        REAL y
+        REAL z
+        REAL magnitude
+    }
+
+    heart_rate_samples {
+        INTEGER id PK
+        TEXT sessionId FK
+        INTEGER timestamp
+        INTEGER bpm
+        INTEGER rrIntervalMs
+        INTEGER confidence
+    }
+
+    feature_windows {
+        TEXT id PK
+        TEXT sessionId FK
+        INTEGER windowIndex
+        INTEGER startTimestamp
+        INTEGER endTimestamp
+        REAL meanMagnitude
+        REAL varianceMagnitude
+        REAL dominantFrequency
+        REAL spectralEnergy
+    }
+
+    predictions {
+        TEXT id PK
+        TEXT sessionId FK
+        TEXT windowId FK
+        INTEGER timestamp
+        TEXT predictedState
+        REAL confidence
+        TEXT modelVersion
+    }
+
+    session_summaries {
+        TEXT sessionId PK
+        INTEGER startTime
+        INTEGER endTime
+        INTEGER durationSeconds
+        INTEGER sleepScore
+        REAL deepSleepFraction
+        REAL lightSleepFraction
+        REAL remFraction
+        REAL awakeFraction
+        REAL averageHeartRate
+        INTEGER isSynced
+    }
+
+    smart_rules {
+        TEXT id PK
+        TEXT name
+        TEXT eventType
+        REAL threshold
+        TEXT action
+        INTEGER consecutiveMatchesRequired
+        INTEGER cooldownSeconds
+        INTEGER enabled
+    }
+
+    smart_rule_executions {
+        TEXT id PK
+        TEXT ruleId FK
+        INTEGER timestamp
+        TEXT actionTaken
+        REAL confidence
+        INTEGER syncedToCloud
+    }
+
+    cloud_outbox {
+        INTEGER id PK
+        TEXT eventType
+        TEXT payload
+        INTEGER timestamp
+        INTEGER retryCount
+        INTEGER status
+    }
+
+    devices {
+        TEXT id PK
+        TEXT name
+        TEXT macAddress
+        TEXT transportType
+        INTEGER lastConnectedTime
+        INTEGER batteryLevel
+    }
+
+    personal_baselines {
+        TEXT id PK
+        TEXT metricKey
+        REAL baselineValue
+        REAL confidence
+        INTEGER sampleCount
+        INTEGER lastCalculated
+    }

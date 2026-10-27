@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.domain.signalprocessing.SignalProcessingPipelineTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:32.024Z" hostname="LAPTOP_ACER_5" time="0.012">
+  <properties/>
+  <testcase name="sample validator accepts normal samples and rejects non-finite and extremes" classname="com.example.sleeptrackersimulator.domain.signalprocessing.SignalProcessingPipelineTest" time="0.005"/>
+  <testcase name="sliding window segmenter segments exactly at window size" classname="com.example.sleeptrackersimulator.domain.signalprocessing.SignalProcessingPipelineTest" time="0.001"/>
+  <testcase name="feature extractor extracts motion RMS, jerk, and variance correctly" classname="com.example.sleeptrackersimulator.domain.signalprocessing.SignalProcessingPipelineTest" time="0.006"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

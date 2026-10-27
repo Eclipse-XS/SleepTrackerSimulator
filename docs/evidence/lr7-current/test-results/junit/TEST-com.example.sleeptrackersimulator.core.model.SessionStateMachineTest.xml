@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.core.model.SessionStateMachineTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:31.457Z" hostname="LAPTOP_ACER_5" time="0.019">
+  <properties/>
+  <testcase name="interrupted session can be recovered or finalized" classname="com.example.sleeptrackersimulator.core.model.SessionStateMachineTest" time="0.015"/>
+  <testcase name="recording session can pause and resume" classname="com.example.sleeptrackersimulator.core.model.SessionStateMachineTest" time="0.001"/>
+  <testcase name="recording session transitions to finalizing and completes" classname="com.example.sleeptrackersimulator.core.model.SessionStateMachineTest" time="0.001"/>
+  <testcase name="initial session is in PREPARING status and transitions to RECORDING" classname="com.example.sleeptrackersimulator.core.model.SessionStateMachineTest" time="0.0"/>
+  <testcase name="illegal direct transition from IDLE to COMPLETED throws exception" classname="com.example.sleeptrackersimulator.core.model.SessionStateMachineTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

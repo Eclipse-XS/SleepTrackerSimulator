@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    participant Pipeline as SignalProcessingPipeline
+    participant ML as TfLiteActivityClassifier
+    participant Engine as SmartRuleEngine
+    participant Coord as SmartRuleEventCoordinator
+    participant DB as Room v7 SQLite (AppDatabase)
+    participant Actuator as AndroidSmartActuatorConfiguration
+    participant Worker as SyncOutboxWorker (WorkManager)
+    participant Cloud as Firebase RTDB
+
+    Pipeline->>ML: classify(accelerometerWindow: 20x3)
+    ML-->>Pipeline: PredictionResult(state=AWAKE, confidence=0.92)
+    Pipeline->>Engine: evaluateRules(prediction, heartRate)
+    
+    activate Engine
+    Note over Engine: Check Rule Predicates (state == AWAKE && conf >= 0.85)
+    Note over Engine: Update Consecutive Match Counter (current=3, required=3)
+    Note over Engine: Verify Cooldown Timer (now - lastTriggeredAt >= 15s)
+    Note over Engine: Check Rearm Status (previous cycle was reset)
+    Engine-->>Coord: triggerRuleAction(ruleId, action=VIBRATE_BURST)
+    deactivate Engine
+
+    activate Coord
+    Note over Coord: Begin Atomic Room Transaction
+    Coord->>DB: INSERT INTO smart_rule_executions (id, ruleId, action, synced=0)
+    Coord->>DB: INSERT INTO cloud_outbox (type="RULE_EVENT", payload, status="PENDING")
+    Note over Coord: Commit Room Transaction (Crash-Consistent)
+    
+    Coord->>Actuator: execute(VIBRATE_BURST)
+    activate Actuator
+    Actuator->>Actuator: Vibrator.vibrate(VibrationEffect.createWaveform(...))
+    Actuator-->>Coord: Success
+    deactivate Actuator
+
+    Coord->>Worker: enqueueUniqueWork(OneTimeWorkRequest)
+    deactivate Coord
+
+    activate Worker
+    Worker->>DB: SELECT * FROM cloud_outbox WHERE status = 'PENDING'
+    DB-->>Worker: List<OutboxEntry>
+    Worker->>Cloud: set("/users/{uid}/sessions/{sid}/ruleEvents/{id}", payload)
+    
+    alt Cloud Available (200 OK)
+        Cloud-->>Worker: Success (Write Committed)
+        Worker->>DB: UPDATE cloud_outbox SET status = 'SYNCED' WHERE id = :id
+        Worker->>DB: UPDATE smart_rule_executions SET syncedToCloud = 1 WHERE id = :id
+    else Network Offline / Exponential Backoff
+        Cloud-->>Worker: NetworkException / Timeout
+        Note over Worker: WorkManager Reschedules with Exponential Backoff
+        Note over DB: Local state remains preserved & resilient
+    end
+    deactivate Worker

@@ -1,0 +1,9 @@
+flowchart LR
+  A[TYPE_ACCELEROMETER] --> B[Timestamp + validation]
+  B --> C[Persist sensor sample]
+  B --> D[20-sample XYZ window]
+  D --> E[Float32 tensor 1x20x3]
+  E --> F[activity_classifier.tflite]
+  F --> G[REST / RESTLESS / ACTIVE probabilities]
+  G --> H[Prediction persistence]
+  H --> I[Session summary / Insights]

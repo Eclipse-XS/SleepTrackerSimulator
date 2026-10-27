@@ -1,0 +1,52 @@
+flowchart LR
+    subgraph SENSORS["1. Physical & Wireless Ingestion"]
+        Acc["Hardware Accelerometer\n(SensorManager @ 20Hz / 50ms)"]
+        BLE["BLE Peripheral\n(HRS 0x180D @ 1Hz)"]
+    end
+
+    subgraph PREPROC["2. Signal Processing Pipeline"]
+        Sample["Raw Sample (x, y, z, t)"]
+        Calib["Gravity Baseline Calibration"]
+        BFilter["Butterworth Bandpass Filter\n(0.5 - 5.0 Hz Tremor/Motion Band)"]
+        Window["Sliding Window Buffer\n(20 samples x 3 axes = 1.0s)"]
+    end
+
+    subgraph ML["3. Edge ML Inference (TFLite)"]
+        TfModel["Dense Neural Network\n(activity_classifier.tflite, 11.1 KB)"]
+        Norm["Min-Max Feature Scaling"]
+        Softmax["Softmax Output Distribution:\n- REST / DEEP_SLEEP\n- LIGHT_SLEEP / MOVING\n- AWAKE / RESTLESS"]
+    end
+
+    subgraph SMART_RULES["4. Smart Rule Engine"]
+        Evaluate["Rule Predicate Matching\n(State == AWAKE && Confidence >= 0.85)"]
+        Consecutive["Consecutive Match Counter\n(Threshold: N >= 3 consecutive windows)"]
+        Cooldown["Hysteresis & Cooldown State\n(Min interval: 15s between triggers)"]
+        Rearm["Auto-Rearm Logic\n(State must return to REST before next trigger)"]
+    end
+
+    subgraph ACTUATION["5. Physical & Telemetry Action"]
+        Haptic["Vibrator / VibratorManager\n(Tactile Sleep Awakening / Alarm)"]
+        Optical["CameraManager / Torch\n(Gentle Light Wakeup Simulation)"]
+        BleCmd["BLE Band Feedback\n(Custom Characteristic Notification)"]
+        Outbox["Room v7 Crash-Consistent Outbox\n(Local SQLite + Unsynced Flag)"]
+    end
+
+    %% Ingestion to Preproc
+    Acc --> Sample
+    Sample --> Calib --> BFilter --> Window
+
+    %% Preproc to ML
+    Window --> Norm --> TfModel --> Softmax
+
+    %% ML to Smart Rules
+    Softmax --> Evaluate
+    BLE -. Heart Rate .-> Evaluate
+    Evaluate --> Consecutive
+    Consecutive --> Cooldown
+    Cooldown --> Rearm
+
+    %% Rules to Actuation
+    Rearm -- Trigger Event --> Haptic
+    Rearm -- Trigger Event --> Optical
+    Rearm -- Trigger Event --> BleCmd
+    Rearm -- Audit Log --> Outbox

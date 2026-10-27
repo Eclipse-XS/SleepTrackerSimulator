@@ -1,0 +1,10 @@
+Collected: 2026-10-27 Europe/Kyiv
+AVD: Pixel_10_Pro
+Serial: emulator-5554
+Model: sdk_gphone64_x86_64
+Android API: 36
+Resolution: 1280x2856
+Density: 480 dpi
+Main package: com.example.sleeptrackersimulator
+Version: 1.0 (1), minSdk 31, targetSdk 37
+Debug APK SHA-256: BA42206153DCC0B97BDD4ECCAF7E03A667B2BBC6879623FC827F5DC69D2A6216

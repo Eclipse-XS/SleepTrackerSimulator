@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.cloud.RetryPolicyTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:31.343Z" hostname="LAPTOP_ACER_5" time="0.066">
+  <properties/>
+  <testcase name="transient failure retries with ordered backoff and succeeds" classname="com.example.sleeptrackersimulator.cloud.RetryPolicyTest" time="0.022"/>
+  <testcase name="cancellation propagates" classname="com.example.sleeptrackersimulator.cloud.RetryPolicyTest" time="0.02"/>
+  <testcase name="maximum attempts are bounded" classname="com.example.sleeptrackersimulator.cloud.RetryPolicyTest" time="0.011"/>
+  <testcase name="permission failure is not retried" classname="com.example.sleeptrackersimulator.cloud.RetryPolicyTest" time="0.012"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

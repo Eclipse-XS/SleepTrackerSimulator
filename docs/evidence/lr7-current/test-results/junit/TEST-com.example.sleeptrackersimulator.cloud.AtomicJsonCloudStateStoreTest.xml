@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:29.406Z" hostname="LAPTOP_ACER_5" time="1.861">
+  <properties/>
+  <testcase name="completing end session atomically removes operation and active session" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.661"/>
+  <testcase name="operations and active session survive re-instantiation" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.067"/>
+  <testcase name="one hundred telemetry operations remain durable with end operation" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.936"/>
+  <testcase name="end session and mixed operation order persist" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.046"/>
+  <testcase name="legacy capacity never truncates durable FIFO" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.023"/>
+  <testcase name="failed persistence does not mutate in memory queue" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.023"/>
+  <testcase name="legacy capacity preserves telemetry and end session control operation" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.053"/>
+  <testcase name="legacy json without new counters remains readable" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.007"/>
+  <testcase name="corrupted storage is treated as empty" classname="com.example.sleeptrackersimulator.cloud.AtomicJsonCloudStateStoreTest" time="0.042"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

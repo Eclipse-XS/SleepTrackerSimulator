@@ -1,0 +1,4 @@
+TEST-CORRELATED TRACE; not a live physical actuator capture.
+Rule fixture: ACCELEROMETER_X > 10.0 m/s^2; 3 unique consecutive matches; cooldown 5000 ms; VIBRATION_PULSE.
+JVM: first/second match wait; third triggers; duplicate input cannot advance count; false condition rearms; cooldown suppresses.
+Android: prepare creates execution + gated outbox atomically; finalize records result; restart maps unfinished physical action to OUTCOME_UNKNOWN without replay.

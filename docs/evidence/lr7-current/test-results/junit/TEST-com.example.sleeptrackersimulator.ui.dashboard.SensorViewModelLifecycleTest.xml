@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.ui.dashboard.SensorViewModelLifecycleTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:33.320Z" hostname="LAPTOP_ACER_5" time="0.139">
+  <properties/>
+  <testcase name="foreground registers one listener pause unregisters and resume registers once" classname="com.example.sleeptrackersimulator.ui.dashboard.SensorViewModelLifecycleTest" time="0.055"/>
+  <testcase name="background unregisters even while multiple downstream subscribers remain" classname="com.example.sleeptrackersimulator.ui.dashboard.SensorViewModelLifecycleTest" time="0.084"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

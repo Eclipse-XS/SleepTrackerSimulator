@@ -1,0 +1,9 @@
+flowchart LR
+  APP[SleepSense :app Central] --> DT[DeviceTransport]
+  DT --> MOCK[MockDeviceTransport]
+  DT --> GATT[AndroidGattDeviceTransport]
+  GATT -. physical BLE not verified .-> VSB[VirtualSleepBand :virtualsleepband Peripheral]
+  VSB --> HRS[Heart Rate 0x180D / 0x2A37]
+  VSB --> BAS[Battery 0x180F / 0x2A19]
+  VSB --> BSL[Body Sensor Location 0x2A38]
+  VSB --> CUSTOM[Custom command + ACK characteristics]

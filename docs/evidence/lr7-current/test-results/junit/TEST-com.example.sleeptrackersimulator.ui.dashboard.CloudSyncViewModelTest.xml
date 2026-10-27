@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" tests="30" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:32.806Z" hostname="LAPTOP_ACER_5" time="0.51">
+  <properties/>
+  <testcase name="legacy inactive session left after old two-step end cleanup is not reactivated" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.063"/>
+  <testcase name="repository failure transitions to error without cancelling later ticks" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.033"/>
+  <testcase name="pending state from another Firebase uid is not uploaded" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.026"/>
+  <testcase name="session persistence failure becomes error instead of escaping ViewModel" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.008"/>
+  <testcase name="initial state is idle and no upload occurs before first interval" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.012"/>
+  <testcase name="remove failure after Firebase upload reports error and keeps operation for idempotent retry" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.013"/>
+  <testcase name="failure while persisting end request is reported and pending end prevents reuse" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.014"/>
+  <testcase name="pending queue preserves more than fifty offline samples" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.054"/>
+  <testcase name="start cannot reopen a session whose end is pending" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.013"/>
+  <testcase name="pending end recovers when network returns after ten minutes" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.022"/>
+  <testcase name="stop cancels periodic job and restart creates exactly one new job" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.007"/>
+  <testcase name="pending offline end recovers automatically when network returns" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.008"/>
+  <testcase name="unavailable sensor is not uploaded as synthetic zero measurement" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.007"/>
+  <testcase name="offline end survives process recreation and closes original session in order" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.012"/>
+  <testcase name="BLE disconnected still uploads sensor data" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.011"/>
+  <testcase name="corrupted persisted state remains visible in ViewModel diagnostics" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.078"/>
+  <testcase name="starting twice does not create duplicate periodic jobs" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.012"/>
+  <testcase name="ending monitoring flushes queue writes endedAt and is idempotent" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.007"/>
+  <testcase name="offline payload becomes pending without repository write" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.009"/>
+  <testcase name="unchanged sensor sample is uploaded only once" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.017"/>
+  <testcase name="periodic upload starts at five seconds with current snapshot" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.01"/>
+  <testcase name="failure while reactivating stored session is reported synchronously" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.006"/>
+  <testcase name="network recovery flushes pending payloads in FIFO order" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.01"/>
+  <testcase name="successful upload transitions from syncing to synced" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.008"/>
+  <testcase name="ending offline stops locally and keeps session pending" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.01"/>
+  <testcase name="offline measurement and end schedule durable recovery work" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.007"/>
+  <testcase name="failed atomic end completion is retried after restart without reusing active session" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.008"/>
+  <testcase name="enqueue persistence failure becomes error without upload or false success" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.005"/>
+  <testcase name="cancellation is not converted to Firebase error" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.006"/>
+  <testcase name="BLE connected enriches payload with heart rate and rest state" classname="com.example.sleeptrackersimulator.ui.dashboard.CloudSyncViewModelTest" time="0.01"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

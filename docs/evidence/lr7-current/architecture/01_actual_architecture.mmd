@@ -1,0 +1,106 @@
+flowchart TD
+    subgraph UI["UI & Presentation Layer (Jetpack Compose & Material 3)"]
+        Today["TodayScreen (Live Session & Telemetry)"]
+        History["HistoryScreen (Past Records & Analytics)"]
+        Insights["InsightsScreen (Sleep Quality & Metrics)"]
+        Devices["DevicesScreen (BLE Pairing & Hardware Status)"]
+        Settings["SettingsScreen (Cloud, Storage & Thresholds)"]
+        DevLab["DeveloperLabScreen (7-Tab Engineering Diagnostic)"]
+        LegacyLab["LegacyLabScreen (Academic LR1-LR6 Controls)"]
+    end
+
+    subgraph VM["ViewModel & State Layer"]
+        TodayVM["TodayViewModel"]
+        HistoryVM["HistoryViewModel"]
+        InsightsVM["InsightsViewModel"]
+        DevicesVM["DevicesViewModel"]
+        DevLabVM["DeveloperLabViewModel"]
+        SensorVM["SensorViewModel"]
+    end
+
+    subgraph Service["Background & Foreground Execution"]
+        RecordingSvc["RecordingService\n(FOREGROUND_SERVICE_TYPE_HEALTH)"]
+        SessionCoord["SessionCoordinator\n(Stateful Engine & StateFlow)"]
+    end
+
+    subgraph Processing["Signal Processing & Edge ML"]
+        Pipeline["SignalProcessingPipeline\n(Butterworth Filter & Baseline Calibration)"]
+        TfLite["TfLiteActivityClassifier\n(11.1 KB Dense Model, 20x3 Sliding Window)"]
+    end
+
+    subgraph Logic["Decision & Automation Engine"]
+        RuleEngine["SmartRuleEngine\n(Condition Evaluation, Consecutive Matches & Cooldown)"]
+        DecisionEng["DecisionEngine\n(Vibration & Flashlight Command Routing)"]
+    end
+
+    subgraph Hardware["Hardware & Physical Actuators"]
+        Sensors["Android SensorManager\n(Hardware Accelerometer @ 20Hz XYZ)"]
+        Vibrator["Android Vibrator / VibratorManager\n(Tactile Haptic Actuator)"]
+        Torch["CameraManager / Torch\n(Visual Optical Actuator)"]
+    end
+
+    subgraph BLE["BLE Subsystem (Bluetooth Core Spec 5.4)"]
+        Transport["DeviceTransport Interface"]
+        MockBLE["MockDeviceTransport\n(Synthetic Heart Rate & Movement)"]
+        GattCentral["AndroidGattDeviceTransport\n(Heart Rate Service 0x180D, 0x2A37, 0x2A38)"]
+        Companion["VirtualSleepBand Companion\n(GATT Server & Advertiser with Custom Actuator UUID)"]
+    end
+
+    subgraph Storage["Persistence Layer (Room v7 SQLite Database)"]
+        RoomDB["AppDatabase (Schema v7)"]
+        SensorDao["SensorRecordDao (Raw & Aggregated Sensor Data)"]
+        RuleDao["SmartRuleDao (Rules, Executions & Outbox)"]
+        SummaryDao["SessionSummaryDao (Session Analytics & Sleep Quality)"]
+    end
+
+    subgraph Cloud["Cloud Sync & Offline Resiliency"]
+        SyncWorker["WorkManager SyncOutboxWorker\n(Exponential Backoff & Network Constraint)"]
+        Firebase["Firebase Realtime Database\n(Atomic Transactions & Idempotent Rule Validation)"]
+    end
+
+    %% UI to ViewModel
+    Today --> TodayVM
+    History --> HistoryVM
+    Insights --> InsightsVM
+    Devices --> DevicesVM
+    DevLab --> DevLabVM
+    LegacyLab --> SensorVM
+
+    %% ViewModel to Service/Coordinators
+    TodayVM --> SessionCoord
+    SensorVM --> RecordingSvc
+    DevLabVM --> SessionCoord
+    DevLabVM --> RuleEngine
+
+    %% Service Execution
+    RecordingSvc --> SessionCoord
+    SessionCoord --> Sensors
+    SessionCoord --> Pipeline
+    SessionCoord --> Transport
+
+    %% Processing & ML
+    Sensors --> Pipeline
+    Pipeline --> TfLite
+    TfLite --> RuleEngine
+
+    %% Rule & Actuation
+    RuleEngine --> DecisionEng
+    DecisionEng --> Vibrator
+    DecisionEng --> Torch
+    DecisionEng --> Transport
+
+    %% BLE
+    Transport -.-> MockBLE
+    Transport -.-> GattCentral
+    GattCentral <== Bluetooth RF ==> Companion
+
+    %% Storage
+    SessionCoord --> RoomDB
+    RuleEngine --> RuleDao
+    Pipeline --> SensorDao
+    TodayVM --> SummaryDao
+
+    %% Cloud Synchronization
+    RuleDao -. Unsynced Executions .-> SyncWorker
+    SummaryDao -. Unsynced Summaries .-> SyncWorker
+    SyncWorker ==> Firebase

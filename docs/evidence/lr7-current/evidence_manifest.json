@@ -1,0 +1,31 @@
+{
+  "project": "SleepSense 2.0",
+  "lab": 7,
+  "git_commit": "78ba61213bbada19f69147572328d0eb2ea8263a",
+  "working_tree_clean": false,
+  "device": "Pixel_10_Pro AVD / emulator-5554 / API 36",
+  "creation_date": "2026-10-27",
+  "artifacts": [
+    {"path":"screenshots/01_today_idle.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"CBD9BFCF5D0892B76949D4A7EDDD99DA063148BD431A1A7122D0351EA02E7B51","status":"EMULATOR VERIFIED","supports":"Current Today idle UI"},
+    {"path":"screenshots/02_today_recording.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"EC1EFB5169F0C0E377DE212AB222606550AB411F16775EBBD8615603F00C2640","status":"EMULATOR VERIFIED","supports":"PHONE recording at 20 Hz"},
+    {"path":"screenshots/03_today_paused.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"93C216E82085005891895A9AF5BAAFEFFAD1B1F131C0C04053ADF22E602EF864","status":"EMULATOR VERIFIED","supports":"Paused session UI"},
+    {"path":"screenshots/04_today_completed.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"D7D869032EB9D8BEBEB6F69C740BBE4EA6B066CA0E071AA42DCACA66130DE597","status":"EMULATOR VERIFIED","supports":"Completed session summary"},
+    {"path":"screenshots/05_history.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"A03D37C50B4CA61C1EB11946AB52D88B18D8DD4F6403EA82C21ED0C457BD6CFE","status":"EMULATOR VERIFIED","supports":"Persisted session History"},
+    {"path":"screenshots/06_session_details.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"C224DBDB2929DCA6C1E366E8498A4A61C08427D24410E2FE8B846E2BCEC63852","status":"EMULATOR VERIFIED","supports":"Session details and disclaimer"},
+    {"path":"screenshots/07_insights.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"A68D0E1F51941C93995D16C1ED40D174FC9178692665D411790CCE8108B8F927","status":"EMULATOR VERIFIED","supports":"Current Insights UI"},
+    {"path":"screenshots/08_devices.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"AC8D9D9333BBCDF40E76153B680D034E749505DACFCC626A8B74CD0A34D17CEC","status":"EMULATOR VERIFIED","supports":"Current Devices UI"},
+    {"path":"screenshots/09_automations.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"D41A37C5DCB81EE68010987C98C4336B9E1DE931D623C879106A5B8FF3794024","status":"EMULATOR VERIFIED","supports":"Smart scenarios UI"},
+    {"path":"screenshots/10_developer_lab.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"29675D6396FEB56337DEBBFB6830B24BF67EF35F03A14459645675AF7F9EE63A","status":"EMULATOR VERIFIED","supports":"Developer Lab"},
+    {"path":"screenshots/11_sensor_inspector.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"29675D6396FEB56337DEBBFB6830B24BF67EF35F03A14459645675AF7F9EE63A","status":"EMULATOR VERIFIED","supports":"Sensor inspector"},
+    {"path":"screenshots/12_ble_inspector.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"7ABBAF20E08E43DD81145A1255E9E2E72F62E63489B0CDE041BC18E300B31199","status":"EMULATOR VERIFIED","supports":"BLE inspector; not physical BLE"},
+    {"path":"screenshots/13_cloud_inspector.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"F480BECAFDC43B652D8FDE4EFC0BF40EFB64041181501589D6E9F7930C06D613","status":"EMULATOR VERIFIED","supports":"Cloud inspector"},
+    {"path":"screenshots/14_actuator_inspector.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"D2C4784FCF2777E21674C9394EA9279CB5656BB49CDE4C2B5E1060428565A23F","status":"EMULATOR VERIFIED","supports":"Actuator inspector"},
+    {"path":"screenshots/15_room_inspector.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"9BBCBF1320DA8064B9399FAE142A4B522C7C2C919CB43DC3BAC1A283257EF816","status":"EMULATOR VERIFIED","supports":"Room v7 inspector"},
+    {"path":"screenshots/16_ml_inspector.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"B77D800C74BCC53DF54D89B52163E9948680205758582EA12AF16EA455EB019A","status":"EMULATOR VERIFIED","supports":"ML tensor and dataset collector UI"},
+    {"path":"screenshots/17_pipeline_trace.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"62CA3A2538C3C1818C22B0622BAC869ABC973225FB860E7C9518AE47061C4FB5","status":"EMULATOR VERIFIED","supports":"Developer Lab pipeline trace"},
+    {"path":"screenshots/18_virtual_sleep_band.png","type":"android_runtime_screenshot","source":"adb screencap","sha256":"F4C67DB5DFC088DAE0140B92DF4D3295F8D1A5037ED24C9B6FCCD9FD7322677D","status":"EMULATOR VERIFIED","supports":"Companion application launch"},
+    {"path":"test-results/androidTest/manual_instrumentation_summary.txt","type":"test_summary","source":"adb shell am instrument","sha256":"53B90602D413216CA8100D4DFB42A992C20CF093BE40015E8A067C3D0A9722AC","status":"VERIFIED","supports":"22/22 Android tests"},
+    {"path":"test-results/firebase/firebase_rules_summary.txt","type":"test_summary","source":"firebase emulators:exec","sha256":"EF658F9BDF122D6046C6E89F78884DE4F70E20EE185FC0BEAF0E064A673788AC","status":"VERIFIED","supports":"11/11 Rules tests"},
+    {"path":"test-results/python/model_comparison.json","type":"ml_evaluation","source":"ml/evaluate_models.py","sha256":"1EA06959047C2CB93B1F0E41C1D7F18F67B85085FCCEC474C8099D93DD07ECB6","status":"SYNTHETIC VERIFIED","supports":"Current model comparison"}
+  ]
+}

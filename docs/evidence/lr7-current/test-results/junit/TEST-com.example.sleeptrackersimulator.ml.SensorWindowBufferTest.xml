@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.ml.SensorWindowBufferTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:32.201Z" hostname="LAPTOP_ACER_5" time="0.019">
+  <properties/>
+  <testcase name="returns chronological rolling window" classname="com.example.sleeptrackersimulator.ml.SensorWindowBufferTest" time="0.013"/>
+  <testcase name="large timestamp gap resets temporal window" classname="com.example.sleeptrackersimulator.ml.SensorWindowBufferTest" time="0.001"/>
+  <testcase name="clear requires a complete new window" classname="com.example.sleeptrackersimulator.ml.SensorWindowBufferTest" time="0.0"/>
+  <testcase name="invalid floating point sample is rejected" classname="com.example.sleeptrackersimulator.ml.SensorWindowBufferTest" time="0.001"/>
+  <testcase name="out of order timestamp resets temporal window" classname="com.example.sleeptrackersimulator.ml.SensorWindowBufferTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

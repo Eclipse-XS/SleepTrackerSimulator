@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:27.330Z" hostname="LAPTOP_ACER_5" time="0.284">
+  <properties/>
+  <testcase name="custom command write and ACK string encoding conform to protocol" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.104"/>
+  <testcase name="cccd descriptor enables notifications with 0x0100" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.0"/>
+  <testcase name="heart rate measurement serialization follows SIG uint8 specification" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.001"/>
+  <testcase name="standard Bluetooth SIG service UUIDs match specification" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.049"/>
+  <testcase name="standard Bluetooth SIG characteristic UUIDs match specification" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.0"/>
+  <testcase name="body sensor location 0x2A38 is strictly separated from proprietary command UUID" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.002"/>
+  <testcase name="body sensor location returns canonical body locations according to SIG" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.0"/>
+  <testcase name="heart rate measurement serialization follows SIG uint16 specification" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.0"/>
+  <testcase name="battery level characteristic enforces 0 to 100 percentage range" classname="com.example.sleeptrackersimulator.ble.BleGattProtocolContractTest" time="0.126"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

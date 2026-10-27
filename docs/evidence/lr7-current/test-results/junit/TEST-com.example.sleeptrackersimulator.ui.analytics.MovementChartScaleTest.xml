@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:32.305Z" hostname="LAPTOP_ACER_5" time="0.041">
+  <properties/>
+  <testcase name="base boundary stays at three" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.019"/>
+  <testcase name="value 8 point 7 is covered" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.001"/>
+  <testcase name="empty data has no chart scale" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <testcase name="single measurement and coordinates remain finite" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.001"/>
+  <testcase name="normal values use base scale" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <testcase name="value 4 point 8 is covered" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <testcase name="large peak is never clipped" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <testcase name="tiny values use base scale" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.001"/>
+  <testcase name="zero values use base scale" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <testcase name="value above base expands to readable boundary" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <testcase name="labels are even unique and include both boundaries" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.019"/>
+  <testcase name="returning current window to normal values restores base scale" classname="com.example.sleeptrackersimulator.ui.analytics.MovementChartScaleTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

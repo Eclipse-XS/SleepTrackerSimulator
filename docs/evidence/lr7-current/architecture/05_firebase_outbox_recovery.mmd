@@ -1,0 +1,33 @@
+stateDiagram-v2
+    [*] --> PendingLocal: Smart Rule Event / Session End
+
+    state "Local Room Outbox" as RoomLayer {
+        PendingLocal: State = PENDING (syncedToCloud = 0)
+        PendingLocal: Stored in cloud_outbox & smart_rule_executions
+        PendingLocal: Survives App Crash & OS Process Death
+    }
+
+    state "WorkManager Execution" as SyncLayer {
+        CheckNetwork: Constraints Check (CONNECTED network)
+        CheckNetwork --> InFlight: WorkManager starts SyncOutboxWorker
+        InFlight: Read pending batches from Room
+        InFlight --> FirebasePush: Write to Firebase Realtime Database
+        
+        state "Firebase RTDB Server Validation" as CloudLayer {
+            FirebasePush --> SecurityRules: Evaluate database.rules.json
+            SecurityRules --> RuleValid: Auth == Owner && Schema Valid && Timestamp Valid
+            SecurityRules --> RuleRejected: Permission Denied / Extra Fields / Invalid Type
+        }
+
+        RuleValid --> SyncedSuccess: Write Acknowledged (Atomic 200 OK)
+        
+        FirebasePush --> NetworkFailure: Socket Timeout / Device Offline
+        NetworkFailure --> ExponentialBackoff: Retry with Exponential Delay (30s, 60s, 120s...)
+        ExponentialBackoff --> CheckNetwork
+    }
+
+    SyncedSuccess --> SyncedLocal: Update Room (status = SYNCED, syncedToCloud = 1)
+    SyncedLocal --> [*]: Outbox Entry Purged or Archived
+
+    RuleRejected --> DeadLetter: Mark status = FAILED (Fatal Schema Error)
+    DeadLetter --> [*]: Developer Lab Diagnostic Flag

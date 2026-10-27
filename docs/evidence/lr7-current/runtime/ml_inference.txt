@@ -1,0 +1,5 @@
+Model: activity_classifier.tflite
+SHA-256: 1CF844F774355E54F820C4860304DC43E42A4015F57C7097CEE9D16227858311
+Tensor: float32 [1,20,3] -> float32 [1,3]
+AndroidJUnitRunner: 12/12 golden vectors matched; finite probabilities; rest window classification PASS.
+Python synthetic holdout N=750: production Dense accuracy=0.9800, macro-F1=0.9800, host latency=7.1 us.

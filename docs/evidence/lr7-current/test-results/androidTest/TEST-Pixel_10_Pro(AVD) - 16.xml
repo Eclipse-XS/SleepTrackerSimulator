@@ -1,0 +1,80 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="22" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-10-27T12:09:41" hostname="localhost">
+  <testsuite name="com.example.sleeptrackersimulator.cloud.RoomCloudStateStoreTest" tests="2" failures="0" errors="0" skipped="0" time="0.224" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="fifoSessionEndAndStorageLimitAreTransactional" classname="com.example.sleeptrackersimulator.cloud.RoomCloudStateStoreTest" time="0.160" />
+    <testcase name="fullTelemetryQueueStillAcceptsOneTerminalSessionOperation" classname="com.example.sleeptrackersimulator.cloud.RoomCloudStateStoreTest" time="0.064" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.e2e.CloudOfflineE2EIntegrationTest" tests="1" failures="0" errors="0" skipped="0" time="0.138" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="offlineSessionEnd_queuesToRoomOutbox_survivesRestart_andSyncsToRtdbEmulator" classname="com.example.sleeptrackersimulator.e2e.CloudOfflineE2EIntegrationTest" time="0.138" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.e2e.CorrelatedPipelineE2ETest" tests="1" failures="0" errors="0" skipped="0" time="0.005" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="sensorThroughTfliteRuleRoomBleOutboxAndFirebaseUsesOneEventId" classname="com.example.sleeptrackersimulator.e2e.CorrelatedPipelineE2ETest" time="0.005" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.e2e.DataFlowIntegrationTest" tests="1" failures="0" errors="0" skipped="0" time="0.188" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="completePipeline_sensorsToWindowsToTfliteToRoomToSummaryToInsights" classname="com.example.sleeptrackersimulator.e2e.DataFlowIntegrationTest" time="0.188" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.history.SensorRecordDaoTest" tests="3" failures="0" errors="0" skipped="0" time="0.136" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="actuatorEventsAreStoredIndividually" classname="com.example.sleeptrackersimulator.history.SensorRecordDaoTest" time="0.045" />
+    <testcase name="recentQueryLimitsNewestRecordsAndReturnsChronologicalOrder" classname="com.example.sleeptrackersimulator.history.SensorRecordDaoTest" time="0.051" />
+    <testcase name="intervalQueryAndRetentionUseTimestampBoundaries" classname="com.example.sleeptrackersimulator.history.SensorRecordDaoTest" time="0.040" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.history.SleepTrackerMigrationTest" tests="2" failures="0" errors="0" skipped="0" time="0.359" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="migrateVersion1Through4PreservesOriginalSensorRows" classname="com.example.sleeptrackersimulator.history.SleepTrackerMigrationTest" time="0.164" />
+    <testcase name="migrateVersion2To4PreservesSensorAndActuatorHistory" classname="com.example.sleeptrackersimulator.history.SleepTrackerMigrationTest" time="0.195" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.history.SleepTrackerMigrationV5ToV6Test" tests="2" failures="0" errors="0" skipped="0" time="0.937" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="migration5To6PreservesRowsAndAddsGatedDeliveryFields" classname="com.example.sleeptrackersimulator.history.SleepTrackerMigrationV5ToV6Test" time="0.266" />
+    <testcase name="everyPublishedSchemaMigratesTo6AndReopens" classname="com.example.sleeptrackersimulator.history.SleepTrackerMigrationV5ToV6Test" time="0.671" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.history.SleepTrackerMigrationV6ToV7Test" tests="2" failures="0" errors="0" skipped="0" time="1.249" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="everyPublishedSchemaMigratesTo7AndReopens" classname="com.example.sleeptrackersimulator.history.SleepTrackerMigrationV6ToV7Test" time="1.108" />
+    <testcase name="migration6To7CreatesNewTablesAndPreservesLegacyRows" classname="com.example.sleeptrackersimulator.history.SleepTrackerMigrationV6ToV7Test" time="0.141" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.ml.ActivityClassifierInstrumentedTest" tests="4" failures="0" errors="0" skipped="0" time="0.036" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="androidInferenceMatchesAllTwelveGoldenVectors" classname="com.example.sleeptrackersimulator.ml.ActivityClassifierInstrumentedTest" time="0.024" />
+    <testcase name="realTfliteModelReturnsThreeFiniteProbabilities" classname="com.example.sleeptrackersimulator.ml.ActivityClassifierInstrumentedTest" time="0.002" />
+    <testcase name="androidInferenceMatchesPythonTfliteGoldenVector" classname="com.example.sleeptrackersimulator.ml.ActivityClassifierInstrumentedTest" time="0.004" />
+    <testcase name="realTfliteModelClassifiesRestWindow" classname="com.example.sleeptrackersimulator.ml.ActivityClassifierInstrumentedTest" time="0.006" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.smart.SmartRuleDaoTest" tests="1" failures="0" errors="0" skipped="0" time="0.054" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="ruleCrudAndExecutionArePersistent" classname="com.example.sleeptrackersimulator.smart.SmartRuleDaoTest" time="0.054" />
+  </testsuite>
+  <testsuite name="com.example.sleeptrackersimulator.smart.SmartRuleEventCoordinatorTest" tests="3" failures="0" errors="0" skipped="0" time="0.098" timestamp="2026-10-27T12:09:41" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="capacityFailureRollsBackExecutionAndOutbox" classname="com.example.sleeptrackersimulator.smart.SmartRuleEventCoordinatorTest" time="0.030" />
+    <testcase name="prepareAndGatedOutboxAreAtomicThenFinalizedTogether" classname="com.example.sleeptrackersimulator.smart.SmartRuleEventCoordinatorTest" time="0.032" />
+    <testcase name="restartReconcilesGatedIntentWithoutReplayingPhysicalAction" classname="com.example.sleeptrackersimulator.smart.SmartRuleEventCoordinatorTest" time="0.036" />
+  </testsuite>
+</testsuites>

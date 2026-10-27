@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" tests="27" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:50:32.362Z" hostname="LAPTOP_ACER_5" time="0.422">
+  <properties/>
+  <testcase name="remote update after initial snapshot overrides manual state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.074"/>
+  <testcase name="dropping below and crossing again triggers second pulse" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.022"/>
+  <testcase name="successful activation emits one typed event and disabling emits none" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.025"/>
+  <testcase name="automatic pulse is suppressed while persistent vibration is active" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.009"/>
+  <testcase name="automatic control disabled suppresses local pulse" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.005"/>
+  <testcase name="remote flashlight true and false controls exact requested state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.013"/>
+  <testcase name="failed operation preserves previous state and reports error" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.007"/>
+  <testcase name="camera permission denial leaves flashlight off without hardware call" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.012"/>
+  <testcase name="manual vibration on and off calls actuator and updates state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.017"/>
+  <testcase name="manual flashlight on and off calls actuator and updates state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.012"/>
+  <testcase name="duplicate remote snapshot does not repeat hardware command" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.009"/>
+  <testcase name="missing Firebase control node does not change hardware state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.007"/>
+  <testcase name="initial state reflects hardware availability and automatic control enabled" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.029"/>
+  <testcase name="sensor loss rearms automatic decision after recovery" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.01"/>
+  <testcase name="background transition stops hardware and suppresses automatic pulses" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.007"/>
+  <testcase name="remote vibration true and false controls persistent vibration" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.011"/>
+  <testcase name="unavailable vibrator does not crash or claim enabled state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.012"/>
+  <testcase name="cleanup stops all actuators" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.01"/>
+  <testcase name="remote listener reconnects after unexpected failure" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.053"/>
+  <testcase name="local pulse does not toggle persistent vibration state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.009"/>
+  <testcase name="partial remote snapshot changes only the addressed actuator" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.01"/>
+  <testcase name="automatic threshold crossing triggers exactly one pulse while above" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.011"/>
+  <testcase name="failed activation does not emit event" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.013"/>
+  <testcase name="initial remote snapshot does not cancel a manual command issued while Firebase connects" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.006"/>
+  <testcase name="remote error updates diagnostic while local control remains functional" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.008"/>
+  <testcase name="enabling automatic control while movement stays high rearms next sample" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.005"/>
+  <testcase name="unavailable flashlight does not crash or claim enabled state" classname="com.example.sleeptrackersimulator.ui.dashboard.ActuatorViewModelTest" time="0.008"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

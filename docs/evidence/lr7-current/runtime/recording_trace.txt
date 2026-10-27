@@ -1,0 +1,8 @@
+EMULATOR VERIFIED, 2026-10-27, Pixel_10_Pro API 36
+READY TO RECORD -> Start Recording
+RECORDING IN PROGRESS; source PHONE; requested 20 Hz; on-device TFLite
+Pause -> paused UI captured
+Resume -> Finish
+Completed summary captured
+History and Session Details captured before later instrumentation cleanup/reinstall
+Evidence: screenshots/01_today_idle.png through 06_session_details.png
