@@ -38,7 +38,6 @@ import com.example.sleeptrackersimulator.ui.theme.NightBlue
 @Composable
 fun InsightsScreen(
     state: InsightsUiState,
-    onSelectRange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
