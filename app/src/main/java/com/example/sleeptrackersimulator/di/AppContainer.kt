@@ -139,6 +139,8 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             activityClassifier = activityClassifier,
             cloudRepository = cloudRepository,
             authRepository = authRepository,
+            cloudStateStore = cloudStateStore,
+            cloudRecoveryScheduler = cloudRecoveryScheduler,
         )
     }
 

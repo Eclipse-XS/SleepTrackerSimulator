@@ -86,6 +86,7 @@ abstract class CloudOutboxDao {
         val limit = when (entity.type) {
             PendingOperationType.UPLOAD_MEASUREMENT.name -> maximumOperations - RoomCloudStateStore.RESERVED_CRITICAL_SLOTS
             PendingOperationType.UPLOAD_RULE_EVENT.name -> maximumOperations - RoomCloudStateStore.RESERVED_END_SESSION_SLOTS
+            PendingOperationType.UPLOAD_SESSION_SUMMARY.name -> maximumOperations
             PendingOperationType.END_SESSION.name -> maximumOperations
             else -> maximumOperations
         }
@@ -201,6 +202,7 @@ class RoomCloudStateStore(
         payloadJson = when (type) {
             PendingOperationType.UPLOAD_MEASUREMENT -> payload?.let(gson::toJson)
             PendingOperationType.UPLOAD_RULE_EVENT -> ruleEvent?.let(gson::toJson)
+            PendingOperationType.UPLOAD_SESSION_SUMMARY -> summary?.let(gson::toJson)
             PendingOperationType.END_SESSION -> null
         },
         endedAt = endedAt,
@@ -217,6 +219,7 @@ class RoomCloudStateStore(
         sessionId = sessionId,
         payload = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_MEASUREMENT.name }?.let { gson.fromJson(it, SensorPayload::class.java) },
         ruleEvent = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_RULE_EVENT.name }?.let { gson.fromJson(it, SmartRuleEventPayload::class.java) },
+        summary = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_SESSION_SUMMARY.name }?.let { gson.fromJson(it, SessionSummaryPayload::class.java) },
         endedAt = endedAt,
         createdAt = createdAt,
         retryCount = retryCount,

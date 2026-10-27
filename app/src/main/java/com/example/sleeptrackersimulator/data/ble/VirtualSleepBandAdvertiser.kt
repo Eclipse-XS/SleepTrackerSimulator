@@ -1,5 +1,6 @@
 package com.example.sleeptrackersimulator.data.ble
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -14,7 +15,10 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.ParcelUuid
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -141,8 +145,24 @@ class VirtualSleepBandAdvertiser(
         }
     }
 
+    fun hasPermissions(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun startAdvertising(): Result<Unit> {
+        if (!hasPermissions()) {
+            val err = "Missing required Bluetooth permissions (BLUETOOTH_ADVERTISE and BLUETOOTH_CONNECT)"
+            _state.value = _state.value.copy(errorMessage = err)
+            return Result.failure(SecurityException(err))
+        }
+
         val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
             ?: return Result.failure(IllegalStateException("BLE Advertising is not supported on this device"))
 
@@ -169,10 +189,14 @@ class VirtualSleepBandAdvertiser(
 
     @SuppressLint("MissingPermission")
     fun stopAdvertising() {
-        bluetoothAdapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        if (hasPermissions()) {
+            bluetoothAdapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        }
         streamJob?.cancel()
         streamJob = null
-        gattServer?.close()
+        if (hasPermissions()) {
+            gattServer?.close()
+        }
         gattServer = null
         subscribedDevices.clear()
         _state.value = PeripheralAdvertiserState(isAdvertising = false)
@@ -224,7 +248,7 @@ class VirtualSleepBandAdvertiser(
                 bpm = (bpm + Random.nextInt(-2, 3)).coerceIn(55, 95)
                 _state.value = _state.value.copy(currentBpm = bpm)
 
-                if (subscribedDevices.isNotEmpty()) {
+                if (subscribedDevices.isNotEmpty() && hasPermissions()) {
                     val hrChar = gattServer?.getService(UUID_HEART_RATE_SERVICE)
                         ?.getCharacteristic(UUID_HEART_RATE_MEASUREMENT)
 

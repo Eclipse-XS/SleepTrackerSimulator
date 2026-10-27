@@ -184,6 +184,14 @@ fun DevicesScreen(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "For multi-device physical testing, use our standalone companion application VirtualSleepBand (package com.example.virtualsleepband) running on a separate phone or emulator.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MistBlue.copy(alpha = 0.65f),
+                    )
                 }
             }
 

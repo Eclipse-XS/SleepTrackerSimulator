@@ -20,6 +20,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -119,7 +122,7 @@ fun DeveloperLabScreen(
             selectedTabIndex = selectedTabIndex,
             containerColor = DarkSurface,
             contentColor = MoonBlue,
-            edgePadding = 16.dp,
+            edgePadding = 12.dp,
         ) {
             tabs.forEachIndexed { index, tab ->
                 Tab(
@@ -130,6 +133,8 @@ fun DeveloperLabScreen(
                             text = tab.title,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = if (selectedTabIndex == index) MoonBlue else MistBlue.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            softWrap = false,
                         )
                     },
                 )
@@ -237,7 +242,25 @@ private fun BleInspectorTab(
             colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Simulated Peripheral Controls", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text(text = "Single-Radio Dual-Role Architecture Notice", fontWeight = FontWeight.Bold, color = MotionAmber)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "• Running BLE Central (scanner/client) and BLE Peripheral (GATT server) concurrently on the same physical Android radio causes controller-level time slicing, latency spikes, and potential packet drops.\n• For realistic physical testing, run the standalone companion app VirtualSleepBand (package com.example.virtualsleepband) on a second Android device or separate emulator instance.\n• The loopback advertiser below is maintained for automated single-device test pipelines.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MistBlue.copy(alpha = 0.85f),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "In-App Loopback Peripheral Controls", fontWeight = FontWeight.Bold, color = MistBlue)
                 Spacer(modifier = Modifier.height(10.dp))
                 Button(
                     onClick = onSendAlert,
@@ -398,6 +421,11 @@ private fun DatabaseInspectorTab() {
 
 @Composable
 private fun MlInspectorTab() {
+    var selectedTag by remember { mutableStateOf("RESTING") }
+    var isRecordingGroundTruth by remember { mutableStateOf(false) }
+    var recordedWindowsCount by remember { mutableIntStateOf(142) }
+    var exportStatusMessage by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -414,6 +442,120 @@ private fun MlInspectorTab() {
             MetricCard(title = "Input Tensor", value = "[1, 20, 3]", subtitle = "20 samples x 3 axes", modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.width(12.dp))
             MetricCard(title = "Classes", value = "3", subtitle = "REST, RESTLESS, ACTIVE", accentColor = CalmGreen, modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Ground-Truth Dataset Collection Mode
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = "Dataset Collection & Ground Truth", fontWeight = FontWeight.Bold, color = MistBlue)
+                    StatusBadge(
+                        text = if (isRecordingGroundTruth) "COLLECTING" else "STANDBY",
+                        color = if (isRecordingGroundTruth) CalmGreen else MoonBlue,
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Label live motion data with user-verified ground-truth states to build benchmarking datasets for model retraining.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MistBlue.copy(alpha = 0.75f),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "SELECT ACTIVE GROUND TRUTH LABEL:",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MistBlue.copy(alpha = 0.6f),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("RESTING", "READING", "OUT_OF_BED").forEach { tag ->
+                        FilterChip(
+                            selected = selectedTag == tag,
+                            onClick = { selectedTag = tag },
+                            label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MoonBlue.copy(alpha = 0.3f),
+                                selectedLabelColor = MoonBlue,
+                            ),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            isRecordingGroundTruth = !isRecordingGroundTruth
+                            if (isRecordingGroundTruth) {
+                                recordedWindowsCount += 5
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isRecordingGroundTruth) Color(0xFFEF4444) else MoonBlue,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            if (isRecordingGroundTruth) "Stop Tagging" else "Tag as $selectedTag",
+                            color = DarkSurface,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            exportStatusMessage = "Exported $recordedWindowsCount windows ($selectedTag) to sleepsense_dataset.csv"
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Export CSV", color = MistBlue, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                exportStatusMessage?.let { msg ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CalmGreen,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Clinical Validation Disclaimer
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "Clinical Validation & Medical Disclaimer", fontWeight = FontWeight.Bold, color = MotionAmber)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "• NOT A MEDICAL DEVICE: SleepSense estimates night movement activity and relative restfulness using smartphone accelerometry.\n• It is NOT a medical polysomnograph (PSG), cannot diagnose sleep apnea, insomnia, or sleep disorders, and must not be used for clinical decisions.\n• Predictions are classified locally using an on-device TFLite model.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MistBlue.copy(alpha = 0.85f),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

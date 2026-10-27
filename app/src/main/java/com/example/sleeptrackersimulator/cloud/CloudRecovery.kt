@@ -123,6 +123,11 @@ class CloudOutboxWorker(
                         statusUpdater(event.eventId)
                         store.removeFirst()
                     }
+                    PendingOperationType.UPLOAD_SESSION_SUMMARY -> {
+                        val summary = requireNotNull(operation.summary)
+                        repository.uploadSessionSummary(uid, summary)
+                        store.removeFirst()
+                    }
                     PendingOperationType.END_SESSION -> {
                         repository.endSession(uid, operation.sessionId, requireNotNull(operation.endedAt))
                         store.completeSessionEnd(operation.sessionId)

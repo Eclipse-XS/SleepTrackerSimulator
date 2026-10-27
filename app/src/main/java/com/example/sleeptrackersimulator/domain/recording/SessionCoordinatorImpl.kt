@@ -39,6 +39,8 @@ class SessionCoordinatorImpl(
     private val sampleValidator: SampleValidator = SampleValidator(),
     private val cloudRepository: CloudRepository? = null,
     private val authRepository: AuthRepository? = null,
+    private val cloudStateStore: com.example.sleeptrackersimulator.cloud.CloudStateStore? = null,
+    private val cloudRecoveryScheduler: com.example.sleeptrackersimulator.cloud.CloudRecoveryScheduler? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SessionCoordinator {
 
@@ -54,7 +56,14 @@ class SessionCoordinatorImpl(
     private var currentClockAnchor: ClockAnchor? = null
     private val windowSegmenter = SlidingWindowSegmenter(windowSize = 20, stride = 20)
     private val pendingSamples = mutableListOf<RawSensorSample>()
-    private val predictionsHistory = mutableListOf<Prediction>()
+
+    // O(1) statistical counters avoiding unbounded heap growth during long recordings
+    private var totalPredictionsCount = 0
+    private var restPredictionsCount = 0
+    private var restlessPredictionsCount = 0
+    private var activePredictionsCount = 0
+    private var movementEpisodeCount = 0
+    private var lastWasMovement = false
 
     init {
         // Check for existing active or interrupted session on initialization
@@ -99,7 +108,12 @@ class SessionCoordinatorImpl(
 
             windowSegmenter.clear()
             pendingSamples.clear()
-            predictionsHistory.clear()
+            totalPredictionsCount = 0
+            restPredictionsCount = 0
+            restlessPredictionsCount = 0
+            activePredictionsCount = 0
+            movementEpisodeCount = 0
+            lastWasMovement = false
 
             sessionRepository.saveSession(session)
             _activeSession.value = session
@@ -215,7 +229,22 @@ class SessionCoordinatorImpl(
                 timestampMillis = featureWindow.endUtcMillis,
             )
 
-            predictionsHistory.add(prediction)
+            totalPredictionsCount++
+            when (activityClass) {
+                ActivityClass.REST -> restPredictionsCount++
+                ActivityClass.RESTLESS -> restlessPredictionsCount++
+                ActivityClass.ACTIVE -> activePredictionsCount++
+                else -> {}
+            }
+            if (activityClass.isMovement) {
+                if (!lastWasMovement) {
+                    movementEpisodeCount++
+                    lastWasMovement = true
+                }
+            } else {
+                lastWasMovement = false
+            }
+
             sessionRepository.insertPredictions(listOf(prediction))
         }
     }
@@ -226,6 +255,12 @@ class SessionCoordinatorImpl(
                 ?: return@withContext Result.failure(IllegalStateException("No active session"))
             if (session.status != SessionStatus.RECORDING) {
                 return@withContext Result.failure(IllegalStateException("Cannot pause from status ${session.status}"))
+            }
+
+            // Flush remaining samples before pausing
+            if (pendingSamples.isNotEmpty()) {
+                sessionRepository.insertSamplesBatch(pendingSamples.toList())
+                pendingSamples.clear()
             }
 
             val paused = session.withStatus(SessionStatus.PAUSED)
@@ -266,29 +301,42 @@ class SessionCoordinatorImpl(
             val endUtc = System.currentTimeMillis()
             val observationDurationMs = maxOf(1000L, endUtc - session.startUtcMillis)
 
-            // Compute summary metrics
+            // Compute summary metrics using O(1) running counters or fallback to DB if recovered
             val windows = sessionRepository.getFeatureWindows(session.sessionId)
-            val predictions = if (predictionsHistory.isNotEmpty()) predictionsHistory.toList()
-            else sessionRepository.getPredictionsForSession(session.sessionId)
-
-            val lowMotionCount = predictions.count { it.predictedClass == ActivityClass.REST }
-            val lowMotionFraction = if (predictions.isNotEmpty()) {
-                lowMotionCount.toFloat() / predictions.size
-            } else 1.0f
-
-            // Calculate movement episode transitions
-            var movementEpisodes = 0
-            var inMovement = false
-            for (p in predictions) {
-                if (p.predictedClass.isMovement) {
-                    if (!inMovement) {
-                        movementEpisodes++
-                        inMovement = true
+            val (total, lowMotionCount, restlessCount, activeCount, movementEpisodes) = if (totalPredictionsCount > 0) {
+                Tuple5(
+                    totalPredictionsCount,
+                    restPredictionsCount,
+                    restlessPredictionsCount,
+                    activePredictionsCount,
+                    movementEpisodeCount,
+                )
+            } else {
+                val dbPreds = sessionRepository.getPredictionsForSession(session.sessionId)
+                var epCount = 0
+                var inMove = false
+                for (p in dbPreds) {
+                    if (p.predictedClass.isMovement) {
+                        if (!inMove) {
+                            epCount++
+                            inMove = true
+                        }
+                    } else {
+                        inMove = false
                     }
-                } else {
-                    inMovement = false
                 }
+                Tuple5(
+                    dbPreds.size,
+                    dbPreds.count { it.predictedClass == ActivityClass.REST },
+                    dbPreds.count { it.predictedClass == ActivityClass.RESTLESS },
+                    dbPreds.count { it.predictedClass == ActivityClass.ACTIVE },
+                    epCount,
+                )
             }
+
+            val lowMotionFraction = if (total > 0) {
+                lowMotionCount.toFloat() / total
+            } else 1.0f
 
             val hours = maxOf(0.016f, observationDurationMs / 3_600_000.0f)
             val movementRatePerHour = movementEpisodes / hours
@@ -323,30 +371,41 @@ class SessionCoordinatorImpl(
             val completed = session.completed(endUtcMillis = endUtc, coverageFraction = coverageFraction)
             sessionRepository.updateSession(completed)
 
-            // Optional upload to cloud if authenticated and cloud repository available
+            // Offline-first cloud synchronization
             val uid = authRepository?.currentUid
-            if (uid != null && cloudRepository != null) {
-                runCatching {
-                    val restlessCount = predictions.count { it.predictedClass == ActivityClass.RESTLESS }
-                    val activeCount = predictions.count { it.predictedClass == ActivityClass.ACTIVE }
-                    val total = maxOf(1, predictions.size)
-                    val hrSamples = sessionRepository.getHeartRateForSession(session.sessionId)
-                    val meanHr = if (hrSamples.isNotEmpty()) hrSamples.map { it.bpm }.average().toInt() else null
+            val totalPreds = maxOf(1, total)
+            val hrSamples = sessionRepository.getHeartRateForSession(session.sessionId)
+            val meanHr = if (hrSamples.isNotEmpty()) hrSamples.map { it.bpm }.average().toInt() else null
 
-                    val payload = SessionSummaryPayload(
+            val payload = SessionSummaryPayload(
+                sessionId = summary.sessionId,
+                startedAt = session.startUtcMillis,
+                endedAt = endUtc,
+                observationDurationMs = summary.observationDurationMs,
+                lowMotionFraction = summary.lowMotionFraction,
+                restlessFraction = restlessCount.toFloat() / totalPreds,
+                activeFraction = activeCount.toFloat() / totalPreds,
+                meanHeartRateBpm = meanHr,
+                sourceMode = session.sourceMode.name,
+                placement = summary.devicePlacement.name,
+                qualityStatus = session.qualityStatus.name,
+                schemaVersion = 2,
+            )
+
+            if (cloudStateStore != null) {
+                runCatching {
+                    val outboxOp = com.example.sleeptrackersimulator.cloud.PendingCloudOperation(
+                        operationId = "summary-${summary.sessionId}",
+                        type = com.example.sleeptrackersimulator.cloud.PendingOperationType.UPLOAD_SESSION_SUMMARY,
                         sessionId = summary.sessionId,
-                        startedAt = session.startUtcMillis,
-                        endedAt = endUtc,
-                        observationDurationMs = summary.observationDurationMs,
-                        lowMotionFraction = summary.lowMotionFraction,
-                        restlessFraction = restlessCount.toFloat() / total,
-                        activeFraction = activeCount.toFloat() / total,
-                        meanHeartRateBpm = meanHr,
-                        sourceMode = session.sourceMode.name,
-                        placement = summary.devicePlacement.name,
-                        qualityStatus = session.qualityStatus.name,
-                        schemaVersion = 2,
+                        summary = payload,
+                        createdAt = endUtc,
                     )
+                    cloudStateStore.enqueue(outboxOp)
+                    cloudRecoveryScheduler?.schedule()
+                }
+            } else if (uid != null && cloudRepository != null) {
+                runCatching {
                     cloudRepository.uploadSessionSummary(uid, payload)
                 }
             }
@@ -376,10 +435,23 @@ class SessionCoordinatorImpl(
             val session = _activeSession.value ?: return@withContext Result.success(Unit)
             sessionRepository.deleteSession(session.sessionId)
             pendingSamples.clear()
-            predictionsHistory.clear()
+            totalPredictionsCount = 0
+            restPredictionsCount = 0
+            restlessPredictionsCount = 0
+            activePredictionsCount = 0
+            movementEpisodeCount = 0
+            lastWasMovement = false
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE
             Result.success(Unit)
         }
     }
+
+    private data class Tuple5(
+        val total: Int,
+        val lowMotion: Int,
+        val restless: Int,
+        val active: Int,
+        val movementEpisodes: Int,
+    )
 }

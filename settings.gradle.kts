@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SleepTrackerSimulator"
 include(":app")
+include(":virtualsleepband")

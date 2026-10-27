@@ -320,6 +320,10 @@ class CloudSyncViewModel(
                             repository.uploadRuleEvent(uid, operation.sessionId, event)
                             ruleEventStatusUpdater.markSynced(event.eventId)
                         }
+                        PendingOperationType.UPLOAD_SESSION_SUMMARY -> {
+                            val summary = requireNotNull(operation.summary)
+                            repository.uploadSessionSummary(uid, summary)
+                        }
                         PendingOperationType.END_SESSION -> repository.endSession(uid, operation.sessionId, requireNotNull(operation.endedAt))
                     }
                 }
@@ -329,9 +333,9 @@ class CloudSyncViewModel(
                     runCatching { repository.applyRetention(uid, null, now()) }
                     log("I", "Cloud monitoring session ended", null)
                 }
-                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) {
+                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT || operation.type == PendingOperationType.UPLOAD_SESSION_SUMMARY) {
                     stateStore.removeFirst()
-                    DiagnosticLog.event(DiagnosticTags.CLOUD, "uploadMeasurement", DiagnosticResult.SUCCESS, correlationId = correlationId, details = mapOf("pendingCount" to stateStore.pendingCount))
+                    DiagnosticLog.event(DiagnosticTags.CLOUD, if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) "uploadMeasurement" else "uploadSessionSummary", DiagnosticResult.SUCCESS, correlationId = correlationId, details = mapOf("pendingCount" to stateStore.pendingCount))
                     recordSuccess()
                 }
             } catch (cancelled: CancellationException) {

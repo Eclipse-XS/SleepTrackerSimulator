@@ -66,7 +66,7 @@ data class SmartRuleEventPayload(
     val schemaVersion: Int = 1,
 )
 
-enum class PendingOperationType { UPLOAD_MEASUREMENT, UPLOAD_RULE_EVENT, END_SESSION }
+enum class PendingOperationType { UPLOAD_MEASUREMENT, UPLOAD_RULE_EVENT, END_SESSION, UPLOAD_SESSION_SUMMARY }
 enum class DeliveryState { PENDING, PERMANENT_FAILURE }
 
 data class PendingCloudOperation(
@@ -75,6 +75,7 @@ data class PendingCloudOperation(
     val sessionId: String = "",
     val payload: SensorPayload? = null,
     val ruleEvent: SmartRuleEventPayload? = null,
+    val summary: SessionSummaryPayload? = null,
     val endedAt: Long? = null,
     val createdAt: Long = 0L,
     val retryCount: Int = 0,
