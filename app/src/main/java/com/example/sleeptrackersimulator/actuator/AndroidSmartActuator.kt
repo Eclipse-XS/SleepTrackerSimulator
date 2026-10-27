@@ -12,6 +12,8 @@ import android.os.VibrationAttributes
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
@@ -24,9 +26,26 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
     private val flashlightCameraId: String? = findFlashlightCameraId()
 
     override val vibratorAvailable: Boolean = vibrator?.hasVibrator() == true
+    override val amplitudeControlAvailable: Boolean = vibrator?.hasAmplitudeControl() == true
+    private val _observedFlashlightEnabled = MutableStateFlow<Boolean?>(null)
+    override val observedFlashlightEnabled: StateFlow<Boolean?> = _observedFlashlightEnabled
     override val flashlightAvailable: Boolean =
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH) &&
             flashlightCameraId != null
+
+    private val torchCallback = object : CameraManager.TorchCallback() {
+        override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+            if (cameraId == flashlightCameraId) _observedFlashlightEnabled.value = enabled
+        }
+
+        override fun onTorchModeUnavailable(cameraId: String) {
+            if (cameraId == flashlightCameraId) _observedFlashlightEnabled.value = null
+        }
+    }
+
+    init {
+        runCatching { cameraManager.registerTorchCallback(torchCallback, null) }
+    }
 
     override fun triggerVibrationPulse(): ActuatorResult {
         if (!vibratorAvailable) return unavailable("Vibrator unavailable")

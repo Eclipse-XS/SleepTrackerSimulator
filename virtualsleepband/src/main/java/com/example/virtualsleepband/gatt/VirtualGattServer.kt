@@ -47,6 +47,9 @@ data class BandPeripheralState(
     val currentBpm: Int = 68,
     val batteryLevel: Int = 88,
     val packetIntervalMs: Long = 1000L,
+    val scenario: SimulationScenario = SimulationScenario.NORMAL_REST,
+    val elapsedSeconds: Long = 0L,
+    val transmittedPacketCount: Long = 0L,
     val commandLogs: List<CommandLogEntry> = emptyList(),
     val errorMessage: String? = null,
 )
@@ -64,8 +67,9 @@ class VirtualGattServer(
 
     private var gattServer: BluetoothGattServer? = null
     private val connectedDevices = mutableSetOf<BluetoothDevice>()
+    private val heartRateSubscribers = mutableSetOf<BluetoothDevice>()
     private var streamJob: Job? = null
-    private val syntheticHeartRate = SimulatedHeartRate()
+    private var syntheticHeartRate = SimulatedHeartRate()
     private var simulationSeconds = 0L
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
@@ -91,6 +95,7 @@ class VirtualGattServer(
                 connectedDevices.add(device)
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 connectedDevices.remove(device)
+                heartRateSubscribers.remove(device)
             }
             _state.value = _state.value.copy(connectedCentrals = connectedDevices.size)
         }
@@ -156,6 +161,13 @@ class VirtualGattServer(
             value: ByteArray?,
         ) {
             val target = device ?: return
+            if (descriptor?.uuid == UUID_CCCD && descriptor.characteristic.uuid == UUID_HEART_RATE_MEASUREMENT) {
+                if (value?.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == true) {
+                    heartRateSubscribers.add(target)
+                } else {
+                    heartRateSubscribers.remove(target)
+                }
+            }
             if (responseNeeded) {
                 gattServer?.sendResponse(target, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
             }
@@ -194,9 +206,9 @@ class VirtualGattServer(
             .build()
 
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
+            .setIncludeDeviceName(false)
             .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
-            .addServiceUuid(ParcelUuid(UUID_BATTERY_SERVICE))
+            .addManufacturerData(SIMULATOR_MANUFACTURER_ID, SIMULATOR_MARKER)
             .build()
 
         advertiser.startAdvertising(settings, data, advertiseCallback)
@@ -218,6 +230,7 @@ class VirtualGattServer(
         }
         gattServer = null
         connectedDevices.clear()
+        heartRateSubscribers.clear()
         _state.value = _state.value.copy(isAdvertising = false, connectedCentrals = 0)
     }
 
@@ -226,6 +239,12 @@ class VirtualGattServer(
         if (_state.value.isAdvertising) {
             startTransmissionLoop()
         }
+    }
+
+    fun setScenario(scenario: SimulationScenario) {
+        syntheticHeartRate = SimulatedHeartRate(scenario = scenario)
+        simulationSeconds = 0L
+        _state.value = _state.value.copy(scenario = scenario, elapsedSeconds = 0L, transmittedPacketCount = 0L)
     }
 
     fun setBpm(bpm: Int) {
@@ -305,18 +324,19 @@ class VirtualGattServer(
                 simulationSeconds += (_state.value.packetIntervalMs / 1000L).coerceAtLeast(1L)
                 val emittedBpm = syntheticHeartRate.bpm(simulationSeconds)
                 val battery = syntheticHeartRate.batteryPercent(simulationSeconds)
-                _state.value = _state.value.copy(currentBpm = emittedBpm, batteryLevel = battery)
+                _state.value = _state.value.copy(currentBpm = emittedBpm, batteryLevel = battery, elapsedSeconds = simulationSeconds)
 
-                if (connectedDevices.isNotEmpty() && hasPermissions()) {
+                if (syntheticHeartRate.hasSignal(simulationSeconds) && heartRateSubscribers.isNotEmpty() && hasPermissions()) {
                     val hrChar = gattServer?.getService(UUID_HEART_RATE_SERVICE)
                         ?.getCharacteristic(UUID_HEART_RATE_MEASUREMENT)
 
                     if (hrChar != null) {
                         val payload = byteArrayOf(0x00, emittedBpm.toByte())
                         hrChar.value = payload
-                        for (dev in connectedDevices) {
+                        for (dev in heartRateSubscribers.toList()) {
                             gattServer?.notifyCharacteristicChanged(dev, hrChar, false)
                         }
+                        _state.value = _state.value.copy(transmittedPacketCount = _state.value.transmittedPacketCount + heartRateSubscribers.size)
                     }
                 }
             }
@@ -331,5 +351,7 @@ class VirtualGattServer(
         val UUID_BATTERY_LEVEL: UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
         val UUID_CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val UUID_COMMAND_CHARACTERISTIC: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
+        const val SIMULATOR_MANUFACTURER_ID = 0xFFFF
+        val SIMULATOR_MARKER = byteArrayOf(0x53, 0x53, 0x56, 0x31)
     }
 }

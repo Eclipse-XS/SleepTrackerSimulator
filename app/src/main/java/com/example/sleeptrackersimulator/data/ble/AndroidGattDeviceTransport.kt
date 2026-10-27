@@ -28,7 +28,9 @@ import com.example.sleeptrackersimulator.core.model.HeartRateSample
 import com.example.sleeptrackersimulator.core.model.SourceKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +44,8 @@ import java.util.UUID
 /**
  * Production Android BLE GATT Transport client communicating with genuine Bluetooth peripherals.
  * Adheres strictly to the Bluetooth SIG Heart Rate Profile (0x180D, 0x2A37).
- * All telemetry emitted is marked with SourceKind.BLE_REAL.
+ * Transport authenticity and signal authenticity are tracked separately. Unknown peripherals
+ * remain BLE_UNVERIFIED; the companion marker identifies synthetic data but is not authenticated.
  */
 class AndroidGattDeviceTransport(
     private val context: Context,
@@ -63,6 +66,9 @@ class AndroidGattDeviceTransport(
 
     private val _discoveredDevices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     private var activeGatt: BluetoothGatt? = null
+    private var scanTimeoutJob: Job? = null
+    private var connectionTimeoutJob: Job? = null
+    private val discoveredSourceKinds = mutableMapOf<String, SourceKind>()
 
     private val scanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
@@ -72,10 +78,15 @@ class AndroidGattDeviceTransport(
                 val address = device.address
                 val rssi = result.rssi
 
+                val marker = result.scanRecord?.getManufacturerSpecificData(SIMULATOR_MANUFACTURER_ID)
+                val sourceKind = if (marker?.contentEquals(SIMULATOR_MARKER) == true) {
+                    SourceKind.SIMULATED
+                } else SourceKind.BLE_UNVERIFIED
+                discoveredSourceKinds[address] = sourceKind
                 val discovered = DeviceInfo(
                     deviceId = address,
                     displayName = name,
-                    sourceKind = SourceKind.BLE_REAL,
+                    sourceKind = sourceKind,
                     capabilities = setOf(DeviceCapability.HEART_RATE),
                     rssi = rssi,
                 )
@@ -92,7 +103,8 @@ class AndroidGattDeviceTransport(
         }
 
         override fun onScanFailed(errorCode: Int) {
-            _connectionState.value = DeviceConnectionState.DISCONNECTED
+            scanTimeoutJob?.cancel()
+            _connectionState.value = DeviceConnectionState.ERROR
         }
     }
 
@@ -101,16 +113,18 @@ class AndroidGattDeviceTransport(
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    _connectionState.value = DeviceConnectionState.CONNECTED
+                    _connectionState.value = DeviceConnectionState.DISCOVERING_SERVICES
                     gatt?.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    connectionTimeoutJob?.cancel()
                     _connectionState.value = DeviceConnectionState.DISCONNECTED
                     _connectedDevice.value = null
                     activeGatt?.close()
                     activeGatt = null
                 }
             } else {
-                _connectionState.value = DeviceConnectionState.DISCONNECTED
+                connectionTimeoutJob?.cancel()
+                _connectionState.value = DeviceConnectionState.ERROR
                 _connectedDevice.value = null
                 activeGatt?.close()
                 activeGatt = null
@@ -124,6 +138,7 @@ class AndroidGattDeviceTransport(
                 val hrChar = hrService?.getCharacteristic(UUID_HEART_RATE_MEASUREMENT)
 
                 if (hrChar != null) {
+                    _connectionState.value = DeviceConnectionState.SUBSCRIBING
                     // Enable local notification
                     gatt.setCharacteristicNotification(hrChar, true)
 
@@ -132,8 +147,21 @@ class AndroidGattDeviceTransport(
                     if (descriptor != null) {
                         descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                         gatt.writeDescriptor(descriptor)
-                    }
+                    } else _connectionState.value = DeviceConnectionState.ERROR
+                } else {
+                    _connectionState.value = DeviceConnectionState.ERROR
                 }
+            } else {
+                _connectionState.value = DeviceConnectionState.ERROR
+            }
+        }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
+            if (descriptor?.uuid == UUID_CCCD) {
+                _connectionState.value = if (status == BluetoothGatt.GATT_SUCCESS) {
+                    connectionTimeoutJob?.cancel()
+                    DeviceConnectionState.CONNECTED
+                } else DeviceConnectionState.ERROR
             }
         }
 
@@ -149,17 +177,8 @@ class AndroidGattDeviceTransport(
         }
     }
 
-    private fun parseHeartRateMeasurement(bytes: ByteArray, deviceAddress: String) {
-        if (bytes.isEmpty()) return
-        val flags = bytes[0].toInt()
-
-        // Bit 0: 0 = uint8, 1 = uint16
-        val is16Bit = (flags and 0x01) != 0
-        val bpm = if (is16Bit && bytes.size >= 3) {
-            (bytes[1].toInt() and 0xFF) or ((bytes[2].toInt() and 0xFF) shl 8)
-        } else if (bytes.size >= 2) {
-            bytes[1].toInt() and 0xFF
-        } else return
+    internal fun parseHeartRateMeasurement(bytes: ByteArray, deviceAddress: String) {
+        val bpm = HeartRatePacketParser.parse(bytes).getOrNull() ?: return
 
         val sample = HeartRateSample(
             sampleId = UUID.randomUUID().toString(),
@@ -168,7 +187,7 @@ class AndroidGattDeviceTransport(
             bpm = bpm,
             utcTimestampMillis = System.currentTimeMillis(),
             timingUncertaintyMillis = 0L,
-            sourceKind = SourceKind.BLE_REAL,
+            sourceKind = discoveredSourceKinds[deviceAddress] ?: SourceKind.BLE_UNVERIFIED,
         )
 
         scope.launch {
@@ -198,11 +217,17 @@ class AndroidGattDeviceTransport(
             .build()
 
         scanner.startScan(listOf(filter), settings, scanCallback)
+        scanTimeoutJob?.cancel()
+        scanTimeoutJob = scope.launch {
+            delay(SCAN_TIMEOUT_MILLIS)
+            if (_connectionState.value == DeviceConnectionState.SCANNING) stopScan()
+        }
         return Result.success(Unit)
     }
 
     @SuppressLint("MissingPermission")
     override suspend fun stopScan(): Result<Unit> {
+        scanTimeoutJob?.cancel()
         if (hasBlePermissions()) {
             bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
         }
@@ -224,11 +249,27 @@ class AndroidGattDeviceTransport(
 
         _connectionState.value = DeviceConnectionState.CONNECTING
         activeGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = scope.launch {
+            delay(CONNECTION_TIMEOUT_MILLIS)
+            if (_connectionState.value in setOf(
+                    DeviceConnectionState.CONNECTING,
+                    DeviceConnectionState.DISCOVERING_SERVICES,
+                    DeviceConnectionState.SUBSCRIBING,
+                )
+            ) {
+                activeGatt?.disconnect()
+                activeGatt?.close()
+                activeGatt = null
+                _connectedDevice.value = null
+                _connectionState.value = DeviceConnectionState.ERROR
+            }
+        }
 
         _connectedDevice.value = DeviceInfo(
             deviceId = device.address,
             displayName = device.name ?: "BLE Heart Rate Sensor",
-            sourceKind = SourceKind.BLE_REAL,
+            sourceKind = discoveredSourceKinds[device.address] ?: SourceKind.BLE_UNVERIFIED,
             capabilities = setOf(DeviceCapability.HEART_RATE),
         )
 
@@ -237,6 +278,7 @@ class AndroidGattDeviceTransport(
 
     @SuppressLint("MissingPermission")
     override suspend fun disconnect(): Result<Unit> {
+        connectionTimeoutJob?.cancel()
         if (hasBlePermissions()) {
             activeGatt?.disconnect()
             activeGatt?.close()
@@ -284,5 +326,9 @@ class AndroidGattDeviceTransport(
         val UUID_BODY_SENSOR_LOCATION: UUID = UUID.fromString("00002a38-0000-1000-8000-00805f9b34fb")
         val UUID_CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val UUID_COMMAND_CHARACTERISTIC: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
+        const val SIMULATOR_MANUFACTURER_ID = 0xFFFF
+        const val SCAN_TIMEOUT_MILLIS = 15_000L
+        const val CONNECTION_TIMEOUT_MILLIS = 15_000L
+        val SIMULATOR_MARKER = byteArrayOf(0x53, 0x53, 0x56, 0x31)
     }
 }

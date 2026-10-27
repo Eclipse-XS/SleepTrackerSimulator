@@ -31,6 +31,12 @@ interface SessionDao {
     @Query("DELETE FROM recording_sessions WHERE sessionId = :sessionId")
     suspend fun deleteSession(sessionId: String)
 
+    @Query("DELETE FROM recording_sessions WHERE sourceMode = 'DEMO' AND sessionId LIKE 'demo-v1-%'")
+    suspend fun deleteDemoSessions(): Int
+
+    @Query("SELECT COUNT(*) FROM recording_sessions WHERE sourceMode = 'DEMO' AND sessionId LIKE 'demo-v1-%'")
+    suspend fun countDemoSessions(): Int
+
     @Query("UPDATE recording_sessions SET status = :status, updatedAt = :updatedAt WHERE sessionId = :sessionId")
     suspend fun updateStatus(sessionId: String, status: String, updatedAt: Long)
 }

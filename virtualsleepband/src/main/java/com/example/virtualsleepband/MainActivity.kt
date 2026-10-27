@@ -12,12 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.virtualsleepband.gatt.VirtualGattServer
 import com.example.virtualsleepband.ui.VirtualBandScreen
 
 class MainActivity : ComponentActivity() {
-
-    private lateinit var gattServer: VirtualGattServer
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -32,32 +29,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        gattServer = VirtualGattServer(this)
-
         checkAndRequestPermissions()
 
         setContent {
-            val state by gattServer.state.collectAsStateWithLifecycle()
+            val state by VirtualBandService.sharedState.collectAsStateWithLifecycle()
 
             VirtualBandScreen(
                 state = state,
                 onToggleAdvertising = {
                     if (state.isAdvertising) {
-                        gattServer.stopAdvertising()
+                        VirtualBandService.stop(this)
                     } else {
-                        val result = gattServer.startAdvertising()
-                        if (result.isFailure) {
-                            Toast.makeText(
-                                this,
-                                result.exceptionOrNull()?.message ?: "Failed to start advertising",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                        runCatching { VirtualBandService.start(this) }.onFailure {
+                            Toast.makeText(this, it.message ?: "Failed to start simulation", Toast.LENGTH_SHORT).show()
                         }
                     }
                 },
-                onSetBpm = { gattServer.setBpm(it) },
-                onSetBattery = { gattServer.setBatteryLevel(it) },
-                onSetInterval = { gattServer.setPacketInterval(it) },
+                onSetBpm = { },
+                onSetBattery = { },
+                onSetInterval = { VirtualBandService.setInterval(this, it) },
+                onSetScenario = { VirtualBandService.setScenario(this, it) },
             )
         }
     }
@@ -72,13 +63,14 @@ class MainActivity : ComponentActivity() {
                 permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
             }
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
         if (permissions.isNotEmpty()) {
             permissionLauncher.launch(permissions.toTypedArray())
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        gattServer.stopAdvertising()
-    }
 }

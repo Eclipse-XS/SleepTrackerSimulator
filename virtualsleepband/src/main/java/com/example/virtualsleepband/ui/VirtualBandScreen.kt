@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.virtualsleepband.gatt.BandPeripheralState
+import com.example.virtualsleepband.gatt.SimulationScenario
 
 val DarkBg = Color(0xFF0A0E17)
 val CardBg = Color(0xFF141C2B)
@@ -66,6 +67,7 @@ fun VirtualBandScreen(
     onSetBpm: (Int) -> Unit,
     onSetBattery: (Int) -> Unit,
     onSetInterval: (Long) -> Unit,
+    onSetScenario: (SimulationScenario) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -96,6 +98,21 @@ fun VirtualBandScreen(
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text("Automatic scenario", color = TextPrimary, fontWeight = FontWeight.Bold)
+            SimulationScenario.values().forEach { scenario ->
+                FilterChip(
+                    selected = state.scenario == scenario,
+                    onClick = { onSetScenario(scenario) },
+                    label = { Text(scenario.label) },
+                )
+            }
+            Text(
+                "Elapsed ${state.elapsedSeconds}s · transmitted ${state.transmittedPacketCount} packets · synthetic source",
+                color = TextMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
             // 1. Advertising Control Card

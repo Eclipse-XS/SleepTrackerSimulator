@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import com.example.sleeptrackersimulator.dataset.DemoNight
 
 class RoomSessionRepository(
     private val sessionDao: SessionDao,
@@ -134,6 +135,19 @@ class RoomSessionRepository(
     override suspend fun getSessionSummary(sessionId: String): SessionSummary? = withContext(dispatcher) {
         sessionSummaryDao.getSummaryBySessionId(sessionId)?.toDomain()
     }
+
+    suspend fun importDemoNights(nights: List<DemoNight>): Int = withContext(dispatcher) {
+        requireNotNull(database) { "Transactional database is required" }.withTransaction {
+            nights.forEach { night ->
+                sessionDao.insertSession(RecordingSessionEntity.fromDomain(night.session))
+                sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(night.summary))
+            }
+        }
+        nights.size
+    }
+
+    suspend fun resetDemoNights(): Int = withContext(dispatcher) { sessionDao.deleteDemoSessions() }
+    suspend fun countDemoNights(): Int = withContext(dispatcher) { sessionDao.countDemoSessions() }
 
     // AnalyticsRepository implementation
     override fun observeRecentSessions(limit: Int): Flow<List<RecordingSession>> {

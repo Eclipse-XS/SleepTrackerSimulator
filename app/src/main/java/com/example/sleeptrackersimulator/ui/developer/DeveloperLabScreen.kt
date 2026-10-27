@@ -59,6 +59,7 @@ import com.example.sleeptrackersimulator.dataset.DatasetRecordingController
 import com.example.sleeptrackersimulator.dataset.DatasetSession
 import com.example.sleeptrackersimulator.dataset.DevicePlacement
 import com.example.sleeptrackersimulator.dataset.ExperimentType
+import com.example.sleeptrackersimulator.dataset.DemoDatasetUiState
 import com.example.sleeptrackersimulator.dataset.GroundTruthActivity
 import com.example.sleeptrackersimulator.ui.components.MetricCard
 import com.example.sleeptrackersimulator.ui.components.StatusBadge
@@ -90,6 +91,12 @@ fun DeveloperLabScreen(
     onOpenLegacyDashboard: () -> Unit = {},
     isBleAdvertising: Boolean = false,
     onToggleBleAdvertising: () -> Unit = {},
+    demoDatasetState: DemoDatasetUiState = DemoDatasetUiState(),
+    onGenerateDemo: () -> Unit = {},
+    onImportDemo: () -> Unit = {},
+    onVerifyDemo: () -> Unit = {},
+    onExportDemo: () -> Unit = {},
+    onResetDemo: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -174,7 +181,9 @@ fun DeveloperLabScreen(
                 )
                 DevLabTab.CLOUD -> CloudInspectorTab()
                 DevLabTab.ACTUATORS -> ActuatorInspectorTab(onTriggerVibration, onTriggerFlashlight)
-                DevLabTab.DATABASE -> DatabaseInspectorTab()
+                DevLabTab.DATABASE -> DatabaseInspectorTab(
+                    demoDatasetState, onGenerateDemo, onImportDemo, onVerifyDemo, onExportDemo, onResetDemo,
+                )
                 DevLabTab.ML -> MlInspectorTab()
                 DevLabTab.TRACE -> PipelineTraceTab()
             }
@@ -397,7 +406,14 @@ private fun ActuatorInspectorTab(onVibrate: () -> Unit, onFlashlight: () -> Unit
 }
 
 @Composable
-private fun DatabaseInspectorTab() {
+private fun DatabaseInspectorTab(
+    demoState: DemoDatasetUiState,
+    onGenerate: () -> Unit,
+    onImport: () -> Unit,
+    onVerify: () -> Unit,
+    onExport: () -> Unit,
+    onReset: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -414,6 +430,25 @@ private fun DatabaseInspectorTab() {
             MetricCard(title = "Database Version", value = "v7", subtitle = "Room 2.8.5", accentColor = MoonBlue, modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.width(12.dp))
             MetricCard(title = "Migration Path", value = "1 → 7 PASS", subtitle = "Additive evolution", accentColor = CalmGreen, modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("90-night synthetic demo history", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text(demoState.message, color = MistBlue.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                Text("Generated: ${demoState.generatedCount} · Imported: ${demoState.importedCount}", color = CalmGreen)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = onGenerate, enabled = !demoState.isBusy) { Text("Generate") }
+                    Button(onClick = onImport, enabled = !demoState.isBusy) { Text("Import") }
+                    OutlinedButton(onClick = onVerify, enabled = !demoState.isBusy) { Text("Verify") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = onExport, enabled = !demoState.isBusy) { Text("Export CSV") }
+                    OutlinedButton(onClick = onReset, enabled = !demoState.isBusy) { Text("Reset demo") }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

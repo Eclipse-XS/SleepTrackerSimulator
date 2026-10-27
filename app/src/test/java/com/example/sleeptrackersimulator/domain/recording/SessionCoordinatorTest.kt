@@ -113,4 +113,31 @@ class SessionCoordinatorTest {
         assertEquals(completed.sessionId, summary!!.sessionId)
         assertTrue(summary.dataCoverageFraction > 0.0f)
     }
+
+    @Test fun `fatal ingestion failure preserves samples but never creates successful summary`() = runTest(testDispatcher) {
+        val session = coordinator.startSession().getOrThrow()
+        coordinator.ingestSensorEvent("phone", 1_000L, 0f, 0f, 9.81f, 3, SourceKind.PHONE_REAL)
+        val failed = coordinator.failSession("database unavailable", droppedSamples = 12).getOrThrow()
+        assertEquals(SessionStatus.FAILED, failed.status)
+        assertEquals("database unavailable", failed.interruptionReason)
+        assertNull(repository.getSessionSummary(session.sessionId))
+        assertNotNull(repository.getSessionById(session.sessionId))
+    }
+
+    @Test fun `reported queue drops reduce completed session coverage`() = runTest(testDispatcher) {
+        val session = coordinator.startSession().getOrThrow()
+        repeat(20) { i -> coordinator.ingestSensorEvent("phone", 1_000L + i * 50_000_000L, 0f, 0f, 9.81f, 3, SourceKind.PHONE_REAL) }
+        coordinator.reportDroppedSamples(20)
+        coordinator.stopSession().getOrThrow()
+        val summary = repository.getSessionSummary(session.sessionId)
+        assertNotNull(summary)
+        assertTrue(summary!!.dataCoverageFraction <= 0.5f)
+    }
+
+    @Test fun `synthetic heart rate over BLE makes summary synthetic`() = runTest(testDispatcher) {
+        val session = coordinator.startSession(sourceMode = SourceMode.WEARABLE_ONLY).getOrThrow()
+        coordinator.ingestHeartRateSample("virtual-band", 64, sourceKind = SourceKind.SIMULATED)
+        coordinator.stopSession().getOrThrow()
+        assertEquals(SourceKind.SIMULATED, repository.getSessionSummary(session.sessionId)?.sourceKind)
+    }
 }

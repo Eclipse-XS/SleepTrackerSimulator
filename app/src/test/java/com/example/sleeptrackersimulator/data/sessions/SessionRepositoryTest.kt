@@ -231,6 +231,17 @@ class FakeSessionDao : SessionDao {
         stateFlow.value = sessions.values.toList()
     }
 
+    override suspend fun deleteDemoSessions(): Int {
+        val ids = sessions.values.filter { it.sourceMode == "DEMO" && it.sessionId.startsWith("demo-v1-") }.map { it.sessionId }
+        ids.forEach(sessions::remove)
+        stateFlow.value = sessions.values.toList()
+        return ids.size
+    }
+
+    override suspend fun countDemoSessions(): Int = sessions.values.count {
+        it.sourceMode == "DEMO" && it.sessionId.startsWith("demo-v1-")
+    }
+
     override suspend fun updateStatus(sessionId: String, status: String, updatedAt: Long) {
         sessions[sessionId]?.let {
             sessions[sessionId] = it.copy(status = status, updatedAt = updatedAt)

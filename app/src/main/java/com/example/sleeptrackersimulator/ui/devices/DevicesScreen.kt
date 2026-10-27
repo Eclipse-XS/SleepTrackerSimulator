@@ -33,8 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.sleeptrackersimulator.ble.BleConnectionState
+import com.example.sleeptrackersimulator.core.model.DeviceConnectionState
+import com.example.sleeptrackersimulator.core.model.DeviceInfo
 import com.example.sleeptrackersimulator.core.model.SourceKind
+import com.example.sleeptrackersimulator.data.ble.BleMode
 import com.example.sleeptrackersimulator.ui.components.ProvenanceChip
 import com.example.sleeptrackersimulator.ui.components.StatusBadge
 import com.example.sleeptrackersimulator.ui.theme.CalmGreen
@@ -47,9 +49,10 @@ import com.example.sleeptrackersimulator.ui.theme.NightBlue
 @Composable
 fun DevicesScreen(
     state: DevicesUiState,
-    onConnectDevice: () -> Unit,
+    onConnectDevice: (DeviceInfo) -> Unit,
     onDisconnectDevice: () -> Unit,
-    onToggleDemoBand: () -> Unit,
+    onStartScan: () -> Unit,
+    onSelectMode: (BleMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -118,7 +121,22 @@ fun DevicesScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            val isConnected = state.bleState is BleConnectionState.Connected
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onSelectMode(BleMode.REAL) }) { Text(if (state.mode == BleMode.REAL) "REAL BLE ✓" else "REAL BLE") }
+                OutlinedButton(onClick = { onSelectMode(BleMode.DEMO) }) { Text(if (state.mode == BleMode.DEMO) "DEMO ✓" else "DEMO") }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("State: ${state.connectionState.name}", color = MistBlue)
+            state.errorMessage?.let { Text(it, color = HeartCoral, style = MaterialTheme.typography.bodySmall) }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = onStartScan, enabled = !state.connectionState.isBusy) { Text("Search for devices") }
+            state.discoveredDevices.forEach { device ->
+                OutlinedButton(onClick = { onConnectDevice(device) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("${device.displayName} · ${device.sourceKind.name} · ${device.rssi ?: 0} dBm")
+                }
+            }
+
+            val isConnected = state.connectionState == DeviceConnectionState.CONNECTED
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -135,7 +153,7 @@ fun DevicesScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Virtual Sleep Band",
+                                text = state.connectedDevice?.displayName ?: "Selected BLE wearable",
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                     color = MistBlue,
                                 )
@@ -146,7 +164,7 @@ fun DevicesScreen(
                                 )
                             }
                         }
-                        ProvenanceChip(sourceKind = SourceKind.SIMULATED)
+                        ProvenanceChip(sourceKind = state.connectedDevice?.sourceKind ?: SourceKind.BLE_UNVERIFIED)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -156,7 +174,7 @@ fun DevicesScreen(
                             Icon(imageVector = Icons.Rounded.Favorite, contentDescription = null, tint = HeartCoral)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "${state.heartRate} BPM (SIMULATED)",
+                                text = "${state.heartRate} BPM · ${state.connectedDevice?.sourceKind?.name ?: "UNKNOWN"}",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                 color = HeartCoral,
                             )
@@ -175,12 +193,12 @@ fun DevicesScreen(
                             }
                         } else {
                             Button(
-                                onClick = onConnectDevice,
+                                onClick = onStartScan,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MoonBlue),
                             ) {
-                                Text("Connect Virtual Band", color = NightBlue, fontWeight = FontWeight.Bold)
+                                Text("Scan", color = NightBlue, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

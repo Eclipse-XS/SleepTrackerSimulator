@@ -51,7 +51,7 @@ interface AppContainer {
     val analyticsRepository: com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
     val sessionCoordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
     val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
-    val deviceTransport: com.example.sleeptrackersimulator.data.ble.DeviceTransport
+    val deviceTransport: com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport
     val virtualSleepBandAdvertiser: com.example.sleeptrackersimulator.data.ble.VirtualSleepBandAdvertiser
 }
 
@@ -154,8 +154,11 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         )
     }
 
-    override val deviceTransport: com.example.sleeptrackersimulator.data.ble.DeviceTransport by lazy {
-        com.example.sleeptrackersimulator.data.ble.MockDeviceTransport()
+    override val deviceTransport: com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport by lazy {
+        com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport(
+            real = com.example.sleeptrackersimulator.data.ble.AndroidGattDeviceTransport(context),
+            demo = com.example.sleeptrackersimulator.data.ble.MockDeviceTransport(),
+        )
     }
 
     override val virtualSleepBandAdvertiser: com.example.sleeptrackersimulator.data.ble.VirtualSleepBandAdvertiser by lazy {

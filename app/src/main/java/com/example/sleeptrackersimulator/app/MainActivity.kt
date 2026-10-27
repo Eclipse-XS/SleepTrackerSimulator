@@ -38,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,6 +54,7 @@ import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
 import com.example.sleeptrackersimulator.history.LocalHistoryRecorderViewModel
+import com.example.sleeptrackersimulator.dataset.DemoDatasetViewModel
 import com.example.sleeptrackersimulator.ml.MlViewModel
 import com.example.sleeptrackersimulator.service.RecordingService
 import com.example.sleeptrackersimulator.smart.SmartScenariosViewModel
@@ -90,6 +92,7 @@ class MainActivity : ComponentActivity() {
 
     private var pendingFlashlightEnable = false
     private var pendingRecordingStart: (() -> Unit)? = null
+    private var pendingBleScan = false
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -110,6 +113,18 @@ class MainActivity : ComponentActivity() {
         val pending = pendingRecordingStart
         pendingRecordingStart = null
         if (granted) pending?.invoke()
+        else todayViewModel.reportServiceCommandFailure(
+            "Start recording",
+            SecurityException("Activity recognition permission denied"),
+        )
+    }
+
+    private val bluetoothPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val granted = grants.values.all { it }
+        if (pendingBleScan && granted) devicesViewModel.startScan()
+        pendingBleScan = false
     }
 
     // Core SleepSense ViewModels
@@ -128,8 +143,12 @@ class MainActivity : ComponentActivity() {
         InsightsViewModel.factory(container.analyticsRepository)
     }
 
+    private val demoDatasetViewModel: DemoDatasetViewModel by viewModels {
+        DemoDatasetViewModel.factory(this, container.sessionRepository)
+    }
+
     private val devicesViewModel: DevicesViewModel by viewModels {
-        DevicesViewModel.factory(container.bleConnector)
+        DevicesViewModel.factory(container.deviceTransport)
     }
 
     // Diagnostics & Labs ViewModels
@@ -229,11 +248,15 @@ class MainActivity : ComponentActivity() {
             SleepTrackerTheme {
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.TODAY) }
                 var activeOverlay by rememberSaveable { mutableStateOf(AppOverlay.NONE) }
+                LaunchedEffect(selectedTab) {
+                    if (selectedTab == AppTab.INSIGHTS) insightsViewModel.refresh()
+                }
 
                 val todayState = todayViewModel.uiState.collectAsStateWithLifecycle().value
                 val historyState = historyViewModel.uiState.collectAsStateWithLifecycle().value
                 val insightsState = insightsViewModel.uiState.collectAsStateWithLifecycle().value
                 val devicesState = devicesViewModel.uiState.collectAsStateWithLifecycle().value
+                val demoDatasetState = demoDatasetViewModel.state.collectAsStateWithLifecycle().value
 
                 // Legacy states for developer lab and compatibility
                 val sensorState = sensorViewModel.uiState.collectAsStateWithLifecycle().value
@@ -304,7 +327,7 @@ class MainActivity : ComponentActivity() {
                         val bleAdvState by appContainer.virtualSleepBandAdvertiser.state.collectAsStateWithLifecycle()
                         DeveloperLabScreen(
                             onBack = { activeOverlay = AppOverlay.NONE },
-                            onTriggerVibration = { actuatorViewModel.setManualVibration(true) },
+                            onTriggerVibration = { actuatorViewModel.testVibration() },
                             onTriggerFlashlight = { requestFlashlightChange(true) },
                             onTriggerBleAlert = { bleViewModel.sendAlert("DEV_LAB") },
                             onOpenLegacyDashboard = { activeOverlay = AppOverlay.LEGACY_DASHBOARD },
@@ -316,6 +339,12 @@ class MainActivity : ComponentActivity() {
                                     appContainer.virtualSleepBandAdvertiser.startAdvertising()
                                 }
                             },
+                            demoDatasetState = demoDatasetState,
+                            onGenerateDemo = demoDatasetViewModel::generate,
+                            onImportDemo = demoDatasetViewModel::importHistory,
+                            onVerifyDemo = demoDatasetViewModel::verify,
+                            onExportDemo = demoDatasetViewModel::exportCsv,
+                            onResetDemo = demoDatasetViewModel::reset,
                         )
                     }
                     AppOverlay.LEGACY_DASHBOARD -> {
@@ -446,13 +475,13 @@ class MainActivity : ComponentActivity() {
                                             )
                                         },
                                         onPauseRecording = {
-                                            RecordingService.pause(this@MainActivity)
+                                            handleRecordingCommand("Pause recording", RecordingService.pause(this@MainActivity))
                                         },
                                         onResumeRecording = {
-                                            RecordingService.resume(this@MainActivity)
+                                            handleRecordingCommand("Resume recording", RecordingService.resume(this@MainActivity))
                                         },
                                         onStopRecording = {
-                                            RecordingService.stop(this@MainActivity)
+                                            handleRecordingCommand("Stop recording", RecordingService.stop(this@MainActivity))
                                         },
                                         onOpenSettings = { activeOverlay = AppOverlay.SETTINGS },
                                         onOpenAutomations = { activeOverlay = AppOverlay.AUTOMATIONS },
@@ -470,9 +499,10 @@ class MainActivity : ComponentActivity() {
                                     )
                                     AppTab.DEVICES -> DevicesScreen(
                                         state = devicesState,
-                                        onConnectDevice = { devicesViewModel.connectDevice() },
+                                        onConnectDevice = devicesViewModel::connectDevice,
                                         onDisconnectDevice = devicesViewModel::disconnectDevice,
-                                        onToggleDemoBand = devicesViewModel::toggleDemoBand,
+                                        onStartScan = ::startBleScanWithPermissions,
+                                        onSelectMode = devicesViewModel::selectMode,
                                     )
                                 }
                             }
@@ -525,12 +555,11 @@ class MainActivity : ComponentActivity() {
         placement: com.example.sleeptrackersimulator.core.model.DevicePlacement,
     ) {
         val start: () -> Unit = {
-            RecordingService.start(
+            handleRecordingCommand("Start recording", RecordingService.start(
                 this,
                 mode = mode,
                 placement = placement,
-            )
-            Unit
+            ))
         }
         if (ContextCompat.checkSelfPermission(
                 this,
@@ -541,6 +570,24 @@ class MainActivity : ComponentActivity() {
         } else {
             pendingRecordingStart = start
             activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+    }
+
+    private fun handleRecordingCommand(operation: String, result: Result<Unit>) {
+        result.exceptionOrNull()?.let { todayViewModel.reportServiceCommandFailure(operation, it) }
+    }
+
+    private fun startBleScanWithPermissions() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            devicesViewModel.startScan()
+            return
+        }
+        val required = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        if (required.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+            devicesViewModel.startScan()
+        } else {
+            pendingBleScan = true
+            bluetoothPermissionLauncher.launch(required)
         }
     }
 

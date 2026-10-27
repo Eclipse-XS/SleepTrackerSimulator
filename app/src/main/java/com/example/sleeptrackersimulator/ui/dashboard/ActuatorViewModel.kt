@@ -51,6 +51,7 @@ class ActuatorViewModel(
         ActuatorUiState(
             vibratorAvailable = actuator.vibratorAvailable,
             flashlightAvailable = actuator.flashlightAvailable,
+            amplitudeControlAvailable = actuator.amplitudeControlAvailable,
         ),
     )
     val state: StateFlow<ActuatorUiState> = _state
@@ -66,6 +67,11 @@ class ActuatorViewModel(
     private var manualFlashlightOffLatch = false
 
     init {
+        actuator.observedFlashlightEnabled?.let { observed ->
+            viewModelScope.launch {
+                observed.collect { enabled -> _state.update { it.copy(observedFlashlightEnabled = enabled) } }
+            }
+        }
         viewModelScope.launch {
             sensorState.collect { sensor ->
                 val analysis = (sensor as? SensorUiState.Active)?.analysis
@@ -195,6 +201,18 @@ class ActuatorViewModel(
         if (!foregroundActive) return ActuatorResult(ActuatorOperationStatus.ERROR, "APP_NOT_IN_FOREGROUND")
         val result = actuator.triggerVibrationPulse()
         applyPulse(result, TriggerSource.LOCAL_AUTOMATIC)
+        return result
+    }
+
+    fun testVibration(): ActuatorResult {
+        if (!foregroundActive) return ActuatorResult(ActuatorOperationStatus.ERROR, "App must be in foreground")
+        val result = actuator.triggerVibrationPulse()
+        _state.update {
+            it.copy(
+                lastApiResult = "Vibrator=${actuator.vibratorAvailable}; amplitudeControl=${actuator.amplitudeControlAvailable}; API=${result.status}; physicalEffectConfirmed=false; ${result.message}",
+                lastError = if (result.successful) null else result.message,
+            )
+        }
         return result
     }
 

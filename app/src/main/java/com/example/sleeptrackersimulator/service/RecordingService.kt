@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -59,6 +60,7 @@ class RecordingService : Service(), SensorEventListener {
         data object Pause : ServiceCommand
         data object Resume : ServiceCommand
         data object Stop : ServiceCommand
+        data class FatalIngestionFailure(val error: Throwable) : ServiceCommand
     }
 
     private data class AccelerometerReading(
@@ -114,15 +116,22 @@ class RecordingService : Service(), SensorEventListener {
         serviceScope.launch {
             for (reading in sampleChannel) {
                 if (reading.epoch != ingestionEpoch.get()) continue
-                coordinator?.ingestSensorEvent(
-                    sourceId = "phone_accelerometer",
-                    elapsedNanos = reading.elapsedNanos,
-                    x = reading.x,
-                    y = reading.y,
-                    z = reading.z,
-                    accuracy = reading.accuracy,
-                    sourceKind = SourceKind.PHONE_REAL,
-                )
+                try {
+                    coordinator?.ingestSensorEvent(
+                        sourceId = "phone_accelerometer",
+                        elapsedNanos = reading.elapsedNanos,
+                        x = reading.x,
+                        y = reading.y,
+                        z = reading.z,
+                        accuracy = reading.accuracy,
+                        sourceKind = SourceKind.PHONE_REAL,
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    commandChannel.send(ServiceCommand.FatalIngestionFailure(error))
+                    ingestionEpoch.incrementAndGet()
+                }
             }
         }
     }
@@ -161,7 +170,25 @@ class RecordingService : Service(), SensorEventListener {
             ServiceCommand.Pause -> pauseRecordingSession()
             ServiceCommand.Resume -> resumeRecordingSession()
             ServiceCommand.Stop -> stopRecordingSession()
+            is ServiceCommand.FatalIngestionFailure -> failRecordingSession(command.error)
         }
+    }
+
+    private suspend fun failRecordingSession(error: Throwable) {
+        stopSources()
+        val reason = "Sensor ingestion failed: ${error.message ?: error.javaClass.simpleName}"
+        coordinator?.failSession(reason, droppedSamples.get())
+        DiagnosticLog.event(
+            tag = DiagnosticTags.SENSORS,
+            operation = "sensor_ingestion_fatal",
+            result = DiagnosticResult.FAILED,
+            correlationId = coordinator?.activeSession?.value?.sessionId,
+            details = mapOf("droppedSamples" to droppedSamples.get()),
+            error = error,
+        )
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        releaseWakeLock()
+        stopSelf()
     }
 
     private suspend fun startRecordingSession(mode: SourceMode, placement: DevicePlacement, samplingHz: Int) {
@@ -257,6 +284,7 @@ class RecordingService : Service(), SensorEventListener {
         ingestionEpoch.incrementAndGet()
         stopSources()
         val sessionId = coordinator?.activeSession?.value?.sessionId
+        coordinator?.reportDroppedSamples(droppedSamples.get())
         coordinator?.stopSession()
         DiagnosticLog.event(
             tag = DiagnosticTags.SENSORS,

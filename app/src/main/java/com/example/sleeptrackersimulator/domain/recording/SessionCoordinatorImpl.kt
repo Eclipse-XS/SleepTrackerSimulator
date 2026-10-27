@@ -66,6 +66,7 @@ class SessionCoordinatorImpl(
     private var activePredictionsCount = 0
     private var movementEpisodeCount = 0
     private var lastWasMovement = false
+    private var droppedSamplesCount = 0L
 
     init {
         // Check for existing active or interrupted session on initialization
@@ -134,6 +135,7 @@ class SessionCoordinatorImpl(
             activePredictionsCount = 0
             movementEpisodeCount = 0
             lastWasMovement = false
+            droppedSamplesCount = 0L
 
             sessionRepository.saveSession(session)
             _activeSession.value = session
@@ -342,9 +344,23 @@ class SessionCoordinatorImpl(
             val movementRatePerHour = movementEpisodes / hours
 
             val validWindowsCount = windows.count { it.qualityScore >= 0.5f }
-            val coverageFraction = if (windows.isNotEmpty()) {
+            val windowCoverage = if (windows.isNotEmpty()) {
                 validWindowsCount.toFloat() / windows.size
             } else 1.0f
+            val persistedSamples = windows.sumOf { it.sampleCount }.toLong() + pendingSamples.size
+            val ingestionCoverage = if (persistedSamples + droppedSamplesCount > 0L) {
+                persistedSamples.toFloat() / (persistedSamples + droppedSamplesCount).toFloat()
+            } else 1.0f
+            val coverageFraction = (windowCoverage * ingestionCoverage).coerceIn(0f, 1f)
+            val hrSamples = sessionRepository.getHeartRateForSession(session.sessionId)
+            val containsSyntheticHeartRate = hrSamples.any { it.sourceKind.isSimulated || it.sourceKind.isReplay }
+            val summarySource = when {
+                session.sourceMode.isSynthetic || containsSyntheticHeartRate -> SourceKind.SIMULATED
+                session.sourceMode == SourceMode.PHONE_ONLY -> SourceKind.PHONE_REAL
+                hrSamples.any { it.sourceKind == SourceKind.BLE_REAL } -> SourceKind.BLE_REAL
+                session.sourceMode.requiresBleConnection -> SourceKind.BLE_UNVERIFIED
+                else -> SourceKind.PHONE_REAL
+            }
 
             val summary = SessionSummary(
                 sessionId = session.sessionId,
@@ -354,13 +370,7 @@ class SessionCoordinatorImpl(
                 lowMotionFraction = lowMotionFraction,
                 movementEpisodeCount = movementEpisodes,
                 movementRatePerHour = movementRatePerHour,
-                sourceKind = when (session.sourceMode) {
-                    SourceMode.PHONE_ONLY -> SourceKind.PHONE_REAL
-                    SourceMode.WEARABLE_ONLY -> SourceKind.BLE_REAL
-                    SourceMode.COMBINED -> SourceKind.PHONE_REAL
-                    SourceMode.DEMO -> SourceKind.SIMULATED
-                    SourceMode.REPLAY -> SourceKind.REPLAY
-                },
+                sourceKind = summarySource,
                 devicePlacement = session.devicePlacement,
                 modelVersion = session.modelVersion ?: "heuristic-baseline",
                 calculatedAtUtcMillis = endUtc,
@@ -371,7 +381,6 @@ class SessionCoordinatorImpl(
             // Offline-first cloud synchronization
             val uid = authRepository?.currentUid
             val totalPreds = maxOf(1, total)
-            val hrSamples = sessionRepository.getHeartRateForSession(session.sessionId)
             val meanHr = if (hrSamples.isNotEmpty()) hrSamples.map { it.bpm }.average().toInt() else null
 
             val payload = SessionSummaryPayload(
@@ -389,7 +398,7 @@ class SessionCoordinatorImpl(
                 schemaVersion = 2,
             )
 
-            val outboxOp = if (cloudStateStore != null) {
+            val outboxOp = if (cloudStateStore != null && !summary.sourceKind.isSimulated && !summary.sourceKind.isReplay) {
                 com.example.sleeptrackersimulator.cloud.PendingCloudOperation(
                     operationId = "summary-${summary.sessionId}",
                     type = com.example.sleeptrackersimulator.cloud.PendingOperationType.UPLOAD_SESSION_SUMMARY,
@@ -408,7 +417,7 @@ class SessionCoordinatorImpl(
                     runCatching { store.enqueue(outboxOp) }
                 }
                 cloudRecoveryScheduler?.schedule()
-            } else if (uid != null && cloudRepository != null) {
+            } else if (uid != null && cloudRepository != null && !summary.sourceKind.isSimulated && !summary.sourceKind.isReplay) {
                 runCatching {
                     cloudRepository.uploadSessionSummary(uid, payload)
                 }
@@ -418,6 +427,33 @@ class SessionCoordinatorImpl(
             _sessionStatus.value = SessionStatus.IDLE
 
             Result.success(completed)
+        }
+    }
+
+    override suspend fun reportDroppedSamples(count: Long) = mutex.withLock {
+        droppedSamplesCount = count.coerceAtLeast(0L)
+    }
+
+    override suspend fun failSession(reason: String, droppedSamples: Long): Result<RecordingSession> = mutex.withLock {
+        withContext(dispatcher) {
+            val session = _activeSession.value
+                ?: return@withContext Result.failure(IllegalStateException("No active session"))
+            if (pendingSamples.isNotEmpty()) {
+                sessionRepository.insertSamplesBatch(pendingSamples.toList())
+                pendingSamples.clear()
+            }
+            droppedSamplesCount = droppedSamples.coerceAtLeast(0L)
+            val failed = session.copy(
+                endUtcMillis = System.currentTimeMillis(),
+                status = SessionStatus.FAILED,
+                qualityStatus = SessionQualityStatus.INSUFFICIENT,
+                interruptionReason = reason,
+                updatedAt = System.currentTimeMillis(),
+            )
+            sessionRepository.updateSession(failed)
+            _activeSession.value = failed
+            _sessionStatus.value = SessionStatus.FAILED
+            Result.success(failed)
         }
     }
 
