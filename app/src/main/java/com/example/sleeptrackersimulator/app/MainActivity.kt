@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private var pendingFlashlightEnable = false
+    private var pendingRecordingStart: (() -> Unit)? = null
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -102,6 +103,14 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { _ -> }
+
+    private val activityRecognitionPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val pending = pendingRecordingStart
+        pendingRecordingStart = null
+        if (granted) pending?.invoke()
+    }
 
     // Core SleepSense ViewModels
     private val todayViewModel: TodayViewModel by viewModels {
@@ -431,8 +440,7 @@ class MainActivity : ComponentActivity() {
                                     AppTab.TODAY -> TodayScreen(
                                         state = todayState,
                                         onStartRecording = {
-                                            RecordingService.start(
-                                                this@MainActivity,
+                                            startRecordingWithRequiredPermission(
                                                 mode = todayState.selectedSourceMode,
                                                 placement = todayState.selectedPlacement,
                                             )
@@ -512,6 +520,29 @@ class MainActivity : ComponentActivity() {
 
     private enum class AppTab { TODAY, HISTORY, INSIGHTS, DEVICES }
     private enum class AppOverlay { NONE, SETTINGS, AUTOMATIONS, DEVELOPER_LAB, LEGACY_DASHBOARD }
+
+    private fun startRecordingWithRequiredPermission(
+        mode: com.example.sleeptrackersimulator.core.model.SourceMode,
+        placement: com.example.sleeptrackersimulator.core.model.DevicePlacement,
+    ) {
+        val start = {
+            RecordingService.start(
+                this,
+                mode = mode,
+                placement = placement,
+            )
+        }
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACTIVITY_RECOGNITION,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            start()
+        } else {
+            pendingRecordingStart = start
+            activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+    }
 
     private fun requestFlashlightChange(enabled: Boolean) {
         if (!enabled ||

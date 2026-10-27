@@ -1,5 +1,7 @@
 package com.example.sleeptrackersimulator.data.sessions
 
+import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
+import com.example.sleeptrackersimulator.cloud.toEntity
 import com.example.sleeptrackersimulator.core.model.BaselineComparison
 import com.example.sleeptrackersimulator.core.model.DevicePlacement
 import com.example.sleeptrackersimulator.core.model.FeatureWindow
@@ -12,6 +14,8 @@ import com.example.sleeptrackersimulator.core.model.SessionSummary
 import com.example.sleeptrackersimulator.core.model.SourceMode
 import com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
 import com.example.sleeptrackersimulator.domain.recording.SessionRepository
+import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
+import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +31,7 @@ class RoomSessionRepository(
     private val sessionSummaryDao: SessionSummaryDao,
     private val personalBaselineDao: PersonalBaselineDao,
     private val deviceDao: DeviceDao,
+    private val database: SleepTrackerDatabase? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SessionRepository, AnalyticsRepository {
 
@@ -100,6 +105,30 @@ class RoomSessionRepository(
 
     override suspend fun saveSessionSummary(summary: SessionSummary) = withContext(dispatcher) {
         sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(summary))
+    }
+
+    override suspend fun saveSessionSummaryAndOutbox(
+        summary: SessionSummary,
+        completedSession: RecordingSession,
+        outboxOperation: com.example.sleeptrackersimulator.cloud.PendingCloudOperation?,
+    ): Boolean = withContext(dispatcher) {
+        if (database != null) {
+            database.withTransaction {
+                sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(summary))
+                sessionDao.updateSession(RecordingSessionEntity.fromDomain(completedSession))
+                if (outboxOperation != null) {
+                    database.cloudOutboxDao().enqueue(
+                        outboxOperation.toEntity(),
+                        RoomCloudStateStore.DEFAULT_MAXIMUM_OPERATIONS,
+                    )
+                }
+            }
+            true
+        } else {
+            sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(summary))
+            sessionDao.updateSession(RecordingSessionEntity.fromDomain(completedSession))
+            false
+        }
     }
 
     override suspend fun getSessionSummary(sessionId: String): SessionSummary? = withContext(dispatcher) {

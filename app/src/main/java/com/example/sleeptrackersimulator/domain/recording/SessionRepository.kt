@@ -31,5 +31,14 @@ interface SessionRepository {
     suspend fun getPredictionsForSession(sessionId: String): List<Prediction>
 
     suspend fun saveSessionSummary(summary: SessionSummary)
+    suspend fun saveSessionSummaryAndOutbox(
+        summary: SessionSummary,
+        completedSession: RecordingSession,
+        outboxOperation: com.example.sleeptrackersimulator.cloud.PendingCloudOperation?,
+    ): Boolean {
+        saveSessionSummary(summary)
+        updateSession(completedSession)
+        return false
+    }
     suspend fun getSessionSummary(sessionId: String): SessionSummary?
 }

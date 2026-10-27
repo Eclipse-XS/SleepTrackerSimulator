@@ -36,11 +36,19 @@ object HeartRateProfile {
     val SERVICE_UUID: UUID = standardUuid("180d")
     val MEASUREMENT_UUID: UUID = standardUuid("2a37")
     val BODY_SENSOR_LOCATION_UUID: UUID = standardUuid("2a38")
-    /** Custom writable command characteristic; this is not a Bluetooth SIG UUID. */
+    val BATTERY_SERVICE_UUID: UUID = standardUuid("180f")
+    val BATTERY_LEVEL_UUID: UUID = standardUuid("2a19")
+    val CCCD_UUID: UUID = standardUuid("2902")
+
+    /** Custom writable command characteristic (Proprietary vendor UUID; not standard SIG). */
     val COMMAND_UUID: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
+
     const val SERVICE_SHORT_ID = "180D"
     const val MEASUREMENT_SHORT_ID = "2A37"
     const val BODY_SENSOR_LOCATION_SHORT_ID = "2A38"
+    const val BATTERY_SERVICE_SHORT_ID = "180F"
+    const val BATTERY_LEVEL_SHORT_ID = "2A19"
+    const val CCCD_SHORT_ID = "2902"
     const val COMMAND_ID = "7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e"
 
     private fun standardUuid(shortId: String): UUID = UUID.fromString("0000$shortId$BASE_SUFFIX")

@@ -22,6 +22,7 @@ import com.example.sleeptrackersimulator.domain.signalprocessing.SlidingWindowSe
 import com.example.sleeptrackersimulator.ml.ActivityClassifier
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,7 @@ class SessionCoordinatorImpl(
 
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutex = Mutex()
+    private val initialization = CompletableDeferred<Unit>()
 
     private val _activeSession = MutableStateFlow<RecordingSession?>(null)
     override val activeSession: StateFlow<RecordingSession?> = _activeSession.asStateFlow()
@@ -68,10 +70,26 @@ class SessionCoordinatorImpl(
     init {
         // Check for existing active or interrupted session on initialization
         scope.launch {
-            val existing = sessionRepository.getActiveSession()
-            if (existing != null) {
-                _activeSession.value = existing
-                _sessionStatus.value = existing.status
+            try {
+                val existing = sessionRepository.getActiveSession()
+                if (existing != null) {
+                    // A fresh coordinator means the application process was recreated. The
+                    // non-sticky recording service cannot still own sensor collection, so
+                    // presenting the persisted row as RECORDING would fabricate continuity.
+                    val restored = if (existing.status == SessionStatus.RECORDING || existing.status == SessionStatus.PAUSED) {
+                        existing.withStatus(
+                            SessionStatus.INTERRUPTED,
+                            "Recording process was restarted; persisted samples were preserved",
+                        ).also { sessionRepository.updateSession(it) }
+                    } else {
+                        existing
+                    }
+                    _activeSession.value = restored
+                    _sessionStatus.value = restored.status
+                    reconstructCounters(restored.sessionId)
+                }
+            } finally {
+                initialization.complete(Unit)
             }
         }
     }
@@ -80,7 +98,9 @@ class SessionCoordinatorImpl(
         sourceMode: SourceMode,
         placement: DevicePlacement,
         samplingHz: Int,
-    ): Result<RecordingSession> = mutex.withLock {
+    ): Result<RecordingSession> {
+        initialization.await()
+        return mutex.withLock {
         withContext(dispatcher) {
             val existing = _activeSession.value
             if (existing != null && existing.status.isActive) {
@@ -120,6 +140,7 @@ class SessionCoordinatorImpl(
             _sessionStatus.value = SessionStatus.RECORDING
 
             Result.success(session)
+        }
         }
     }
 
@@ -301,38 +322,17 @@ class SessionCoordinatorImpl(
             val endUtc = System.currentTimeMillis()
             val observationDurationMs = maxOf(1000L, endUtc - session.startUtcMillis)
 
-            // Compute summary metrics using O(1) running counters or fallback to DB if recovered
-            val windows = sessionRepository.getFeatureWindows(session.sessionId)
-            val (total, lowMotionCount, restlessCount, activeCount, movementEpisodes) = if (totalPredictionsCount > 0) {
-                Tuple5(
-                    totalPredictionsCount,
-                    restPredictionsCount,
-                    restlessPredictionsCount,
-                    activePredictionsCount,
-                    movementEpisodeCount,
-                )
-            } else {
-                val dbPreds = sessionRepository.getPredictionsForSession(session.sessionId)
-                var epCount = 0
-                var inMove = false
-                for (p in dbPreds) {
-                    if (p.predictedClass.isMovement) {
-                        if (!inMove) {
-                            epCount++
-                            inMove = true
-                        }
-                    } else {
-                        inMove = false
-                    }
-                }
-                Tuple5(
-                    dbPreds.size,
-                    dbPreds.count { it.predictedClass == ActivityClass.REST },
-                    dbPreds.count { it.predictedClass == ActivityClass.RESTLESS },
-                    dbPreds.count { it.predictedClass == ActivityClass.ACTIVE },
-                    epCount,
-                )
+            // If counters are 0, reconstruct from Room to handle recovery from process death
+            if (totalPredictionsCount == 0) {
+                reconstructCounters(session.sessionId)
             }
+
+            val windows = sessionRepository.getFeatureWindows(session.sessionId)
+            val total = totalPredictionsCount
+            val lowMotionCount = restPredictionsCount
+            val restlessCount = restlessPredictionsCount
+            val activeCount = activePredictionsCount
+            val movementEpisodes = movementEpisodeCount
 
             val lowMotionFraction = if (total > 0) {
                 lowMotionCount.toFloat() / total
@@ -366,10 +366,7 @@ class SessionCoordinatorImpl(
                 calculatedAtUtcMillis = endUtc,
             )
 
-            sessionRepository.saveSessionSummary(summary)
-
             val completed = session.completed(endUtcMillis = endUtc, coverageFraction = coverageFraction)
-            sessionRepository.updateSession(completed)
 
             // Offline-first cloud synchronization
             val uid = authRepository?.currentUid
@@ -392,18 +389,25 @@ class SessionCoordinatorImpl(
                 schemaVersion = 2,
             )
 
-            if (cloudStateStore != null) {
-                runCatching {
-                    val outboxOp = com.example.sleeptrackersimulator.cloud.PendingCloudOperation(
-                        operationId = "summary-${summary.sessionId}",
-                        type = com.example.sleeptrackersimulator.cloud.PendingOperationType.UPLOAD_SESSION_SUMMARY,
-                        sessionId = summary.sessionId,
-                        summary = payload,
-                        createdAt = endUtc,
-                    )
-                    cloudStateStore.enqueue(outboxOp)
-                    cloudRecoveryScheduler?.schedule()
+            val outboxOp = if (cloudStateStore != null) {
+                com.example.sleeptrackersimulator.cloud.PendingCloudOperation(
+                    operationId = "summary-${summary.sessionId}",
+                    type = com.example.sleeptrackersimulator.cloud.PendingOperationType.UPLOAD_SESSION_SUMMARY,
+                    sessionId = summary.sessionId,
+                    summary = payload,
+                    createdAt = endUtc,
+                )
+            } else null
+
+            // ATOMIC SAVE: SessionSummary + Session completion + Cloud Outbox enqueue in one SQLite transaction
+            val outboxSavedAtomically = sessionRepository.saveSessionSummaryAndOutbox(summary, completed, outboxOp)
+
+            val store = cloudStateStore
+            if (outboxOp != null) {
+                if (!outboxSavedAtomically && store != null) {
+                    runCatching { store.enqueue(outboxOp) }
                 }
+                cloudRecoveryScheduler?.schedule()
             } else if (uid != null && cloudRepository != null) {
                 runCatching {
                     cloudRepository.uploadSessionSummary(uid, payload)
@@ -422,12 +426,40 @@ class SessionCoordinatorImpl(
             val session = sessionRepository.getSessionById(sessionId)
                 ?: return@withContext Result.failure(IllegalArgumentException("Session $sessionId not found"))
 
-            val recovered = session.withStatus(SessionStatus.RECORDING)
+            val recovered = if (session.status == SessionStatus.RECORDING) {
+                session
+            } else {
+                session.withStatus(SessionStatus.RECORDING)
+            }
             sessionRepository.updateSession(recovered)
             _activeSession.value = recovered
             _sessionStatus.value = SessionStatus.RECORDING
+            reconstructCounters(sessionId)
             Result.success(recovered)
         }
+    }
+
+    private suspend fun reconstructCounters(sessionId: String) {
+        val dbPreds = sessionRepository.getPredictionsForSession(sessionId).sortedBy { it.timestampMillis }
+        totalPredictionsCount = dbPreds.size
+        restPredictionsCount = dbPreds.count { it.predictedClass == ActivityClass.REST }
+        restlessPredictionsCount = dbPreds.count { it.predictedClass == ActivityClass.RESTLESS }
+        activePredictionsCount = dbPreds.count { it.predictedClass == ActivityClass.ACTIVE }
+
+        var epCount = 0
+        var inMove = false
+        for (p in dbPreds) {
+            if (p.predictedClass.isMovement) {
+                if (!inMove) {
+                    epCount++
+                    inMove = true
+                }
+            } else {
+                inMove = false
+            }
+        }
+        movementEpisodeCount = epCount
+        lastWasMovement = inMove
     }
 
     override suspend fun discardSession(): Result<Unit> = mutex.withLock {
@@ -446,12 +478,4 @@ class SessionCoordinatorImpl(
             Result.success(Unit)
         }
     }
-
-    private data class Tuple5(
-        val total: Int,
-        val lowMotion: Int,
-        val restless: Int,
-        val active: Int,
-        val movementEpisodes: Int,
-    )
 }

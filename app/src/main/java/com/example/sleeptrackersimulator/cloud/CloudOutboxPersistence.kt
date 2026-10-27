@@ -184,7 +184,7 @@ class RoomCloudStateStore(
                 throw IllegalStateException("Legacy cloud state is unreadable and was preserved", error)
             }
             dao.importLegacy(
-                persisted.operations.map { it.toEntity() },
+                persisted.operations.map { it.toEntity(gson) },
                 persisted.activeSession?.toEntity(),
             )
             val migrated = source.resolveSibling("${source.name}.migrated")
@@ -195,56 +195,56 @@ class RoomCloudStateStore(
         legacyChecked = true
     }
 
-    private fun PendingCloudOperation.toEntity() = CloudOutboxEntity(
-        operationId = operationId,
-        type = type.name,
-        sessionId = sessionId,
-        payloadJson = when (type) {
-            PendingOperationType.UPLOAD_MEASUREMENT -> payload?.let(gson::toJson)
-            PendingOperationType.UPLOAD_RULE_EVENT -> ruleEvent?.let(gson::toJson)
-            PendingOperationType.UPLOAD_SESSION_SUMMARY -> summary?.let(gson::toJson)
-            PendingOperationType.END_SESSION -> null
-        },
-        endedAt = endedAt,
-        createdAt = createdAt,
-        retryCount = retryCount,
-        lastError = lastError,
-        deliveryState = deliveryState.name,
-        readyForDelivery = readyForDelivery,
-    )
-
-    private fun CloudOutboxEntity.toModel() = PendingCloudOperation(
-        operationId = operationId,
-        type = PendingOperationType.valueOf(type),
-        sessionId = sessionId,
-        payload = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_MEASUREMENT.name }?.let { gson.fromJson(it, SensorPayload::class.java) },
-        ruleEvent = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_RULE_EVENT.name }?.let { gson.fromJson(it, SmartRuleEventPayload::class.java) },
-        summary = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_SESSION_SUMMARY.name }?.let { gson.fromJson(it, SessionSummaryPayload::class.java) },
-        endedAt = endedAt,
-        createdAt = createdAt,
-        retryCount = retryCount,
-        lastError = lastError,
-        deliveryState = DeliveryState.valueOf(deliveryState),
-        readyForDelivery = readyForDelivery,
-    )
-
-    private fun ActiveCloudSession.toEntity() = CloudSessionEntity(
-        sessionId = sessionId,
-        startedAt = startedAt,
-        ownerUid = ownerUid,
-        monitoringActive = monitoringActive,
-    )
-
-    private fun CloudSessionEntity.toModel() = ActiveCloudSession(
-        sessionId = sessionId,
-        startedAt = startedAt,
-        ownerUid = ownerUid,
-        monitoringActive = monitoringActive,
-    )
-
     companion object {
         const val DEFAULT_MAXIMUM_OPERATIONS = 10_000
         const val RESERVED_CRITICAL_SLOTS = 2
         const val RESERVED_END_SESSION_SLOTS = 1
     }
 }
+
+fun PendingCloudOperation.toEntity(gson: Gson = Gson()): CloudOutboxEntity = CloudOutboxEntity(
+    operationId = operationId,
+    type = type.name,
+    sessionId = sessionId,
+    payloadJson = when (type) {
+        PendingOperationType.UPLOAD_MEASUREMENT -> payload?.let(gson::toJson)
+        PendingOperationType.UPLOAD_RULE_EVENT -> ruleEvent?.let(gson::toJson)
+        PendingOperationType.UPLOAD_SESSION_SUMMARY -> summary?.let(gson::toJson)
+        PendingOperationType.END_SESSION -> null
+    },
+    endedAt = endedAt,
+    createdAt = createdAt,
+    retryCount = retryCount,
+    lastError = lastError,
+    deliveryState = deliveryState.name,
+    readyForDelivery = readyForDelivery,
+)
+
+fun CloudOutboxEntity.toModel(gson: Gson = Gson()): PendingCloudOperation = PendingCloudOperation(
+    operationId = operationId,
+    type = PendingOperationType.valueOf(type),
+    sessionId = sessionId,
+    payload = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_MEASUREMENT.name }?.let { gson.fromJson(it, SensorPayload::class.java) },
+    ruleEvent = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_RULE_EVENT.name }?.let { gson.fromJson(it, SmartRuleEventPayload::class.java) },
+    summary = payloadJson?.takeIf { type == PendingOperationType.UPLOAD_SESSION_SUMMARY.name }?.let { gson.fromJson(it, SessionSummaryPayload::class.java) },
+    endedAt = endedAt,
+    createdAt = createdAt,
+    retryCount = retryCount,
+    lastError = lastError,
+    deliveryState = DeliveryState.valueOf(deliveryState),
+    readyForDelivery = readyForDelivery,
+)
+
+fun ActiveCloudSession.toEntity(): CloudSessionEntity = CloudSessionEntity(
+    sessionId = sessionId,
+    startedAt = startedAt,
+    ownerUid = ownerUid,
+    monitoringActive = monitoringActive,
+)
+
+fun CloudSessionEntity.toModel(): ActiveCloudSession = ActiveCloudSession(
+    sessionId = sessionId,
+    startedAt = startedAt,
+    ownerUid = ownerUid,
+    monitoringActive = monitoringActive,
+)

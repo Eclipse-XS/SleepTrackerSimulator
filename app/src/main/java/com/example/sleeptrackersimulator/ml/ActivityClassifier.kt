@@ -6,7 +6,15 @@ import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class ActivityClassifier(context: Context) : Closeable {
+interface ActivityClassifier : Closeable {
+    fun classify(window: Array<FloatArray>, windowEndTimestampNanos: Long = System.nanoTime()): ActivityPrediction
+
+    companion object {
+        operator fun invoke(context: Context): ActivityClassifier = TfliteActivityClassifier(context)
+    }
+}
+
+class TfliteActivityClassifier(context: Context) : ActivityClassifier {
     private val model = context.assets.open("activity_classifier.tflite").use { stream ->
         stream.readBytes().let { bytes ->
             ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply {
@@ -30,7 +38,7 @@ class ActivityClassifier(context: Context) : Closeable {
         }
     }
 
-    fun classify(window: Array<FloatArray>, windowEndTimestampNanos: Long = System.nanoTime()): ActivityPrediction {
+    override fun classify(window: Array<FloatArray>, windowEndTimestampNanos: Long): ActivityPrediction {
         require(window.size == 20 && window.all { it.size == 3 && it.all(Float::isFinite) })
         val input = Array(1) { Array(20) { FloatArray(3) } }
         window.forEachIndexed { index, sample -> sample.copyInto(input[0][index]) }

@@ -1,5 +1,12 @@
 package com.example.sleeptrackersimulator.ui.developer
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +37,9 @@ import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,10 +47,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import java.util.Locale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sleeptrackersimulator.core.model.SensorSample
+import com.example.sleeptrackersimulator.dataset.DatasetCsvExporter
+import com.example.sleeptrackersimulator.dataset.DatasetRecordingController
+import com.example.sleeptrackersimulator.dataset.DatasetSession
+import com.example.sleeptrackersimulator.dataset.DevicePlacement
+import com.example.sleeptrackersimulator.dataset.ExperimentType
+import com.example.sleeptrackersimulator.dataset.GroundTruthActivity
 import com.example.sleeptrackersimulator.ui.components.MetricCard
 import com.example.sleeptrackersimulator.ui.components.StatusBadge
 import com.example.sleeptrackersimulator.ui.theme.CalmGreen
@@ -267,7 +285,7 @@ private fun BleInspectorTab(
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MoonBlue),
                 ) {
-                    Text("Send Alert Command (0x2A37)", color = DarkSurface, fontWeight = FontWeight.Bold)
+                    Text("Send Alert Command (Vendor UUID)", color = DarkSurface, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedButton(
@@ -421,10 +439,87 @@ private fun DatabaseInspectorTab() {
 
 @Composable
 private fun MlInspectorTab() {
-    var selectedTag by remember { mutableStateOf("RESTING") }
-    var isRecordingGroundTruth by remember { mutableStateOf(false) }
-    var recordedWindowsCount by remember { mutableIntStateOf(142) }
-    var exportStatusMessage by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val controller = remember { DatasetRecordingController() }
+
+    var selectedExperiment by remember { mutableStateOf(ExperimentType.CONTROLLED_REST) }
+    var selectedPlacement by remember { mutableStateOf(DevicePlacement.MATTRESS) }
+    var selectedGroundTruth by remember { mutableStateOf(GroundTruthActivity.RESTING) }
+
+    var isRecording by remember { mutableStateOf(false) }
+    var totalSampleCount by remember { mutableIntStateOf(0) }
+    var validSampleCount by remember { mutableIntStateOf(0) }
+    var rejectedSampleCount by remember { mutableIntStateOf(0) }
+    var liveSamplingRateHz by remember { mutableDoubleStateOf(0.0) }
+    var lastSavedFilePath by remember { mutableStateOf<String?>(null) }
+    var lastExportSummary by remember { mutableStateOf<String?>(null) }
+    var pendingCsv by remember { mutableStateOf<Pair<String, Int>?>(null) }
+
+    val csvDocumentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        val export = pendingCsv
+        pendingCsv = null
+        if (uri == null || export == null) {
+            lastExportSummary = "Export cancelled"
+            return@rememberLauncherForActivityResult
+        }
+        runCatching {
+            context.contentResolver.openOutputStream(uri, "w")?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                writer.write(export.first)
+            } ?: error("Android could not open the selected document")
+        }.onSuccess {
+            lastSavedFilePath = uri.toString()
+            lastExportSummary = "Exported ${export.second} real sensor samples"
+        }.onFailure { error ->
+            lastExportSummary = "Export failed: ${error.message ?: error.javaClass.simpleName}"
+        }
+    }
+
+    DisposableEffect(isRecording) {
+        if (!isRecording) return@DisposableEffect onDispose {}
+
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+        var lastCalcTimeMs = System.currentTimeMillis()
+        var samplesSinceCalc = 0
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event == null || !isRecording) return
+                val sample = SensorSample(
+                    x = event.values[0],
+                    y = event.values[1],
+                    z = event.values[2],
+                    timestampNanos = event.timestamp,
+                )
+                controller.processSample(sample, predictedClass = "LIVE")
+                totalSampleCount = controller.sampleCount
+                validSampleCount = controller.validSampleCount
+                rejectedSampleCount = controller.rejectedSampleCount
+
+                samplesSinceCalc++
+                val now = System.currentTimeMillis()
+                val elapsed = now - lastCalcTimeMs
+                if (elapsed >= 1000L) {
+                    liveSamplingRateHz = (samplesSinceCalc.toDouble() / elapsed.toDouble()) * 1000.0
+                    samplesSinceCalc = 0
+                    lastCalcTimeMs = now
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        accelerometer?.let {
+            sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
+        }
+
+        onDispose {
+            sensorManager?.unregisterListener(listener)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -446,7 +541,7 @@ private fun MlInspectorTab() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Ground-Truth Dataset Collection Mode
+        // Real Ground-Truth Dataset Collection Mode
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -460,30 +555,31 @@ private fun MlInspectorTab() {
                 ) {
                     Text(text = "Dataset Collection & Ground Truth", fontWeight = FontWeight.Bold, color = MistBlue)
                     StatusBadge(
-                        text = if (isRecordingGroundTruth) "COLLECTING" else "STANDBY",
-                        color = if (isRecordingGroundTruth) CalmGreen else MoonBlue,
+                        text = if (isRecording) "COLLECTING LIVE" else "STANDBY",
+                        color = if (isRecording) CalmGreen else MoonBlue,
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Label live motion data with user-verified ground-truth states to build benchmarking datasets for model retraining.",
+                    text = "Collects genuine hardware accelerometer timestamps and XYZ readings for verifiable ML model retraining and pandas evaluation.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MistBlue.copy(alpha = 0.75f),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // 1. Experiment Selector
                 Text(
-                    text = "SELECT ACTIVE GROUND TRUTH LABEL:",
+                    text = "EXPERIMENT PROTOCOL:",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = MistBlue.copy(alpha = 0.6f),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("RESTING", "READING", "OUT_OF_BED").forEach { tag ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(ExperimentType.CONTROLLED_REST, ExperimentType.READING_IN_BED, ExperimentType.STATIC_BENCH).forEach { exp ->
                         FilterChip(
-                            selected = selectedTag == tag,
-                            onClick = { selectedTag = tag },
-                            label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
+                            selected = selectedExperiment == exp,
+                            onClick = { selectedExperiment = exp },
+                            label = { Text(exp.name, style = MaterialTheme.typography.labelSmall) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MoonBlue.copy(alpha = 0.3f),
                                 selectedLabelColor = MoonBlue,
@@ -492,24 +588,96 @@ private fun MlInspectorTab() {
                     }
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 2. Placement Selector
+                Text(
+                    text = "DEVICE PLACEMENT:",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MistBlue.copy(alpha = 0.6f),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(DevicePlacement.MATTRESS, DevicePlacement.NIGHTSTAND, DevicePlacement.BODY_WRIST).forEach { plc ->
+                        FilterChip(
+                            selected = selectedPlacement == plc,
+                            onClick = { selectedPlacement = plc },
+                            label = { Text(plc.name, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MoonBlue.copy(alpha = 0.3f),
+                                selectedLabelColor = MoonBlue,
+                            ),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 3. Ground Truth Label Selector
+                Text(
+                    text = "ACTIVE GROUND TRUTH LABEL:",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MistBlue.copy(alpha = 0.6f),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(GroundTruthActivity.RESTING, GroundTruthActivity.READING, GroundTruthActivity.OUT_OF_BED).forEach { tag ->
+                        FilterChip(
+                            selected = selectedGroundTruth == tag,
+                            onClick = {
+                                selectedGroundTruth = tag
+                                if (isRecording) {
+                                    controller.updateGroundTruth(tag)
+                                }
+                            },
+                            label = { Text(tag.name, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = CalmGreen.copy(alpha = 0.3f),
+                                selectedLabelColor = CalmGreen,
+                            ),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Telemetry Row
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        text = "Valid: $validSampleCount | Rejected: $rejectedSampleCount",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MistBlue,
+                    )
+                    Text(
+                        text = "Rate: ${String.format(Locale.US, "%.1f", liveSamplingRateHz)} Hz",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = CalmGreen,
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
                         onClick = {
-                            isRecordingGroundTruth = !isRecordingGroundTruth
-                            if (isRecordingGroundTruth) {
-                                recordedWindowsCount += 5
+                            if (!isRecording) {
+                                controller.start(selectedExperiment, selectedPlacement, selectedGroundTruth)
+                                isRecording = true
+                                lastExportSummary = null
+                            } else {
+                                isRecording = false
+                                val session = controller.stop()
+                                lastExportSummary = "Recorded ${session.validCount} valid samples at ${String.format(Locale.US, "%.1f", session.actualSamplingRateHz)} Hz"
                             }
                         },
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isRecordingGroundTruth) Color(0xFFEF4444) else MoonBlue,
+                            containerColor = if (isRecording) Color(0xFFEF4444) else MoonBlue,
                         ),
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
-                            if (isRecordingGroundTruth) "Stop Tagging" else "Tag as $selectedTag",
+                            if (isRecording) "Stop Recording" else "Record Sensor (${selectedGroundTruth.name})",
                             color = DarkSurface,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelMedium,
@@ -518,21 +686,36 @@ private fun MlInspectorTab() {
 
                     OutlinedButton(
                         onClick = {
-                            exportStatusMessage = "Exported $recordedWindowsCount windows ($selectedTag) to sleepsense_dataset.csv"
+                            val session = controller.stop()
+                            pendingCsv = DatasetCsvExporter.generateCsv(session) to session.validCount
+                            csvDocumentLauncher.launch(
+                                "sleepsense_${session.experimentType.name.lowercase()}_${session.startTimeUtcMs}.csv",
+                            )
                         },
+                        enabled = controller.sampleCount > 0 && !isRecording,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Export CSV", color = MistBlue, style = MaterialTheme.typography.labelMedium)
+                        Text("Export CSV File", color = MistBlue, style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
-                exportStatusMessage?.let { msg ->
+                lastExportSummary?.let { summary ->
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = msg,
+                        text = summary,
                         style = MaterialTheme.typography.bodySmall,
                         color = CalmGreen,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+
+                lastSavedFilePath?.let { path ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Path: $path",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MistBlue.copy(alpha = 0.7f),
                         fontFamily = FontFamily.Monospace,
                     )
                 }

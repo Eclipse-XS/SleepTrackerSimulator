@@ -127,6 +127,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             sessionSummaryDao = database.sessionSummaryDao(),
             personalBaselineDao = database.personalBaselineDao(),
             deviceDao = database.deviceDao(),
+            database = database,
         )
     }
 

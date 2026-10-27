@@ -52,6 +52,7 @@ class CloudOfflineE2EIntegrationTest {
             sessionSummaryDao = database.sessionSummaryDao(),
             personalBaselineDao = database.personalBaselineDao(),
             deviceDao = database.deviceDao(),
+            database = database,
         )
     }
 

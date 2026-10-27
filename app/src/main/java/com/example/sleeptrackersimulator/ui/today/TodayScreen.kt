@@ -377,13 +377,30 @@ private fun SessionHeroCard(
                 }
 
                 SessionStatus.FINALIZING, SessionStatus.INTERRUPTED, SessionStatus.RECOVERABLE -> {
-                    StatusBadge(text = "FINALIZING", color = MotionAmber)
+                    val interrupted = state.sessionStatus == SessionStatus.INTERRUPTED ||
+                        state.sessionStatus == SessionStatus.RECOVERABLE
+                    StatusBadge(text = if (interrupted) "RECORDING INTERRUPTED" else "FINALIZING", color = MotionAmber)
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Committing local summaries...",
+                        text = if (interrupted) {
+                            "The recording process stopped. Saved samples are intact; finish the session without inventing data for the gap."
+                        } else {
+                            "Committing local summaries..."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MistBlue,
                     )
+                    if (interrupted) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = onStop,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MotionAmber),
+                        ) {
+                            Text(text = "Finish preserved session", fontWeight = FontWeight.Bold, color = DarkSurface)
+                        }
+                    }
                 }
             }
         }

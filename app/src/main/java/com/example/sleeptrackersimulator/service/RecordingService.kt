@@ -43,6 +43,8 @@ class RecordingService : Service(), SensorEventListener {
 
     private var coordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator? = null
     private var transportJob: Job? = null
+    private var activeMode: SourceMode = SourceMode.PHONE_ONLY
+    private var activeSamplingHz: Int = 20
 
     inner class LocalBinder : Binder() {
         fun getService(): RecordingService = this@RecordingService
@@ -99,31 +101,16 @@ class RecordingService : Service(), SensorEventListener {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, foregroundType)
         wakeLock?.acquire(8 * 60 * 60 * 1000L) // 8 hours max safety limit
 
+        activeMode = mode
+        activeSamplingHz = samplingHz.coerceIn(1, 200)
         serviceScope.launch {
-            coordinator?.startSession(mode, placement, samplingHz)
-        }
-
-        if (mode.requiresPhoneSensor) {
-            val delayUs = (1_000_000 / samplingHz)
-            sensorManager?.registerListener(this, accelerometer, delayUs)
-        }
-
-        if (mode.requiresBleConnection) {
-            val app = application as? SleepTrackerApplication
-            val transport = app?.container?.deviceTransport
-            if (transport != null) {
-                transportJob?.cancel()
-                transportJob = serviceScope.launch {
-                    transport.heartRateStream.collect { hrSample ->
-                        coordinator?.ingestHeartRateSample(
-                            deviceId = hrSample.deviceId,
-                            bpm = hrSample.bpm,
-                            utcTimestampMillis = hrSample.utcTimestampMillis,
-                            timingUncertaintyMillis = hrSample.timingUncertaintyMillis,
-                            sourceKind = hrSample.sourceKind,
-                        )
-                    }
-                }
+            val result = coordinator?.startSession(mode, placement, activeSamplingHz)
+            if (result?.isSuccess == true) {
+                startSourcesForActiveMode()
+            } else {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+                stopSelf()
             }
         }
     }
@@ -140,8 +127,22 @@ class RecordingService : Service(), SensorEventListener {
     }
 
     private fun resumeRecordingSession() {
-        val delayUs = 1_000_000 / 20
-        sensorManager?.registerListener(this, accelerometer, delayUs)
+        serviceScope.launch {
+            val result = coordinator?.resumeSession()
+            if (result?.isSuccess == true) startSourcesForActiveMode()
+        }
+        val notification = buildNotification("Recording in progress", "Monitoring device movement...")
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun startSourcesForActiveMode() {
+        if (activeMode.requiresPhoneSensor) {
+            val delayUs = 1_000_000 / activeSamplingHz
+            sensorManager?.registerListener(this, accelerometer, delayUs)
+        }
+        if (!activeMode.requiresBleConnection) return
+
         val app = application as? SleepTrackerApplication
         val transport = app?.container?.deviceTransport
         if (transport != null) {
@@ -158,12 +159,6 @@ class RecordingService : Service(), SensorEventListener {
                 }
             }
         }
-        serviceScope.launch {
-            coordinator?.resumeSession()
-        }
-        val notification = buildNotification("Recording in progress", "Monitoring device movement...")
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
     private fun stopRecordingSession() {

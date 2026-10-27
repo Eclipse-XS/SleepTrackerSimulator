@@ -17,10 +17,10 @@ To satisfy both educational lab requirements (Lab 6) and product requirements fo
 
 | Model Architecture | Accuracy | Macro F1 | Macro Precision | Macro Recall | Latency ($\mu$s/window) | Model Size | Battery Impact |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Rule-Based Baseline** | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 38.1 $\mu$s | 0.0 KB | Negligible (<0.1% per hr) |
-| **Random Forest (Handcrafted Features)** | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 3362.5 $\mu$s | 142.5 KB | Low (~0.3% per hr) |
-| **Dense TFLite (Production On-Device)** | 0.9827 | 0.9827 | 0.9829 | 0.9827 | 6.1 $\mu$s | 11.1 KB | Very Low (~0.15% per hr) |
-| **1D CNN TFLite (Deep Temporal Model)** | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 5.1 $\mu$s | 14.1 KB | Moderate (~0.5% per hr) |
+| **Rule-Based Baseline** | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 126.8 $\mu$s | 0.0 KB | Negligible (<0.1% per hr) |
+| **Random Forest (Handcrafted Features)** | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 8718.8 $\mu$s | 142.5 KB | Low (~0.3% per hr) |
+| **Dense TFLite (Production On-Device)** | 0.9853 | 0.9853 | 0.9855 | 0.9853 | 12.4 $\mu$s | 11.1 KB | Very Low (~0.15% per hr) |
+| **1D CNN TFLite (Deep Temporal Model)** | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 10.4 $\mu$s | 14.1 KB | Moderate (~0.5% per hr) |
 
 ---
 
@@ -49,8 +49,8 @@ Rows = Actual Class, Columns = Predicted Class (`REST`, `RESTLESS`, `ACTIVE`).
 | Actual \ Pred | REST | RESTLESS | ACTIVE |
 | :--- | :---: | :---: | :---: |
 | **REST** | 250 | 0 | 0 |
-| **RESTLESS** | 5 | 245 | 0 |
-| **ACTIVE** | 0 | 8 | 242 |
+| **RESTLESS** | 7 | 243 | 0 |
+| **ACTIVE** | 0 | 4 | 246 |
 
 ### 1D CNN TFLite (Deep Temporal Model)
 

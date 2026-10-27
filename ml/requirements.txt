@@ -2,3 +2,4 @@ tensorflow-cpu==2.20.0
 numpy==2.2.6
 scikit-learn>=1.5.0
 scipy>=1.14.0
+pandas>=2.2.0

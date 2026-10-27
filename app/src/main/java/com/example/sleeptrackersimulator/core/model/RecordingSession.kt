@@ -24,11 +24,11 @@ enum class SessionStatus {
         get() = this == COMPLETED || this == FAILED
 
     fun canTransitionTo(next: SessionStatus): Boolean = when (this) {
-        IDLE -> next == PREPARING
+        IDLE -> next == PREPARING || next == RECORDING
         PREPARING -> next == RECORDING || next == FAILED || next == IDLE
-        RECORDING -> next == PAUSED || next == FINALIZING || next == INTERRUPTED || next == FAILED
+        RECORDING -> next == RECORDING || next == PAUSED || next == FINALIZING || next == INTERRUPTED || next == FAILED
         PAUSED -> next == RECORDING || next == FINALIZING || next == INTERRUPTED || next == FAILED
-        INTERRUPTED -> next == RECOVERABLE || next == FINALIZING || next == FAILED
+        INTERRUPTED -> next == RECORDING || next == RECOVERABLE || next == FINALIZING || next == FAILED
         RECOVERABLE -> next == RECORDING || next == FINALIZING || next == FAILED
         FINALIZING -> next == COMPLETED || next == FAILED
         COMPLETED, FAILED -> next == IDLE
