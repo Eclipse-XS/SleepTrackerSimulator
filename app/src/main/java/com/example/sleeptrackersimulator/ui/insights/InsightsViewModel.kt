@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class InsightsUiState(
-    val timeRangeDays: Int = 7,
+    val timeRangeDays: Int = 0,
     val summaries: List<SessionSummary> = emptyList(),
     val averageLowMotionFraction: Float = 0.0f,
     val medianDurationMs: Long = 0L,
@@ -34,12 +34,10 @@ class InsightsViewModel(
     val uiState: StateFlow<InsightsUiState> = _uiState.asStateFlow()
 
     init {
-        loadInsights(7)
+        loadInsights(0)
     }
 
-    fun setTimeRange(days: Int) {
-        loadInsights(days)
-    }
+    fun refresh() = loadInsights(0)
 
     private fun loadInsights(days: Int) {
         viewModelScope.launch {
