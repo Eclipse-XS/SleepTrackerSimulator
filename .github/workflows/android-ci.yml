@@ -22,14 +22,31 @@ jobs:
           mkdir -p app
           printf '%s\n' '{"project_info":{"project_number":"1234567890","project_id":"demo-sleep-tracker-ci","storage_bucket":"demo-sleep-tracker-ci.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:1234567890:android:0000000000000000","android_client_info":{"package_name":"com.example.sleeptrackersimulator"}},"api_key":[{"current_key":"not-a-real-key"}]}],"configuration_version":"1"}' > app/google-services.json
       - run: chmod +x gradlew
-      - run: ./gradlew testDebugUnitTest assembleDebug lintDebug --stacktrace
-      - uses: actions/upload-artifact@v4
+      - name: Build and verify both Android apps
+        run: ./gradlew :app:testDebugUnitTest :virtualsleepband:testDebugUnitTest :app:assembleDebug :virtualsleepband:assembleDebug :app:lintDebug :virtualsleepband:lintDebug --stacktrace
+      - name: Upload SleepSense APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SleepSense-debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload VirtualSleepBand APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VirtualSleepBand-debug-APK
+          path: virtualsleepband/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Android reports
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: android-reports
           path: |
             app/build/reports/
-            app/build/outputs/apk/debug/
+            virtualsleepband/build/reports/
+
 
   firebase-rules:
     runs-on: ubuntu-latest
