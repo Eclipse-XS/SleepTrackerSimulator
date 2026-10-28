@@ -1,5 +1,7 @@
 package com.example.virtualsleepband.ui
 
+import com.example.virtualsleepband.BuildConfig
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,7 +82,7 @@ fun VirtualBandScreen(
                             color = TextPrimary,
                         )
                         Text(
-                            text = "GATT Peripheral Simulator (0x180D & 0x180F)",
+                            text = "${BuildConfig.VERSION_NAME} · GATT Peripheral Simulator (0x180D & 0x180F)",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextMuted,
                         )

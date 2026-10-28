@@ -47,6 +47,7 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         runCatching { cameraManager.registerTorchCallback(torchCallback, null) }
     }
 
+    @Synchronized
     override fun triggerVibrationPulse(): ActuatorResult {
         if (!vibratorAvailable) return unavailable("Vibrator unavailable")
         return runOperation("Vibration pulse triggered") {
@@ -55,6 +56,7 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         }
     }
 
+    @Synchronized
     override fun setPersistentVibration(enabled: Boolean): ActuatorResult {
         if (!enabled && !vibratorAvailable) {
             return ActuatorResult(ActuatorOperationStatus.SUCCESS, "Vibration disabled")
@@ -75,6 +77,7 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         }
     }
 
+    @Synchronized
     override fun setFlashlightEnabled(enabled: Boolean): ActuatorResult {
         if (!enabled && !flashlightAvailable) {
             return ActuatorResult(ActuatorOperationStatus.SUCCESS, "Flashlight disabled")
@@ -91,6 +94,7 @@ class AndroidSmartActuator(context: Context) : SmartActuator {
         }
     }
 
+    @Synchronized
     override fun stopAll() {
         cancelVibration("stopAll")
         if (flashlightAvailable && ContextCompat.checkSelfPermission(

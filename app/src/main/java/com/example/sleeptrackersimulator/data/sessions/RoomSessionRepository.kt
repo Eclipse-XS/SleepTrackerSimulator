@@ -150,6 +150,10 @@ class RoomSessionRepository(
     suspend fun resetDemoNights(): Int = withContext(dispatcher) { sessionDao.deleteDemoSessions() }
     suspend fun countDemoNights(): Int = withContext(dispatcher) { sessionDao.countDemoSessions() }
 
+    suspend fun clearAllLocalData() = withContext(dispatcher) {
+        requireNotNull(database) { "Database is required to clear all local data" }.clearAllTables()
+    }
+
     suspend fun verifyDemoNights(expectedCount: Int = 90, nowUtcMillis: Long = System.currentTimeMillis()): List<String> = withContext(dispatcher) {
         val sessions = sessionDao.getDemoSessions().map { it.toDomain() }
         val summaries = sessionSummaryDao.getDemoSummaries().map { it.toDomain() }

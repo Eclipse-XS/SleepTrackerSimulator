@@ -44,6 +44,44 @@ class ActivityClassifierInstrumentedTest {
         assertTrue("Concurrent inference failed: $failures", failures.isEmpty())
     }
 
+    @Test fun closeWaitsForNativeInferenceAndPreventsUseAfterClose() {
+        val classifier = ActivityClassifier(ApplicationProvider.getApplicationContext())
+        val executor = Executors.newFixedThreadPool(2)
+        val started = CountDownLatch(1)
+        val completed = CountDownLatch(2)
+        val unexpected = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+        val window = Array(20) { floatArrayOf(0f, 0f, 9.81f) }
+
+        executor.execute {
+            try {
+                started.countDown()
+                repeat(100) { classifier.classify(window) }
+            } catch (closed: IllegalStateException) {
+                // Closing between serialized calls is an expected terminal outcome.
+            } catch (error: Throwable) {
+                unexpected.add(error)
+            } finally {
+                completed.countDown()
+            }
+        }
+        executor.execute {
+            try {
+                started.await()
+                classifier.close()
+            } catch (error: Throwable) {
+                unexpected.add(error)
+            } finally {
+                completed.countDown()
+            }
+        }
+
+        assertTrue("Concurrent close timed out", completed.await(30, TimeUnit.SECONDS))
+        executor.shutdownNow()
+        assertTrue("Native inference/close failed: $unexpected", unexpected.isEmpty())
+        val afterClose = runCatching { classifier.classify(window) }.exceptionOrNull()
+        assertTrue(afterClose is IllegalStateException)
+    }
+
     @Test fun realTfliteModelClassifiesRestWindow() {
         ActivityClassifier(ApplicationProvider.getApplicationContext()).use { classifier ->
             val window = Array(20) { floatArrayOf(0f, 0f, 9.81f) }

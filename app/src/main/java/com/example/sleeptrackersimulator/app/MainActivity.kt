@@ -49,6 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.example.sleeptrackersimulator.ble.BleOperationResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
@@ -279,10 +281,13 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             onBack = { activeOverlay = AppOverlay.NONE },
                             onOpenDeveloperLab = { activeOverlay = AppOverlay.DEVELOPER_LAB },
-                            onExportData = { /* Handled locally */ },
+                            onExportData = { activeOverlay = AppOverlay.DEVELOPER_LAB },
                             onDeleteAllData = {
-                                historyViewModel.deleteSession("")
+                                lifecycleScope.launch {
+                                    container.sessionRepository.clearAllLocalData()
+                                }
                             },
+                            deleteAllEnabled = !todayState.sessionStatus.isActive,
                         )
                     }
                     AppOverlay.AUTOMATIONS -> {
@@ -327,8 +332,12 @@ class MainActivity : ComponentActivity() {
                         val bleAdvState by appContainer.virtualSleepBandAdvertiser.state.collectAsStateWithLifecycle()
                         DeveloperLabScreen(
                             onBack = { activeOverlay = AppOverlay.NONE },
+                            actuatorState = actuatorState,
                             onTriggerVibration = { actuatorViewModel.testVibration() },
-                            onTriggerFlashlight = { requestFlashlightChange(true) },
+                            onPersistentVibrationChanged = actuatorViewModel::setManualVibration,
+                            onFlashlightChanged = ::requestFlashlightChange,
+                            onEmergencyOff = { actuatorViewModel.emergencyOff() },
+                            onAutomaticControlChanged = actuatorViewModel::setAutomaticControlEnabled,
                             onTriggerBleAlert = { bleViewModel.sendAlert("DEV_LAB") },
                             onOpenLegacyDashboard = { activeOverlay = AppOverlay.LEGACY_DASHBOARD },
                             isBleAdvertising = bleAdvState.isAdvertising,

@@ -67,4 +67,23 @@ class DemoDatasetRoomTest {
         val errors = repository.verifyDemoNights()
         assertTrue(errors.any { it.startsWith("Missing summary") })
     }
+
+    @Test fun clearAllLocalDataRemovesRealAndDemoSessions() = runBlocking {
+        val real = RecordingSession(
+            sessionId = "real-to-delete",
+            startUtcMillis = 1000,
+            endUtcMillis = 2000,
+            startElapsedRealtimeNanos = 1,
+            status = SessionStatus.COMPLETED,
+            sourceMode = SourceMode.PHONE_ONLY,
+            devicePlacement = DevicePlacement.MATTRESS,
+        )
+        repository.saveSession(real)
+        repository.importDemoNights(DemoDatasetGenerator().generate())
+
+        repository.clearAllLocalData()
+
+        assertEquals(null, repository.getSessionById(real.sessionId))
+        assertEquals(0, repository.countDemoNights())
+    }
 }
