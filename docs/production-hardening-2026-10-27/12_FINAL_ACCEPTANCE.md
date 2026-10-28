@@ -34,4 +34,4 @@
 - Independent real-world ML validation. No real-user 98% accuracy claim is supported.
 - Production signing, Play Console declarations and release telemetry review.
 
-GitHub Actions status is recorded separately after the final commit is pushed; a queued or merely started workflow is not counted as PASS.
+GitHub Actions [run 40686053610](https://github.com/Eclipse-XS/SleepTrackerSimulator/actions/runs/40686053610) completed successfully for code commit `3c435e053724b3e944090c4601fcb2db0251fe3c`. The final evidence-only commit remains subject to the PR checks; a queued or merely started workflow is not counted as PASS.

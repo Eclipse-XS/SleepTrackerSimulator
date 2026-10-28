@@ -13,7 +13,7 @@ Final local correctness gate executed on 2026-10-28 against the code staged for 
 | Firebase Realtime Database rules | PASS | 11/11 tests using the local Firebase Database Emulator. |
 | Python evaluation-quality tests | PASS | 8/8 tests; malformed probability vectors, labels, bins, empty inputs and leakage covered. |
 | Dataset CSV verification | PASS | Schema, 1,200-row ingestion and synthetic benchmark pipeline completed. The synthetic score is not real-world accuracy evidence. |
-| GitHub Actions | PENDING | Must be read from PR #3 after the final commit is pushed; local PASS is not substituted for CI. |
+| GitHub Actions | PASS | Android and `firebase-rules` jobs completed successfully for code commit `3c435e053724b3e944090c4601fcb2db0251fe3c` in [run 40686053610](https://github.com/Eclipse-XS/SleepTrackerSimulator/actions/runs/40686053610). |
 | Physical torch/vibration | NOT_VERIFIED | No supported physical-device observation was performed. Android API success is not physical-effect evidence. |
 | Two-phone BLE E2E | NOT_VERIFIED | No two-device scan/CCCD/stream/reconnect measurement was performed. |
 | Original screen-recorder crash reproduction | NOT_VERIFIED | Emulator tests do not reproduce the original physical field condition. |
