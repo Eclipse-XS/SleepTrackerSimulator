@@ -4,10 +4,46 @@ import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.sin
 
 class ActivityClassifierInstrumentedTest {
+    @Test fun sharedClassifierSerializesConcurrentNativeInference() {
+        val classifier = ActivityClassifier(ApplicationProvider.getApplicationContext())
+        val executor = Executors.newFixedThreadPool(2)
+        val start = CountDownLatch(1)
+        val completed = CountDownLatch(2)
+        val failures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+        repeat(2) { worker ->
+            executor.execute {
+                try {
+                    start.await()
+                    repeat(100) { iteration ->
+                        val phase = worker * 100 + iteration
+                        val window = Array(20) { index ->
+                            val wave = sin((index + phase) * 0.31).toFloat()
+                            floatArrayOf(wave, -wave, 9.81f + wave)
+                        }
+                        classifier.classify(window)
+                    }
+                } catch (error: Throwable) {
+                    failures.add(error)
+                } finally {
+                    completed.countDown()
+                }
+            }
+        }
+
+        start.countDown()
+        assertTrue("Concurrent inference timed out", completed.await(30, TimeUnit.SECONDS))
+        executor.shutdownNow()
+        classifier.close()
+        assertTrue("Concurrent inference failed: $failures", failures.isEmpty())
+    }
+
     @Test fun realTfliteModelClassifiesRestWindow() {
         ActivityClassifier(ApplicationProvider.getApplicationContext()).use { classifier ->
             val window = Array(20) { floatArrayOf(0f, 0f, 9.81f) }
