@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Production Android BLE GATT Transport client communicating with genuine Bluetooth peripherals.
@@ -68,7 +69,7 @@ class AndroidGattDeviceTransport(
     private var activeGatt: BluetoothGatt? = null
     private var scanTimeoutJob: Job? = null
     private var connectionTimeoutJob: Job? = null
-    private val discoveredSourceKinds = mutableMapOf<String, SourceKind>()
+    private val discoveredSourceKinds = ConcurrentHashMap<String, SourceKind>()
 
     private val scanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
@@ -111,10 +112,14 @@ class AndroidGattDeviceTransport(
     private val gattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+            if (gatt != null && activeGatt != null && gatt !== activeGatt) {
+                gatt.close()
+                return
+            }
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     _connectionState.value = DeviceConnectionState.DISCOVERING_SERVICES
-                    gatt?.discoverServices()
+                    if (gatt?.discoverServices() != true) _connectionState.value = DeviceConnectionState.ERROR
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     connectionTimeoutJob?.cancel()
                     _connectionState.value = DeviceConnectionState.DISCONNECTED
@@ -133,6 +138,7 @@ class AndroidGattDeviceTransport(
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
+            if (gatt !== activeGatt) return
             if (status == BluetoothGatt.GATT_SUCCESS && gatt != null) {
                 val hrService = gatt.getService(UUID_HEART_RATE_SERVICE)
                 val hrChar = hrService?.getCharacteristic(UUID_HEART_RATE_MEASUREMENT)
@@ -140,13 +146,16 @@ class AndroidGattDeviceTransport(
                 if (hrChar != null) {
                     _connectionState.value = DeviceConnectionState.SUBSCRIBING
                     // Enable local notification
-                    gatt.setCharacteristicNotification(hrChar, true)
+                    if (!gatt.setCharacteristicNotification(hrChar, true)) {
+                        _connectionState.value = DeviceConnectionState.ERROR
+                        return
+                    }
 
                     // Write CCCD descriptor to subscribe to notifications on peripheral
                     val descriptor = hrChar.getDescriptor(UUID_CCCD)
                     if (descriptor != null) {
                         descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(descriptor)
+                        if (!gatt.writeDescriptor(descriptor)) _connectionState.value = DeviceConnectionState.ERROR
                     } else _connectionState.value = DeviceConnectionState.ERROR
                 } else {
                     _connectionState.value = DeviceConnectionState.ERROR
@@ -157,6 +166,7 @@ class AndroidGattDeviceTransport(
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
+            if (gatt !== activeGatt) return
             if (descriptor?.uuid == UUID_CCCD) {
                 _connectionState.value = if (status == BluetoothGatt.GATT_SUCCESS) {
                     connectionTimeoutJob?.cancel()
@@ -170,6 +180,7 @@ class AndroidGattDeviceTransport(
             gatt: BluetoothGatt?,
             characteristic: BluetoothGattCharacteristic?,
         ) {
+            if (gatt !== activeGatt) return
             if (characteristic?.uuid == UUID_HEART_RATE_MEASUREMENT) {
                 val value = characteristic.value ?: return
                 parseHeartRateMeasurement(value, gatt?.device?.address ?: "unknown")
@@ -244,6 +255,9 @@ class AndroidGattDeviceTransport(
         }
 
         stopScan()
+        activeGatt?.disconnect()
+        activeGatt?.close()
+        activeGatt = null
         val device = bluetoothAdapter?.getRemoteDevice(deviceId)
             ?: return Result.failure(IllegalArgumentException("Invalid Bluetooth device address: $deviceId"))
 

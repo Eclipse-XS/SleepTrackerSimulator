@@ -43,6 +43,6 @@ interface SessionCoordinator {
         bpm: Int,
         utcTimestampMillis: Long = System.currentTimeMillis(),
         timingUncertaintyMillis: Long = 0,
-        sourceKind: com.example.sleeptrackersimulator.core.model.SourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.BLE_REAL,
+        sourceKind: com.example.sleeptrackersimulator.core.model.SourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.BLE_UNVERIFIED,
     )
 }

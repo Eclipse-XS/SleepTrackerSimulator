@@ -48,8 +48,13 @@ class DemoDatasetViewModel(
 
     fun verify() = runBusy {
         val count = repository.countDemoNights()
-        val errors = generator.validate(if (generated.isEmpty()) generator.generate() else generated)
-        _state.update { it.copy(importedCount = count, message = if (count == 90 && errors.isEmpty()) "Integrity verified: 90 synthetic sessions" else "Integrity failed: count=$count, errors=${errors.size}") }
+        val errors = repository.verifyDemoNights()
+        _state.update {
+            it.copy(
+                importedCount = count,
+                message = if (errors.isEmpty()) "Room integrity verified: 90 synthetic sessions and summaries" else "Integrity failed: ${errors.joinToString(limit = 3)}",
+            )
+        }
     }
 
     fun reset() = runBusy {

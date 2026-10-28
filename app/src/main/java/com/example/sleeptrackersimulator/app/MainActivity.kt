@@ -496,6 +496,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                     AppTab.INSIGHTS -> InsightsScreen(
                                         state = insightsState,
+                                        onSelectMode = insightsViewModel::selectMode,
                                     )
                                     AppTab.DEVICES -> DevicesScreen(
                                         state = devicesState,

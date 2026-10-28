@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,8 +46,25 @@ class DemoDatasetRoomTest {
         repository.importDemoNights(nights)
         repository.importDemoNights(nights)
         assertEquals(90, repository.countDemoNights())
+        assertTrue(repository.verifyDemoNights().isEmpty())
         assertEquals(90, repository.resetDemoNights())
         assertEquals(0, repository.countDemoNights())
         assertNotNull(repository.getSessionById("real-session"))
+    }
+
+    @Test fun verificationReadsPersistedRowsAndRejectsCorruption() = runBlocking {
+        val nights = DemoDatasetGenerator().generate()
+        repository.importDemoNights(nights)
+        repository.saveSessionSummary(nights.first().summary.copy(dataCoverageFraction = 1.5f))
+        val errors = repository.verifyDemoNights()
+        assertTrue(errors.any { it.startsWith("Invalid coverage") })
+    }
+
+    @Test fun verificationDetectsMissingSummary() = runBlocking {
+        val nights = DemoDatasetGenerator().generate()
+        repository.importDemoNights(nights.dropLast(1))
+        repository.saveSession(nights.last().session)
+        val errors = repository.verifyDemoNights()
+        assertTrue(errors.any { it.startsWith("Missing summary") })
     }
 }

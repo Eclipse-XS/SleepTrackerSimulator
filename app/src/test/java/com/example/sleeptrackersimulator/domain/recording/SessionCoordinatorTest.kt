@@ -140,4 +140,11 @@ class SessionCoordinatorTest {
         coordinator.stopSession().getOrThrow()
         assertEquals(SourceKind.SIMULATED, repository.getSessionSummary(session.sessionId)?.sourceKind)
     }
+
+    @Test fun `unspecified BLE provenance is persisted as unverified not real`() = runTest(testDispatcher) {
+        val session = coordinator.startSession(sourceMode = SourceMode.WEARABLE_ONLY).getOrThrow()
+        coordinator.ingestHeartRateSample("unknown-band", 64)
+        coordinator.stopSession().getOrThrow()
+        assertEquals(SourceKind.BLE_UNVERIFIED, repository.getSessionSummary(session.sessionId)?.sourceKind)
+    }
 }

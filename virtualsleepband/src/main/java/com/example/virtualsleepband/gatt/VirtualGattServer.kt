@@ -29,10 +29,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.time.Instant
 
 data class CommandLogEntry(
     val timestamp: String,
@@ -66,20 +65,25 @@ class VirtualGattServer(
     val state: StateFlow<BandPeripheralState> = _state.asStateFlow()
 
     private var gattServer: BluetoothGattServer? = null
-    private val connectedDevices = mutableSetOf<BluetoothDevice>()
-    private val heartRateSubscribers = mutableSetOf<BluetoothDevice>()
+    private val connectedDevices = ConcurrentHashMap.newKeySet<BluetoothDevice>()
+    private val heartRateSubscribers = ConcurrentHashMap.newKeySet<BluetoothDevice>()
     private var streamJob: Job? = null
     private var syntheticHeartRate = SimulatedHeartRate()
     private var simulationSeconds = 0L
 
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private var pendingBatteryService: BluetoothGattService? = null
+    @Volatile private var isStarting = false
+    private val registrationSequencer = GattRegistrationSequencer()
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             _state.value = _state.value.copy(isAdvertising = true, errorMessage = null)
+            startTransmissionLoop()
         }
 
         override fun onStartFailure(errorCode: Int) {
+            streamJob?.cancel()
+            streamJob = null
             _state.value = _state.value.copy(
                 isAdvertising = false,
                 errorMessage = "Advertising failed: error code $errorCode",
@@ -88,6 +92,20 @@ class VirtualGattServer(
     }
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+            if (!isStarting) return
+            when (registrationSequencer.onServiceAdded(status == BluetoothGatt.GATT_SUCCESS, service?.uuid)) {
+                RegistrationAction.ADD_BATTERY -> {
+                    val battery = pendingBatteryService
+                    if (battery == null || gattServer?.addService(battery) != true) failStartup("Battery service registration could not start")
+                }
+                RegistrationAction.START_ADVERTISING -> startAdvertiserAfterServicesRegistered()
+                RegistrationAction.FAIL -> failStartup("GATT service registration failed or arrived out of order: $status")
+                RegistrationAction.IGNORE -> Unit
+            }
+        }
+
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
             if (device == null) return
@@ -136,7 +154,7 @@ class VirtualGattServer(
             val target = device ?: return
             val commandText = value?.let { String(it, Charsets.UTF_8) } ?: "<empty>"
             val logEntry = CommandLogEntry(
-                timestamp = timeFormat.format(Date()),
+                timestamp = Instant.now().toString(),
                 sourceDevice = target.address ?: "Central",
                 characteristicUuid = characteristic?.uuid?.toString()?.take(8) ?: "Unknown",
                 command = commandText,
@@ -186,34 +204,28 @@ class VirtualGattServer(
 
     @SuppressLint("MissingPermission")
     fun startAdvertising(): Result<Unit> {
+        if (_state.value.isAdvertising || isStarting) return Result.success(Unit)
         if (!hasPermissions()) {
             val msg = "Missing required Bluetooth permissions"
             _state.value = _state.value.copy(errorMessage = msg)
             return Result.failure(SecurityException(msg))
         }
 
-        val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+        bluetoothAdapter?.bluetoothLeAdvertiser
             ?: return Result.failure(IllegalStateException("BLE Advertising is not supported on this hardware"))
 
         // Set up GATT Server
         gattServer = bluetoothManager?.openGattServer(context, gattServerCallback)
-        setupServices()
-
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(true)
-            .build()
-
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false)
-            .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
-            .addManufacturerData(SIMULATOR_MANUFACTURER_ID, SIMULATOR_MARKER)
-            .build()
-
-        advertiser.startAdvertising(settings, data, advertiseCallback)
+            ?: return Result.failure(IllegalStateException("Unable to open GATT server"))
+        val (heartRateService, batteryService) = createServices()
+        pendingBatteryService = batteryService
+        isStarting = true
+        registrationSequencer.start()
+        if (gattServer?.addService(heartRateService) != true) {
+            failStartup("Heart-rate service registration could not start")
+            return Result.failure(IllegalStateException("Heart-rate service registration could not start"))
+        }
         simulationSeconds = 0L
-        startTransmissionLoop()
 
         return Result.success(Unit)
     }
@@ -229,6 +241,9 @@ class VirtualGattServer(
             gattServer?.close()
         }
         gattServer = null
+        pendingBatteryService = null
+        isStarting = false
+        registrationSequencer.stop()
         connectedDevices.clear()
         heartRateSubscribers.clear()
         _state.value = _state.value.copy(isAdvertising = false, connectedCentrals = 0)
@@ -268,7 +283,7 @@ class VirtualGattServer(
     }
 
     @SuppressLint("MissingPermission")
-    private fun setupServices() {
+    private fun createServices(): Pair<BluetoothGattService, BluetoothGattService> {
         // 1. Heart Rate Service (0x180D)
         val hrService = BluetoothGattService(UUID_HEART_RATE_SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 
@@ -297,7 +312,6 @@ class VirtualGattServer(
             BluetoothGattCharacteristic.PERMISSION_WRITE,
         )
         hrService.addCharacteristic(customCommand)
-        gattServer?.addService(hrService)
 
         // 2. Battery Service (0x180F)
         val batService = BluetoothGattService(UUID_BATTERY_SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
@@ -312,7 +326,43 @@ class VirtualGattServer(
         )
         batLevel.addDescriptor(batCccd)
         batService.addCharacteristic(batLevel)
-        gattServer?.addService(batService)
+        return hrService to batService
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startAdvertiserAfterServicesRegistered() {
+        if (!isStarting || !hasPermissions()) {
+            failStartup("Bluetooth permission lost during startup")
+            return
+        }
+        val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser ?: run {
+            failStartup("BLE advertiser became unavailable")
+            return
+        }
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            .setConnectable(true)
+            .build()
+        val data = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
+            .addManufacturerData(SIMULATOR_MANUFACTURER_ID, SIMULATOR_MARKER)
+            .build()
+        isStarting = false
+        registrationSequencer.stop()
+        advertiser.startAdvertising(settings, data, advertiseCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun failStartup(message: String) {
+        isStarting = false
+        streamJob?.cancel()
+        streamJob = null
+        runCatching { gattServer?.close() }
+        gattServer = null
+        pendingBatteryService = null
+        _state.value = _state.value.copy(isAdvertising = false, errorMessage = message)
     }
 
     @SuppressLint("MissingPermission")

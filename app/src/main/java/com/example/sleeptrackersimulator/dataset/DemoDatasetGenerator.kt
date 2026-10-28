@@ -9,18 +9,31 @@ import com.example.sleeptrackersimulator.core.model.SourceKind
 import com.example.sleeptrackersimulator.core.model.SourceMode
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import java.time.Clock
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZonedDateTime
 
 data class DemoNight(val session: RecordingSession, val summary: SessionSummary)
 
-class DemoDatasetGenerator(private val seed: Int = 20261027) {
-    fun generate(count: Int = 90, anchorUtcMillis: Long = DEFAULT_ANCHOR_UTC): List<DemoNight> {
+class DemoDatasetGenerator(
+    private val seed: Int = 20261027,
+    private val clock: Clock = Clock.systemDefaultZone(),
+) {
+    fun generate(count: Int = 90, endDate: LocalDate = LocalDate.now(clock)): List<DemoNight> {
         require(count in 1..3650)
+        require(!endDate.isAfter(LocalDate.now(clock))) { "Demo end date cannot be in the future" }
         val random = Random(seed)
+        val plannedEnd = endDate.atTime(LocalTime.of(6, 0)).atZone(clock.zone)
+        val anchorEnd = if (endDate == LocalDate.now(clock) && plannedEnd.toInstant().isAfter(clock.instant())) {
+            ZonedDateTime.ofInstant(clock.instant(), clock.zone)
+        } else plannedEnd
         return (0 until count).map { index ->
             val nightNumber = index + 1
-            val start = anchorUtcMillis - (count - nightNumber).toLong() * DAY_MS
             val durationMinutes = 390 + random.nextInt(151)
             val durationMs = durationMinutes * 60_000L
+            val end = anchorEnd.minusDays((count - nightNumber).toLong()).toInstant().toEpochMilli()
+            val start = end - durationMs
             val coverage = (0.82f + random.nextFloat() * 0.18f).coerceIn(0f, 1f)
             val anomalous = nightNumber % 19 == 0
             val lowMotion = if (anomalous) 0.48f + random.nextFloat() * 0.12f else 0.70f + random.nextFloat() * 0.22f
@@ -31,7 +44,7 @@ class DemoDatasetGenerator(private val seed: Int = 20261027) {
             val session = RecordingSession(
                 sessionId = id,
                 startUtcMillis = start,
-                endUtcMillis = start + durationMs,
+                endUtcMillis = end,
                 startElapsedRealtimeNanos = 0L,
                 status = SessionStatus.COMPLETED,
                 sourceMode = SourceMode.DEMO,
@@ -42,7 +55,7 @@ class DemoDatasetGenerator(private val seed: Int = 20261027) {
                 qualityStatus = quality,
                 interruptionReason = "Synthetic demonstration record",
                 createdAt = start,
-                updatedAt = start + durationMs,
+                updatedAt = end,
             )
             val summary = SessionSummary(
                 sessionId = id,
@@ -56,7 +69,7 @@ class DemoDatasetGenerator(private val seed: Int = 20261027) {
                 sourceKind = SourceKind.SIMULATED,
                 devicePlacement = DevicePlacement.MATTRESS,
                 modelVersion = "demo-generator-v1",
-                calculatedAtUtcMillis = start + durationMs,
+                calculatedAtUtcMillis = end,
             )
             DemoNight(session, summary)
         }
@@ -68,6 +81,8 @@ class DemoDatasetGenerator(private val seed: Int = 20261027) {
             if (night.session.sourceMode != SourceMode.DEMO || night.summary.sourceKind != SourceKind.SIMULATED) add("Invalid provenance: ${night.session.sessionId}")
             if (night.summary.dataCoverageFraction !in 0f..1f) add("Invalid coverage: ${night.session.sessionId}")
             if (night.summary.validDurationMs !in 0..night.summary.observationDurationMs) add("Invalid duration: ${night.session.sessionId}")
+            val end = night.session.endUtcMillis
+            if (end == null || end < night.session.startUtcMillis) add("Invalid time range: ${night.session.sessionId}")
             val expectedRate = night.summary.movementEpisodeCount / (night.summary.observationDurationMs / 3_600_000f)
             if (kotlin.math.abs(expectedRate - night.summary.movementRatePerHour) > 0.001f) add("Inconsistent movement rate: ${night.session.sessionId}")
         }
@@ -83,7 +98,6 @@ class DemoDatasetGenerator(private val seed: Int = 20261027) {
     private fun Random.nextGaussianLike(): Float = (nextFloat() + nextFloat() + nextFloat() + nextFloat() - 2f)
 
     companion object {
-        const val DEFAULT_ANCHOR_UTC = 1_798_156_800_000L // 2026-12-25T00:00:00Z; stable fixture anchor.
-        private const val DAY_MS = 86_400_000L
+        const val DEFAULT_SEED = 20261027
     }
 }

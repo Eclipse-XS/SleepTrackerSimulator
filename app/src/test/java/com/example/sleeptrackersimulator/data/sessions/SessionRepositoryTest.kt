@@ -242,6 +242,10 @@ class FakeSessionDao : SessionDao {
         it.sourceMode == "DEMO" && it.sessionId.startsWith("demo-v1-")
     }
 
+    override suspend fun getDemoSessions(): List<RecordingSessionEntity> = sessions.values.filter {
+        it.sourceMode == "DEMO" || it.sessionId.startsWith("demo-v1-")
+    }.sortedBy { it.startUtcMillis }
+
     override suspend fun updateStatus(sessionId: String, status: String, updatedAt: Long) {
         sessions[sessionId]?.let {
             sessions[sessionId] = it.copy(status = status, updatedAt = updatedAt)
@@ -323,9 +327,11 @@ class FakePredictionDao : PredictionDao {
 
 class FakeSessionSummaryDao : SessionSummaryDao {
     private val summaries = mutableMapOf<String, SessionSummaryEntity>()
+    private val stateFlow = MutableStateFlow<List<SessionSummaryEntity>>(emptyList())
 
     override suspend fun insertSummary(summary: SessionSummaryEntity) {
         summaries[summary.sessionId] = summary
+        stateFlow.value = summaries.values.toList()
     }
 
     override suspend fun getSummaryBySessionId(sessionId: String): SessionSummaryEntity? =
@@ -333,6 +339,12 @@ class FakeSessionSummaryDao : SessionSummaryDao {
 
     override suspend fun getRecentSummaries(limit: Int): List<SessionSummaryEntity> =
         summaries.values.take(limit)
+
+    override fun observeRecentSummaries(limit: Int): Flow<List<SessionSummaryEntity>> = stateFlow.map { it.take(limit) }
+
+    override suspend fun getDemoSummaries(): List<SessionSummaryEntity> = summaries.values.filter {
+        it.sessionId.startsWith("demo-v1-")
+    }.sortedBy { it.calculatedAtUtcMillis }
 
     override suspend fun getSummariesSince(sinceUtcMillis: Long): List<SessionSummaryEntity> =
         summaries.values.filter { it.calculatedAtUtcMillis >= sinceUtcMillis }

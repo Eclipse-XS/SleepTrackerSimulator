@@ -41,4 +41,5 @@ interface SessionRepository {
         return false
     }
     suspend fun getSessionSummary(sessionId: String): SessionSummary?
+    fun observeAllSummaries(): Flow<List<SessionSummary>>
 }

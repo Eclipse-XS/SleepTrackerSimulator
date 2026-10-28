@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class BleMode { REAL, DEMO }
 
@@ -28,6 +30,7 @@ class SwitchingDeviceTransport(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : DeviceTransport {
     private val _mode = MutableStateFlow(BleMode.REAL)
+    private val operationMutex = Mutex()
     val mode: StateFlow<BleMode> = _mode
 
     private val active: DeviceTransport get() = if (_mode.value == BleMode.REAL) real else demo
@@ -48,14 +51,16 @@ class SwitchingDeviceTransport(
         .flatMapLatest { if (it == BleMode.REAL) real.observeDiscoveredDevices() else demo.observeDiscoveredDevices() }
 
     suspend fun selectMode(mode: BleMode) {
-        if (_mode.value == mode) return
-        active.disconnect()
-        _mode.value = mode
+        operationMutex.withLock {
+            if (_mode.value == mode) return
+            active.disconnect()
+            _mode.value = mode
+        }
     }
 
-    override suspend fun startScan() = active.startScan()
-    override suspend fun stopScan() = active.stopScan()
-    override suspend fun connect(deviceId: String) = active.connect(deviceId)
-    override suspend fun disconnect() = active.disconnect()
-    override suspend fun executeCommand(command: DeviceCommand): Result<CommandResult> = active.executeCommand(command)
+    override suspend fun startScan() = operationMutex.withLock { active.startScan() }
+    override suspend fun stopScan() = operationMutex.withLock { active.stopScan() }
+    override suspend fun connect(deviceId: String) = operationMutex.withLock { active.connect(deviceId) }
+    override suspend fun disconnect() = operationMutex.withLock { active.disconnect() }
+    override suspend fun executeCommand(command: DeviceCommand): Result<CommandResult> = operationMutex.withLock { active.executeCommand(command) }
 }

@@ -1,18 +1,21 @@
 # Test matrix
 
+Final local correctness gate executed on 2026-10-28 against the code staged for PR #3.
+
 | Check | Result | Evidence / limitation |
 |---|---|---|
-| Baseline `:app:testDebugUnitTest` | PASS | Fresh Gradle run. |
-| Baseline `:app:assembleDebug` | PASS | Fresh Gradle run. |
-| Baseline `:virtualsleepband:assembleDebug` | PASS | Fresh Gradle run. |
-| `:virtualsleepband:testDebugUnitTest` | SKIPPED | `NO-SOURCE`; there are no companion unit tests. |
-| Post-change `:app:testDebugUnitTest` | PASS | 197 tests, 0 failures, 0 errors, 0 skipped across 33 XML suites. |
-| `:app:assembleDebug` / `assembleRelease` | PASS | Debug and unsigned release APKs produced. |
-| `:app:lintDebug` / `lintVitalRelease` | PASS | Final combined Gradle run completed successfully. |
-| Companion debug/release assembly and lint | PASS | Both APK variants and both lint gates completed successfully. |
-| Instrumentation | SKIPPED | `adb` unavailable on PATH. |
-| Screen recorder, lock, background, rotation, endurance | SKIPPED | Requires emulator/physical device automation. |
-| Physical torch/vibration | SKIPPED | Requires supported hardware and human confirmation. |
-| Two-phone BLE, 60 packets, reconnect | SKIPPED | Two physical devices unavailable. |
+| `:app:testDebugUnitTest` + `:virtualsleepband:testDebugUnitTest` | PASS | 223 tests, 0 failures, 0 errors, 0 skipped across generated JUnit XML. |
+| `:app:connectedDebugAndroidTest` | PASS | 27 tests on Pixel 10 Pro AVD, Android API 16; includes Room corruption cases and Compose Insights UI. |
+| App debug/release assembly | PASS | Both APK variants assembled locally. Release APK is not Play-signed. |
+| VirtualSleepBand debug/release assembly | PASS | Both APK variants assembled locally. |
+| App `lintDebug` / `lintVitalRelease` | PASS | Fresh local Gradle gate after correctness changes. |
+| VirtualSleepBand `lintDebug` / `lintVitalRelease` | PASS | Fresh local Gradle gate; missing-permission cleanup path corrected. |
+| Firebase Realtime Database rules | PASS | 11/11 tests using the local Firebase Database Emulator. |
+| Python evaluation-quality tests | PASS | 8/8 tests; malformed probability vectors, labels, bins, empty inputs and leakage covered. |
+| Dataset CSV verification | PASS | Schema, 1,200-row ingestion and synthetic benchmark pipeline completed. The synthetic score is not real-world accuracy evidence. |
+| GitHub Actions | PENDING | Must be read from PR #3 after the final commit is pushed; local PASS is not substituted for CI. |
+| Physical torch/vibration | NOT_VERIFIED | No supported physical-device observation was performed. Android API success is not physical-effect evidence. |
+| Two-phone BLE E2E | NOT_VERIFIED | No two-device scan/CCCD/stream/reconnect measurement was performed. |
+| Original screen-recorder crash reproduction | NOT_VERIFIED | Emulator tests do not reproduce the original physical field condition. |
 
-Historical XML and screenshots in `docs/evidence` are not counted as newly executed results.
+Historical XML, screenshots and earlier workflow runs are not counted as results for this gate.

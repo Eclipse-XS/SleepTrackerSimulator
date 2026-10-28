@@ -12,6 +12,7 @@ import com.example.sleeptrackersimulator.core.model.RawSensorSample
 import com.example.sleeptrackersimulator.core.model.RecordingSession
 import com.example.sleeptrackersimulator.core.model.SessionSummary
 import com.example.sleeptrackersimulator.core.model.SourceMode
+import com.example.sleeptrackersimulator.core.model.SourceKind
 import com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
 import com.example.sleeptrackersimulator.domain.recording.SessionRepository
 import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
@@ -149,6 +150,32 @@ class RoomSessionRepository(
     suspend fun resetDemoNights(): Int = withContext(dispatcher) { sessionDao.deleteDemoSessions() }
     suspend fun countDemoNights(): Int = withContext(dispatcher) { sessionDao.countDemoSessions() }
 
+    suspend fun verifyDemoNights(expectedCount: Int = 90, nowUtcMillis: Long = System.currentTimeMillis()): List<String> = withContext(dispatcher) {
+        val sessions = sessionDao.getDemoSessions().map { it.toDomain() }
+        val summaries = sessionSummaryDao.getDemoSummaries().map { it.toDomain() }
+        val sessionIds = sessions.map { it.sessionId }
+        val summaryIds = summaries.map { it.sessionId }
+        buildList {
+            if (sessions.size != expectedCount) add("Expected $expectedCount demo sessions, found ${sessions.size}")
+            if (summaries.size != expectedCount) add("Expected $expectedCount demo summaries, found ${summaries.size}")
+            if (sessionIds.distinct().size != sessionIds.size) add("Duplicate demo session IDs")
+            if (summaryIds.distinct().size != summaryIds.size) add("Duplicate demo summary IDs")
+            (sessionIds.toSet() - summaryIds.toSet()).forEach { add("Missing summary: $it") }
+            (summaryIds.toSet() - sessionIds.toSet()).forEach { add("Orphan summary: $it") }
+            val summariesById = summaries.associateBy { it.sessionId }
+            sessions.forEach { session ->
+                val summary = summariesById[session.sessionId] ?: return@forEach
+                if (session.sourceMode != SourceMode.DEMO || summary.sourceKind != SourceKind.SIMULATED) add("Invalid provenance: ${session.sessionId}")
+                val end = session.endUtcMillis
+                if (end == null || end < session.startUtcMillis || end > nowUtcMillis) add("Invalid time range: ${session.sessionId}")
+                if (summary.observationDurationMs <= 0L || summary.validDurationMs !in 0..summary.observationDurationMs) add("Invalid duration: ${session.sessionId}")
+                if (summary.dataCoverageFraction !in 0f..1f) add("Invalid coverage: ${session.sessionId}")
+                val expectedRate = summary.movementEpisodeCount / (summary.observationDurationMs / 3_600_000f)
+                if (!summary.movementRatePerHour.isFinite() || kotlin.math.abs(expectedRate - summary.movementRatePerHour) > 0.001f) add("Inconsistent movement rate: ${session.sessionId}")
+            }
+        }
+    }
+
     // AnalyticsRepository implementation
     override fun observeRecentSessions(limit: Int): Flow<List<RecordingSession>> {
         return sessionDao.observeAllSessions().map { list -> list.take(limit).map { it.toDomain() } }
@@ -162,6 +189,9 @@ class RoomSessionRepository(
     override suspend fun getAllSummaries(): List<SessionSummary> = withContext(dispatcher) {
         sessionSummaryDao.getRecentSummaries(limit = MAX_ANALYTICS_SUMMARIES).map { it.toDomain() }
     }
+
+    override fun observeAllSummaries(): Flow<List<SessionSummary>> =
+        sessionSummaryDao.observeRecentSummaries(MAX_ANALYTICS_SUMMARIES).map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun getPersonalBaseline(
         sourceMode: SourceMode,

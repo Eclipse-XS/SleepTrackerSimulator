@@ -19,6 +19,37 @@ class EvaluationQualityTest(unittest.TestCase):
         self.assertGreaterEqual(value, 0.0)
         self.assertLessEqual(value, 1.0)
 
+    def test_subject_split_rejects_empty_and_non_vector_input(self):
+        for invalid in ([], [["a"], ["b"]]):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                subject_wise_split(invalid)
+
+    def test_subject_split_rejects_invalid_fraction(self):
+        for fraction in (0.0, 1.0, -0.1, 1.1):
+            with self.subTest(fraction=fraction), self.assertRaises(ValueError):
+                subject_wise_split(["a", "b"], test_fraction=fraction)
+
+    def test_leakage_rejects_null_recording_ids(self):
+        with self.assertRaises(ValueError):
+            assert_no_recording_leakage(["a", None], ["b"])
+
+    def test_calibration_rejects_malformed_inputs(self):
+        invalid_cases = [
+            ([], [], 10),
+            ([[0.4, 0.4]], [0], 10),
+            ([[1.1, -0.1]], [0], 10),
+            ([[0.5, 0.5]], [2], 10),
+            ([[0.5, 0.5]], [0.0], 10),
+            ([[0.5, 0.5]], [0], 0),
+        ]
+        for probabilities, labels, bins in invalid_cases:
+            with self.subTest(probabilities=probabilities, labels=labels, bins=bins), self.assertRaises(ValueError):
+                expected_calibration_error(probabilities, labels, bins)
+
+    def test_calibration_accepts_zero_confidence_boundary(self):
+        value = expected_calibration_error([[0.5, 0.5]], np.array([0]), bins=2)
+        self.assertAlmostEqual(0.5, value)
+
 
 if __name__ == "__main__":
     unittest.main()
