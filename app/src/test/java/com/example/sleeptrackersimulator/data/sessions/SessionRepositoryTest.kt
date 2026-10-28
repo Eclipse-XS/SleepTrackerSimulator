@@ -267,9 +267,9 @@ class FakeSensorSampleDao : SensorSampleDao {
     override suspend fun countSamplesForSession(sessionId: String): Int =
         samples.count { it.sessionId == sessionId }
 
-    override suspend fun deleteOldSamples(olderThanUtcMillis: Long): Int {
+    override suspend fun deleteOldSamples(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = samples.size
-        samples.removeAll { it.utcTimestampMillis < olderThanUtcMillis }
+        samples.removeAll { it.utcTimestampMillis < olderThanUtcMillis && (activeSessionId == null || it.sessionId != activeSessionId) }
         return initial - samples.size
     }
 }
@@ -284,9 +284,9 @@ class FakeHeartRateSampleDao : HeartRateSampleDao {
     override suspend fun getSamplesForSession(sessionId: String): List<HeartRateSampleEntity> =
         samples.filter { it.sessionId == sessionId }
 
-    override suspend fun deleteOldSamples(olderThanUtcMillis: Long): Int {
+    override suspend fun deleteOldSamples(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = samples.size
-        samples.removeAll { it.utcTimestampMillis < olderThanUtcMillis }
+        samples.removeAll { it.utcTimestampMillis < olderThanUtcMillis && (activeSessionId == null || it.sessionId != activeSessionId) }
         return initial - samples.size
     }
 }
@@ -301,9 +301,9 @@ class FakeFeatureWindowDao : FeatureWindowDao {
     override suspend fun getWindowsForSession(sessionId: String): List<FeatureWindowEntity> =
         windows.filter { it.sessionId == sessionId }
 
-    override suspend fun deleteOldWindows(olderThanUtcMillis: Long): Int {
+    override suspend fun deleteOldWindows(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = windows.size
-        windows.removeAll { it.startUtcMillis < olderThanUtcMillis }
+        windows.removeAll { it.startUtcMillis < olderThanUtcMillis && (activeSessionId == null || it.sessionId != activeSessionId) }
         return initial - windows.size
     }
 }
@@ -318,9 +318,9 @@ class FakePredictionDao : PredictionDao {
     override suspend fun getPredictionsForSession(sessionId: String): List<PredictionEntity> =
         predictions.filter { it.sessionId == sessionId }
 
-    override suspend fun deleteOldPredictions(olderThanUtcMillis: Long): Int {
+    override suspend fun deleteOldPredictions(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = predictions.size
-        predictions.removeAll { it.timestampMillis < olderThanUtcMillis }
+        predictions.removeAll { it.timestampMillis < olderThanUtcMillis && (activeSessionId == null || it.sessionId != activeSessionId) }
         return initial - predictions.size
     }
 }

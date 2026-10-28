@@ -21,15 +21,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,15 +43,20 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sleeptrackersimulator.core.model.DevicePlacement
 import com.example.sleeptrackersimulator.core.model.SessionStatus
 import com.example.sleeptrackersimulator.ui.components.MetricCard
 import com.example.sleeptrackersimulator.ui.components.ProvenanceChip
@@ -70,8 +79,14 @@ fun TodayScreen(
     onOpenAutomations: () -> Unit,
     onDismissError: () -> Unit,
     modifier: Modifier = Modifier,
+    onSelectPlacement: (DevicePlacement) -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    var showInfoDialog by remember { mutableStateOf(false) }
+
+    if (showInfoDialog) {
+        SleepSenseInfoDialog(onDismiss = { showInfoDialog = false })
+    }
 
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let {
@@ -122,6 +137,13 @@ fun TodayScreen(
                 }
 
                 Row {
+                    IconButton(onClick = { showInfoDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Info,
+                            contentDescription = "About SleepSense & Placement Guide",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             imageVector = Icons.Rounded.Settings,
@@ -141,6 +163,7 @@ fun TodayScreen(
                 onPause = onPauseRecording,
                 onResume = onResumeRecording,
                 onStop = onStopRecording,
+                onSelectPlacement = onSelectPlacement,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -267,6 +290,7 @@ private fun SessionHeroCard(
     onResume: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
+    onSelectPlacement: (DevicePlacement) -> Unit = {},
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -303,13 +327,37 @@ private fun SessionHeroCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Device Placement",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = state.selectedPlacement == DevicePlacement.MATTRESS,
+                            onClick = { onSelectPlacement(DevicePlacement.MATTRESS) },
+                            label = { Text("Mattress") },
+                        )
+                        FilterChip(
+                            selected = state.selectedPlacement == DevicePlacement.NIGHTSTAND,
+                            onClick = { onSelectPlacement(DevicePlacement.NIGHTSTAND) },
+                            label = { Text("Nightstand") },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ProvenanceChip(sourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.PHONE_REAL)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Phone Accelerometer · Ready",
+                            text = "Phone Accelerometer · On-Device TFLite (20 Hz)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -465,4 +513,61 @@ private fun SessionHeroCard(
             }
         }
     }
+}
+
+@Composable
+fun SleepSenseInfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "About SleepSense 2.0",
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(
+                    text = "Product Scope & Wellness Notice",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "SleepSense is designed for nocturnal movement observation, rest rhythm tracking, and educational smart automations. It is NOT a medical diagnostic tool and does not detect or treat clinical sleep apnea or medical conditions.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text(
+                    text = "Recommended Placement",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "• Mattress (Near Pillow): Recommended for capturing subtle micro-movements, positional shifts, and restlessness.\n• Nightstand / Flat Surface: Captures ambient vibrations and room movements without direct mattress coupling.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text(
+                    text = "On-Device Intelligence & Privacy",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "Sensor telemetry (20 Hz) is processed locally using a real-time TensorFlow Lite model with automatic fallback to physical RMS/variance heuristics. All data stays offline in your local Room database unless cloud sync is explicitly enabled.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Got It")
+            }
+        },
+    )
 }

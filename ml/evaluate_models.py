@@ -17,7 +17,13 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 
 SEED = 4319
 WINDOW = 20
@@ -129,7 +135,7 @@ def main() -> None:
     print("=" * 60)
 
     train_x, train_y = generate_dataset(1200, SEED)
-    test_x, test_y = generate_dataset(300, SEED + 1)
+    test_x, _ = generate_dataset(300, SEED + 1)
     holdout_x, holdout_y = generate_dataset(250, SEED + 42)
 
     print(f"Dataset split: Train={len(train_x)}, Test={len(test_x)}, Holdout={len(holdout_x)}")
@@ -282,7 +288,7 @@ def main() -> None:
 
 
 def generate_evaluation_markdown(models: dict) -> str:
-    md = f"""# SleepSense 2.0: ML Model Evaluation & Benchmarking Report
+    md = r"""# SleepSense 2.0: ML Model Evaluation & Benchmarking Report
 
 Generated: 2026-10-26  
 Status: Verified & Reproducible On-Device  

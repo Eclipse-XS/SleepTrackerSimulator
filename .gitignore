@@ -21,6 +21,9 @@ tools/.venv/
 ml/.venv/
 __pycache__/
 *.py[cod]
+.pytest_cache/
+mlruns/
+data/processed/
 
 # Secrets, Service Accounts & Keystores
 tools/*service-account*.json

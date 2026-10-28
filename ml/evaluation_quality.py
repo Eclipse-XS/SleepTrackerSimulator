@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 import numpy as np
 
 
@@ -24,7 +25,7 @@ def subject_wise_split(subject_ids, test_fraction: float = 0.2, seed: int = 4319
         raise ValueError("At least two independent subjects are required")
     rng = np.random.default_rng(seed)
     shuffled = rng.permutation(unique)
-    test_count = max(1, int(round(unique.size * test_fraction)))
+    test_count = max(1, round(unique.size * test_fraction))
     test_subjects = set(shuffled[:test_count].tolist())
     test_mask = np.array([subject in test_subjects for subject in subjects])
     return GroupSplit(np.flatnonzero(~test_mask), np.flatnonzero(test_mask))

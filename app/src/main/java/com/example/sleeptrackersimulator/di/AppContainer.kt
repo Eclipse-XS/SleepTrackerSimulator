@@ -47,6 +47,8 @@ interface AppContainer {
     val smartRuleRepository: SmartRuleRepository
     val smartRuleEventCoordinator: SmartRuleEventCoordinator
     val activityClassifier: ActivityClassifier
+    val modelSelectionEngine: com.example.sleeptrackersimulator.ml.ModelSelectionEngine
+    val backgroundAutomationCoordinator: com.example.sleeptrackersimulator.smart.BackgroundAutomationCoordinator
     val sessionRepository: com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
     val analyticsRepository: com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
     val sessionCoordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
@@ -117,6 +119,28 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         ActivityClassifier(context)
     }
 
+    override val modelSelectionEngine: com.example.sleeptrackersimulator.ml.ModelSelectionEngine by lazy {
+        com.example.sleeptrackersimulator.ml.DefaultModelSelectionEngine(activityClassifier)
+    }
+
+    override val backgroundAutomationCoordinator: com.example.sleeptrackersimulator.smart.BackgroundAutomationCoordinator by lazy {
+        com.example.sleeptrackersimulator.smart.DefaultBackgroundAutomationCoordinator(
+            repository = smartRuleRepository,
+            eventCoordinator = smartRuleEventCoordinator,
+            vibration = {
+                val res = smartActuator.triggerVibrationPulse()
+                if (res.successful) res.message else "ERROR:${res.message}"
+            },
+            bleAlert = { eventId ->
+                when (val res = bleConnector.sendAlert(eventId)) {
+                    is com.example.sleeptrackersimulator.ble.BleOperationResult.Success -> res.message
+                    is com.example.sleeptrackersimulator.ble.BleOperationResult.Error -> "ERROR:${res.message}"
+                }
+            },
+            recoveryScheduler = cloudRecoveryScheduler,
+        )
+    }
+
     override val sessionRepository: com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository by lazy {
         com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository(
             sessionDao = database.sessionDao(),
@@ -142,6 +166,9 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             authRepository = authRepository,
             cloudStateStore = cloudStateStore,
             cloudRecoveryScheduler = cloudRecoveryScheduler,
+            modelSelectionEngine = modelSelectionEngine,
+            automationCoordinator = backgroundAutomationCoordinator,
+            dataRetentionPolicy = dataRetentionPolicy,
         )
     }
 
@@ -151,6 +178,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             heartRateSampleDao = database.heartRateSampleDao(),
             featureWindowDao = database.featureWindowDao(),
             predictionDao = database.predictionDao(),
+            sessionDao = database.sessionDao(),
         )
     }
 

@@ -107,6 +107,14 @@ class TodayViewModel(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
+    fun setPlacement(placement: DevicePlacement) {
+        _uiState.value = _uiState.value.copy(selectedPlacement = placement)
+    }
+
+    fun setSourceMode(mode: SourceMode) {
+        _uiState.value = _uiState.value.copy(selectedSourceMode = mode)
+    }
+
     fun reportServiceCommandFailure(operation: String, error: Throwable?) {
         _uiState.value = _uiState.value.copy(
             errorMessage = "$operation failed: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown error"}",

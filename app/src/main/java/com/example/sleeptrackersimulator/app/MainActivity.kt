@@ -493,6 +493,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenSettings = { activeOverlay = AppOverlay.SETTINGS },
                                         onOpenAutomations = { activeOverlay = AppOverlay.AUTOMATIONS },
                                         onDismissError = todayViewModel::dismissError,
+                                        onSelectPlacement = todayViewModel::setPlacement,
                                     )
                                     AppTab.HISTORY -> HistoryScreen(
                                         state = historyState,

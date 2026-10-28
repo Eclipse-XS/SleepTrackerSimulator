@@ -16,27 +16,34 @@ class DataRetentionPolicy(
     private val heartRateSampleDao: HeartRateSampleDao,
     private val featureWindowDao: FeatureWindowDao,
     private val predictionDao: PredictionDao,
-    private val rawSamplesRetentionDays: Int = 7,
-    private val featuresRetentionDays: Int = 30,
-    private val predictionsRetentionDays: Int = 30,
+    private val sessionDao: SessionDao? = null,
+    val rawSamplesRetentionDays: Int = 7,
+    val featuresRetentionDays: Int = 30,
+    val predictionsRetentionDays: Int = 30,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    suspend fun pruneExpiredData(): PruneResult = withContext(dispatcher) {
-        val now = System.currentTimeMillis()
+    suspend fun pruneExpiredData(
+        activeSessionId: String? = null,
+        now: Long = System.currentTimeMillis(),
+    ): PruneResult = withContext(dispatcher) {
+        val effectiveActiveSessionId = activeSessionId ?: sessionDao?.getActiveSession()?.sessionId
         val rawCutoff = now - (rawSamplesRetentionDays * 24 * 60 * 60 * 1000L)
         val featuresCutoff = now - (featuresRetentionDays * 24 * 60 * 60 * 1000L)
         val predictionsCutoff = now - (predictionsRetentionDays * 24 * 60 * 60 * 1000L)
 
-        val deletedSensorSamples = sensorSampleDao.deleteOldSamples(rawCutoff)
-        val deletedHeartRateSamples = heartRateSampleDao.deleteOldSamples(rawCutoff)
-        val deletedWindows = featureWindowDao.deleteOldWindows(featuresCutoff)
-        val deletedPredictions = predictionDao.deleteOldPredictions(predictionsCutoff)
+        val deletedSensorSamples = sensorSampleDao.deleteOldSamples(rawCutoff, effectiveActiveSessionId)
+        val deletedHeartRateSamples = heartRateSampleDao.deleteOldSamples(rawCutoff, effectiveActiveSessionId)
+        val deletedWindows = featureWindowDao.deleteOldWindows(featuresCutoff, effectiveActiveSessionId)
+        val deletedPredictions = predictionDao.deleteOldPredictions(predictionsCutoff, effectiveActiveSessionId)
 
         PruneResult(
             deletedSensorSamples = deletedSensorSamples,
             deletedHeartRateSamples = deletedHeartRateSamples,
             deletedFeatureWindows = deletedWindows,
             deletedPredictions = deletedPredictions,
+            rawCutoffUtcMillis = rawCutoff,
+            featuresCutoffUtcMillis = featuresCutoff,
+            predictionsCutoffUtcMillis = predictionsCutoff,
         )
     }
 }
@@ -46,4 +53,7 @@ data class PruneResult(
     val deletedHeartRateSamples: Int,
     val deletedFeatureWindows: Int,
     val deletedPredictions: Int,
+    val rawCutoffUtcMillis: Long = 0L,
+    val featuresCutoffUtcMillis: Long = 0L,
+    val predictionsCutoffUtcMillis: Long = 0L,
 )

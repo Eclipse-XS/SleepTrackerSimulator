@@ -1,0 +1,38 @@
+{
+  "dataset": {
+    "total_windows": 1200,
+    "test_windows": 240,
+    "test_sessions": [
+      "session-multi-000",
+      "session-multi-001",
+      "session-multi-002"
+    ]
+  },
+  "models": {
+    "heuristic_baseline": {
+      "accuracy": 1.0,
+      "f1_macro": 1.0,
+      "description": "Rule-based RMS/variance heuristic fallback"
+    },
+    "accel_only_dense": {
+      "accuracy": 0.9041666666666667,
+      "f1_macro": 0.873998908629849,
+      "description": "Single-sensor accelerometer dense classifier"
+    },
+    "multimodal_fusion": {
+      "accuracy": 0.975,
+      "f1_macro": 0.966462608435187,
+      "description": "Multimodal late fusion of accelerometer and heart rate"
+    },
+    "multimodal_disconnected_band": {
+      "accuracy": 0.9708333333333333,
+      "f1_macro": 0.9587403446226975,
+      "description": "Multimodal model evaluated with HR mask=0 (band disconnected)"
+    }
+  },
+  "findings": {
+    "hr_accuracy_gain": 0.0708333333333333,
+    "graceful_degradation_delta": 0.004166666666666652,
+    "physiological_validity_note": "CRITICAL: The heart rate stream used in these experiments was generated via synthetic or simulated BLE broadcasts (VirtualSleepBand). Simulated heart rate does NOT constitute proof of clinical efficacy on real human subjects. Physical validation on real human physiological data remains required before any medical or clinical claims can be made."
+  }
+}

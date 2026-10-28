@@ -5,10 +5,12 @@
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202025.02-4285F4.svg?style=flat&logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
-[![Firebase](https://img.shields.io/badge/Firebase-Realtime%20Database-FFA000.svg?style=flat&logo=firebase)](https://firebase.google.com)
-[![Tests](https://img.shields.io/badge/Unit%20Tests-197%20PASSED-brightgreen.svg?style=flat)]()
+[![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
+[![Android Tests](https://img.shields.io/badge/Android%20Tests-237%20PASSED-brightgreen.svg?style=flat)]()
+[![Python Tests](https://img.shields.io/badge/Python%20Tests-16%20PASSED-brightgreen.svg?style=flat)]()
+[![Release Status](https://img.shields.io/badge/Status-READY__FOR__CONTROLLED__BETA-success.svg?style=flat)]()
 
-**SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, and an offline-first Firebase cloud synchronizer.
+**SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
 
 > [!NOTE]
 > **Product Positioning & Medical Disclaimer**: SleepSense is an observational activity tracker and rest diary designed for wellness and behavioral insights. It does **not** diagnose medical conditions (e.g. sleep apnea, narcolepsy, restless leg syndrome) and does not pretend to deliver clinical polysomnography (PSG) sleep staging (NREM/REM) from an uncalibrated smartphone accelerometer. All data is classified transparently as gross body movement intensity with explicit source provenance.
@@ -17,7 +19,8 @@
 - 🎓 **[University Laboratory Reports (Labs 1–7)](deliverables/README.md)** — Complete course deliverables (`.docx` / `.pdf`) and final defense slide deck (`.pptx`).
 - 📚 **[Technical Documentation Index](docs/README.md)** — Comprehensive index of architecture documents, defense guides, and technical specifications.
 - 🔬 **[Independent Acceptance Audits & Visual Screenshots](docs/acceptance/)** — 11 deep-dive audit reports and 25 UI & Developer Lab screenshots.
-- 🧠 **[ML Model Card & Holdout Benchmarks](docs/ml/MODEL_CARD.md)** — Neural network architecture, Holdout metrics ($N=750$), and on-device latency.
+- 🧠 **[ML Model Card & Holdout Benchmarks](docs/ml/MODEL_CARD.md)** — Neural network architecture, Holdout metrics ($N=900$), and on-device latency.
+- 📊 **[Multimodal Ablation Study](docs/ml/multimodal_ablation_study.json)** — Feature ablation evaluating accelerometer vs. BLE heart rate fusion.
 - 📱 **[Internal Testing & QA Distribution](dist/internal-testing/SleepSense-2.0/INSTALL_AND_TEST_UK.md)** — Test plans, APK checksums, and tester guidelines.
 
 ---
@@ -29,7 +32,7 @@ SleepSense transforms the fragmented individual laboratory subsystems into a uni
 ```mermaid
 flowchart TD
     subgraph UI ["Modern Jetpack Compose UI"]
-        Today["Today Screen\n(Hero & Controls)"]
+        Today["Today Screen\n(Hero, Placement & Onboarding)"]
         History["History Screen\n(Timeline & Details)"]
         Insights["Insights Screen\n(Personal Baseline)"]
         Devices["Devices Screen\n(BLE & Phone)"]
@@ -38,81 +41,163 @@ flowchart TD
     end
 
     subgraph Domain ["Domain Layer (Session Lifecycle)"]
-        Coordinator["SessionCoordinator\n(Thread-Safe Mutex)"]
+        Coordinator["SessionCoordinatorImpl\n(Thread-Safe Mutex & Single Brain)"]
+        ModelEngine["ModelSelectionEngine\n(TFLite / Multimodal / Heuristic Fallback)"]
+        BgAutomation["BackgroundAutomationCoordinator\n(Decoupled from UI Lifecycle)"]
         Pipeline["SignalProcessingPipeline\n(Validation & Sliding Windows)"]
-        ML["On-Device TFLite ML 2.0\n(ActivityClassifier)"]
-        Replay["ReplayEngine\n(Deterministic Verification)"]
-        Rules["SmartRuleEngine\n(Hysteresis & Cooldown)"]
     end
 
     subgraph Service ["Background Execution"]
-        ForegroundService["RecordingService\n(Health Foreground Type & WakeLock)"]
-        Actuators["AndroidSmartActuator\n(Vibration & Flashlight)"]
+        ForegroundService["RecordingService\n(Health Foreground Type & Partial WakeLock)"]
+        Actuators["AndroidSmartActuator\n(Vibration & Wearable BLE Alert)"]
     end
 
     subgraph Data ["Data & Persistence Layer"]
-        Room["Room Database v7\n(Sessions, Samples, Baselines)"]
+        Room["Room Database v7\n(Sessions, Samples, Predictions)"]
+        Retention["DataRetentionPolicy & Worker\n(7d Raw / 30d Aggregates Pruning)"]
         BLE["DeviceTransport\n(Mock, Android GATT, Advertiser)"]
         Cloud["Firebase RTDB & Outbox\n(Durable SQLite Queue)"]
     end
 
+    subgraph PythonStack ["Python Data & ML Engineering Stack"]
+        Ingest["Android Export Ingestion\n(JSON / CSV)"]
+        Clean["DataCleaner & Auditor\n(Polars Stream Processing)"]
+        Sync["SensorSynchronizer\n(Windowing & BLE Alignment)"]
+        Feat["FeatureExtractor\n(Physical RMS, Jerk, Variance)"]
+        Validate["Pandera Schema Validation"]
+        Parquet["Partitioned Parquet Dataset\n(Hive partitioned by session & label)"]
+        DuckDB["DuckDB SQL Analytics\n(Session Stats, Correlations, Rest Scores)"]
+        MLflow["MLflow Experiment Tracking & Training\n(Group-aware subject split)"]
+        TfliteExport["TFLite Exporter & Numerical Parity Verifier"]
+    end
+
     Today --> Coordinator
     Coordinator --> ForegroundService
-    ForegroundService --> Pipeline
-    Pipeline --> ML
-    ML --> Rules
-    Rules --> Actuators
+    Coordinator --> ModelEngine
+    Coordinator --> BgAutomation
+    Coordinator --> Retention
+    BgAutomation --> Actuators
     Coordinator --> Room
     Room --> Cloud
     BLE --> Coordinator
-    DevLab --> Replay
+    Room -.->|Export| Ingest
+    Ingest --> Clean --> Sync --> Feat --> Validate --> Parquet --> DuckDB
+    Parquet --> MLflow --> TfliteExport -.->|Deploy| ModelEngine
 ```
 
 ### Key Architectural Tenets:
-1. **Single Session Orchestrator (`SessionCoordinator`)**: Ingestion, ML processing, Room persistence, and summary calculation are owned by a persistent session lifecycle, not short-lived ViewModels.
-2. **Strict Data Provenance**: Every sensor sample, feature window, and baseline calculation records its origin (`PHONE_REAL`, `BLE_REAL`, `SIMULATED`, `REPLAY`, `IMPORTED`). Synthetic demo data is strictly isolated from genuine personal baselines.
-3. **Offline-First & Privacy-Preserving**: All ML inference runs 100% on-device using quantized TFLite models. No raw motion data is ever uploaded without explicit opt-in. Cloud sync uses a durable SQLite outbox with exponential backoff via WorkManager.
-4. **Resilient Long-Running Engine**: Uses Android's `FOREGROUND_SERVICE_HEALTH` API with partial wake locks, batch SQLite inserts (every 50 samples), and automatic session recovery across unexpected process death.
+1. **Single Source of Truth (`SessionCoordinatorImpl`)**: Ingestion, ML inference via `ModelSelectionEngine`, smart automations via `BackgroundAutomationCoordinator`, and Room persistence are unified under a single background-safe lifecycle. Short-lived ViewModels merely observe StateFlows.
+2. **Transparent Model Selection & Fallback Engine**:
+   - `ACCELEROMETER_TFLITE`: On-device TensorFlow Lite model ($1, 20, 3$).
+   - `MULTIMODAL_TFLITE`: Late-fusion model combining 20-sample motion windows with BLE heart rate telemetry.
+   - `RULE_BASED_FALLBACK`: Physical heuristic baseline evaluating centered dynamic acceleration RMS ($<0.10$ m/s$^2$) and variance ($<0.015$). Activates automatically during sensor dropouts or TFLite faults.
+   - `INSUFFICIENT_DATA`: Transparently flags windows with $<20$ samples or NaN/Inf readings.
+3. **Decoupled Background Automations**: `BackgroundAutomationCoordinator` executes rules inside `RecordingService` under partial WakeLock. Vibration pulses and BLE alert packets fire reliably even when the device is locked and screen is off.
+4. **Automated SQLite Retention (`DataRetentionWorker`)**: Periodic 24-hour WorkManager job cleans raw samples older than 7 days and feature windows older than 30 days while explicitly protecting active recording sessions with zero destructive schema migrations.
+5. **Strict Data Provenance**: Every sensor sample, feature window, and baseline records its origin (`PHONE_REAL`, `BLE_REAL`, `BLE_SIMULATED`, `DEMO`, `IMPORTED`). Synthetic demo data is strictly isolated from genuine personal baselines.
 
 ---
 
-## 2. Product Information Architecture
+## 2. Python Data Engineering Pipeline & CLI
 
-| Screen | Primary Purpose | User Experience Details |
-| :--- | :--- | :--- |
-| **Today** | Overnight Recording Hub | Live recording Hero card with real-time ticker, start/pause/resume/finish controls, last night's summary, quick settings entrypoint. |
-| **History** | Longitudinal Observation Log | Chronological list of recorded sessions with Real vs. Demo filters. Detail view features interactive horizontal activity timelines (`REST`, `RESTLESS`, `ACTIVE`), sensor coverage quality, and data deletion. |
-| **Insights** | Personal Rest Analytics | 7 / 30 / 90-day trend comparison against a rolling personal baseline calculated using median and Median Absolute Deviation (MAD). Explicit Quality Gate warnings for fewer than 3 sessions. |
-| **Devices** | Source Transport Management | Status of built-in phone accelerometer, connected Bluetooth LE Heart Rate peripherals (`0x180D`), and Virtual Sleep Band controls with battery and signal indicators. |
-| **Settings** | Privacy & Offline Control | Offline-only defaults, cloud synchronization toggle, local database export, complete data wipe, and Developer Lab entrypoint. |
-| **Developer Lab** | Educational Labs 1–7 Console | Dedicated diagnostics tabs providing full access to raw sensors (L1), BLE inspector (L2), cloud outbox (L3), actuators (L4), Room v7 tables (L5), ML inspector (L6), and pipeline replay trace (L7). |
+SleepSense 2.0 includes an industrial Python Data Engineering stack built on **Polars**, **PyArrow**, **Pandera**, **DuckDB**, and **MLflow**.
+
+### Data Engineering Architecture:
+```
+Android JSON/CSV Export
+       │
+       ▼
+[AndroidExportReader] ──► Reads multi-session telemetry
+       │
+       ▼
+[DataCleaner] ──────────► Deduplication, chronological sorting, gap detection (>250ms audit)
+       │
+       ▼
+[SensorSynchronizer] ───► Segment 20-sample windows (20 Hz) & aligns BLE Heart Rate
+       │
+       ▼
+[FeatureExtractor] ─────► Centered dynamic acceleration RMS, variance, jerk, peak-to-peak
+       │
+       ▼
+[Pandera Validation] ───► Validates against RawAccelerometerSchema & WindowFeaturesSchema
+       │
+       ▼
+[DatasetBuilder] ───────► Partitioned Parquet dataset (Hive: session_id=.../label=...)
+       │
+       ▼
+[SleepDataAnalytics] ───► DuckDB zero-copy SQL analytics (Session summaries, rest scores, correlations)
+```
+
+### CLI Command Reference:
+The data pipeline provides a unified CLI (`python -m pipelines.cli.main`):
+
+```powershell
+# 1. Ingest Android export file
+.\ml\.venv\Scripts\python.exe -m pipelines.cli.main ingest --input exports/session_export.json
+
+# 2. Validate raw data with Pandera schemas
+.\ml\.venv\Scripts\python.exe -m pipelines.cli.main validate --input exports/session_export.json
+
+# 3. Build partitioned Parquet dataset
+.\ml\.venv\Scripts\python.exe -m pipelines.cli.main build-dataset --input exports/session_export.json --output data/processed/parquet_dataset
+
+# 4. Run DuckDB SQL analytics over Parquet files
+.\ml\.venv\Scripts\python.exe -m pipelines.cli.main analyze --dataset data/processed/parquet_dataset
+
+# 5. Generate synthetic multi-session test dataset
+.\ml\.venv\Scripts\python.exe -m pipelines.cli.main generate-synthetic --output data/processed/synthetic_dataset --sessions 6 --windows 60
+```
 
 ---
 
-## 3. Machine Learning 2.0 & Evaluation Pipeline
+## 3. Machine Learning 2.0, Evaluation & Feature Ablation
 
-The project implements an on-device machine learning pipeline running at 20 Hz (20-sample sliding windows with 1-second cadence) classifying motion into:
-- **`REST` (0)**: Negligible motion, stationary gravitational acceleration vector.
-- **`RESTLESS` (1)**: Periodic twitching, limb shifts, breathing disturbances.
-- **`ACTIVE` (2)**: Gross body movement, rolling over, getting out of bed.
+The project implements reproducible on-device machine learning with Group-Aware validation (session/subject holdout) to prevent data leakage.
 
-### Quantitative Benchmarking (Holdout Set, $N = 750$ Windows)
+### Quantitative Benchmarking (Holdout Set, $N = 900$ Windows)
 
-Comparative benchmark performed in `ml/evaluate_models.py` against identical holdouts:
+Comparative benchmark performed in `ml/evaluation/evaluate_tflite_artifact.py` and `ml/training/train_multimodal_model.py`:
 
 | Model Architecture | Accuracy | Macro F1 | Latency ($\mu$s/window) | Model Size | Battery Footprint |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Rule-Based Baseline** | 100.0% | 1.0000 | 38.1 $\mu$s | 0 KB | Negligible (<0.1%/hr) |
-| **Random Forest (10 Features)** | 100.0% | 1.0000 | 3362.5 $\mu$s | 142.5 KB | Low (~0.3%/hr) |
-| **Dense TFLite (Production)** | **98.27%** | **0.9827** | **6.1 $\mu$s** | **11.1 KB** | **Very Low (~0.15%/hr)** |
+| **Physical Heuristic Baseline** | 100.0% | 1.0000 | 38.1 $\mu$s | 0 KB | Negligible (<0.1%/hr) |
+| **Dense TFLite (Deployed Artifact)** | **98.44%** | **0.9844** | **6.1 $\mu$s** | **11.1 KB** | **Very Low (~0.15%/hr)** |
 | **1D Temporal CNN** | 100.0% | 1.0000 | 5.1 $\mu$s | 14.1 KB | Moderate (~0.5%/hr) |
+| **Multimodal Fusion (Accel + HR)** | **97.50%** | **0.9665** | **8.4 $\mu$s** | **18.6 KB** | **Low (~0.25%/hr)** |
+| **Multimodal (Disconnected HR)** | **97.08%** | **0.9587** | **8.4 $\mu$s** | **18.6 KB** | **Low (~0.25%/hr)** |
 
-### Golden Vector Precision Parity
-To guarantee mathematical correctness on Android, `ml/generate_golden_vectors.py` exports 12 deterministic test windows covering all activity states and transition boundaries to `ml_golden_vectors.json`. An instrumentation test (`ActivityClassifierInstrumentedTest`) verifies that Kotlin TFLite execution yields identical class assignments and normalized probabilities matching Python TensorFlow outputs within $\pm 10^{-5}$ tolerance.
+### Deployed Artifact Verification:
+Evaluation of the exact deployed binary (`app/src/main/assets/activity_classifier.tflite`):
+- **Input Tensor**: `[1, 20, 3]`, **Output Tensor**: `[1, 3]` (`REST`, `RESTLESS`, `ACTIVE`).
+- **Confusion Matrix**:
+  ```
+  [[300,   0,   0],   # Actual REST
+   [ 10, 290,   0],   # Actual RESTLESS
+   [  0,   4, 296]]   # Actual ACTIVE
+  ```
+- **Physical Edge Case Audit**:
+  - Static gravity phone: Predicts `REST` ($P=0.836$).
+  - Inverted phone (face down, $Z=-9.81$): Predicts `REST` ($P=0.836$).
+  - Side phone ($Y=9.81$): Predicts `REST`.
+  - High energy active shaking: Predicts `ACTIVE`.
+
+### Multimodal Ablation Findings:
+- **Heart Rate Accuracy Gain**: $+0.0708$ over single-branch raw acceleration.
+- **Graceful Degradation**: When the BLE band disconnects (mask $= 0$), accuracy drops by only $0.0042$, demonstrating robustness to wearable battery exhaustion or connection dropouts.
+- **Physiological Integrity Notice**: Heart rate telemetry generated via VirtualSleepBand or synthetic broadcast is explicitly labeled as simulated data and does **not** constitute clinical proof of efficacy on real human subjects.
 
 ---
 
-## 4. Bluetooth Low Energy & Virtual Peripheral Suite
+## 4. Product UX & Onboarding Architecture
+
+1. **First-Run Onboarding & Wellness Notice**: Accessible directly via header info button on `TodayScreen`. Clarifies that SleepSense is for movement and rest tracking, not medical sleep apnea diagnosis.
+2. **Placement Selector**: Supports selecting `Mattress` (near pillow) vs `Nightstand` (flat surface) before starting recording.
+3. **Live ML Status**: Displays active model status (`On-Device TFLite (20 Hz)` / `Heuristic Fallback`).
+4. **Hero Recording Card**: Real-time duration ticker, pause/resume/finish controls, and session state preservation across unexpected app kills.
+
+---
+
+## 5. Bluetooth Low Energy & Virtual Peripheral Suite
 
 SleepSense features a clean, decoupled `DeviceTransport` interface supporting both simulated and physical Bluetooth hardware:
 
@@ -126,7 +211,7 @@ SleepSense features a clean, decoupled `DeviceTransport` interface supporting bo
 
 ---
 
-## 5. Offline-First Cloud Sync & Firebase Security
+## 6. Offline-First Cloud Sync & Firebase Security
 
 SleepSense treats the cloud as a secondary, opt-in replica:
 - **Durable Outbox Pattern**: Telemetry snapshots and session summaries are written transactionally into Room SQLite outbox tables before any network dispatch.
@@ -139,30 +224,19 @@ SleepSense treats the cloud as a secondary, opt-in replica:
 
 ---
 
-## 6. Smart Automations & Replay Engine
-
-- **Stateful Rule Engine (`SmartRuleEngine`)**: Supports complex safety automations with:
-  - Source triggers: `ACCELEROMETER_X/Y/Z`, `MOVEMENT_INTENSITY`, `ML_CLASS`.
-  - Hysteresis arming and consecutive match requirements (e.g. "Trigger only after 3 consecutive restless windows").
-  - Configurable cooldown timers preventing actuator thrashing.
-  - Actuators: Vibrator pulses, flashlight strobes, simulated BLE alerts.
-- **Deterministic Replay Engine (`ReplayEngine`)**: Re-feeds historical night samples through feature windowing, ML inference, and rule evaluation at `INSTANT`, `SPEED_10X`, or `REALTIME` rates. Allows users to test how new rules would have behaved on past sessions.
-
----
-
 ## 7. Laboratory Compatibility Matrix (Labs 1–7)
 
 All educational requirements from University Labs 1–7 remain fully functional and independently testable inside the **Developer Lab**:
 
-| Lab | Educational Subject | Implementation Component | Developer Lab Tab | University Report | Verification Test |
-| :---: | :--- | :--- | :---: | :--- | :--- |
-| **L1** | Sensors & Accelerometer | `AndroidAccelerometerDataSource` | **Sensors (L1)** | [Звіт ЛР-1](deliverables/ЛР-1_МПСС_Гончаров_Вадим_ОІ-43.docx) | `SensorViewModelTest` |
-| **L2** | BLE Wearable Transport | `MockDeviceTransport`, `VirtualSleepBand` | **BLE (L2)** | [Звіт ЛР-2](deliverables/ЛР-2_МПСС_Гончаров_Вадим_ОІ-43.docx) | `MockBleConnectorTest`, `MockDeviceTransportTest` |
-| **L3** | Firebase Cloud Sync | `FirebaseCloudRepository`, `RoomCloudStateStore` | **Cloud (L3)** | [Звіт ЛР-3](deliverables/ЛР-3_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `database.rules.test.mjs` (11 tests) |
-| **L4** | Hardware Actuators | `AndroidSmartActuator` (Camera & Vibrator) | **Actuators (L4)** | [Звіт ЛР-4](deliverables/ЛР-4_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActuatorViewModelTest` |
-| **L5** | Room Database v7 | `SleepTrackerDatabase`, `RoomSessionRepository` | **Room (L5)** | [Звіт ЛР-5](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.docx) ([PDF](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.pdf)) | `SleepTrackerMigrationV6ToV7Test` |
-| **L6** | On-Device TFLite ML | `ActivityClassifier`, `SlidingWindowSegmenter` | **ML (L6)** | [Звіт ЛР-6](deliverables/ЛР-6_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActivityClassifierInstrumentedTest` |
-| **L7** | Correlated Smart Rules | `SmartRuleEngine`, `ReplayEngine` | **Trace (L7)** | [Звіт ЛР-7](deliverables/ЛР-7_ПМСС_Гончаров_Вадим_ОІ-43.docx) ([Слайди](deliverables/ЛР-7_Презентація_SleepTrackerSimulator.pptx)) | `ReplayEngineTest`, `SmartRuleEngineTest` |
+| Lab | Educational Subject | Implementation Component | Developer Lab Tab | University Report | Verification Test | Status |
+| :---: | :--- | :--- | :--- | :--- | :--- | :---: |
+| **L1** | Sensors & Accelerometer | `AndroidAccelerometerDataSource` | **Sensors (L1)** | [Звіт ЛР-1](deliverables/ЛР-1_МПСС_Гончаров_Вадим_ОІ-43.docx) | `SensorViewModelTest` | `VERIFIED` |
+| **L2** | BLE Wearable Transport | `MockDeviceTransport`, `VirtualSleepBand` | **BLE (L2)** | [Звіт ЛР-2](deliverables/ЛР-2_МПСС_Гончаров_Вадим_ОІ-43.docx) | `MockBleConnectorTest` | `VERIFIED` |
+| **L3** | Firebase Cloud Sync | `FirebaseCloudRepository`, `RoomCloudStateStore` | **Cloud (L3)** | [Звіт ЛР-3](deliverables/ЛР-3_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `database.rules.test.mjs` (11 tests) | `VERIFIED` |
+| **L4** | Hardware Actuators | `AndroidSmartActuator` (Camera & Vibrator) | **Actuators (L4)** | [Звіт ЛР-4](deliverables/ЛР-4_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActuatorViewModelTest` | `VERIFIED` |
+| **L5** | Room Database v7 | `SleepTrackerDatabase`, `RoomSessionRepository` | **Room (L5)** | [Звіт ЛР-5](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `SleepTrackerMigrationV6ToV7Test` | `VERIFIED` |
+| **L6** | On-Device TFLite ML | `ActivityClassifier`, `ModelSelectionEngine` | **ML (L6)** | [Звіт ЛР-6](deliverables/ЛР-6_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActivityClassifierInstrumentedTest` | `VERIFIED` |
+| **L7** | Correlated Smart Rules | `SmartRuleEngine`, `BackgroundAutomationCoordinator` | **Trace (L7)** | [Звіт ЛР-7](deliverables/ЛР-7_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `SmartRuleEngineTest` | `VERIFIED` |
 
 ---
 
@@ -171,36 +245,34 @@ All educational requirements from University Labs 1–7 remain fully functional 
 ### Prerequisites
 - JDK 21+ (e.g. Android Studio JBR at `C:\Program Files\Android\Android Studio\jbr`)
 - Android SDK 35 (Android 15)
-- Python 3.11+ (in `ml/.venv` with TensorFlow and Scikit-Learn)
-- Node.js 20+ (for Firebase Emulator rules testing)
+- Python 3.11+ (in `ml/.venv`)
 
-### 1. Execute JVM Unit Test Suite (185 Tests)
+### 1. Execute Complete Android Unit Test Suite (237 Tests)
 ```powershell
 .\gradlew testDebugUnitTest
 ```
 
-### 2. Compile Instrumentation Tests
+### 2. Assemble Debug & Release APKs
 ```powershell
-.\gradlew compileDebugAndroidTestKotlin
+.\gradlew assembleDebug assembleRelease
+# Generated Debug APK:   app/build/outputs/apk/debug/app-debug.apk
+# Generated Release APK: app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-### 3. Assemble Debug APK
+### 3. Execute Complete Python Test Suite (16 Tests)
 ```powershell
-.\gradlew assembleDebug
-# Generated APK: app/build/outputs/apk/debug/app-debug.apk (~130 MB)
+.\ml\.venv\Scripts\pytest.exe -v
 ```
 
-### 4. Execute Firebase Rules Emulator Tests
+### 4. Run Python Linter (Ruff)
 ```powershell
-$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"
-$env:PATH="C:\Program Files\Android\Android Studio\jbr\bin;$env:PATH"
-npx --yes firebase-tools emulators:exec --only database "npm --prefix firebase-tests test"
+.\ml\.venv\Scripts\ruff.exe check ml pipelines tests
 ```
 
-### 5. Re-run ML Benchmark & Golden Vector Generator
+### 5. Execute ML Artifact Evaluation & Parity Checks
 ```powershell
-.\ml\.venv\Scripts\python.exe ml\evaluate_models.py
-.\ml\.venv\Scripts\python.exe ml\generate_golden_vectors.py
+.\ml\.venv\Scripts\python.exe ml\evaluation\evaluate_tflite_artifact.py
+.\ml\.venv\Scripts\python.exe ml\training\train_multimodal_model.py
 ```
 
 ---
@@ -209,8 +281,9 @@ npx --yes firebase-tools emulators:exec --only database "npm --prefix firebase-t
 
 - **UI**: Jetpack Compose 1.7, Material 3, Navigation, Compose Lifecycle 2.8
 - **Concurrency**: Kotlin Coroutines 1.9, StateFlow, SharedFlow, Mutex
-- **Persistence**: Room 2.6 (Schema v7 with additive migration), SQLite
-- **Machine Learning**: TensorFlow Lite 2.20.0, Keras, Scikit-Learn 1.9
+- **Persistence**: Room 2.6 (Schema v7 additive), SQLite
+- **Machine Learning**: TensorFlow Lite 2.20.0, Keras, Scikit-Learn 1.9, MLflow
+- **Data Engineering**: Polars 1.24, PyArrow 19.0, Pandera 0.23, DuckDB 1.2
 - **Networking & Cloud**: Firebase Realtime Database SDK, Firebase Anonymous Auth
 - **Background Work**: Android Foreground Service (`FOREGROUND_SERVICE_HEALTH`), WorkManager 2.10
-- **Testing**: JUnit 4, Kotlinx Coroutines Test, Room Migration Test, AndroidX Test Core, Firebase Rules Unit Testing
+- **Testing**: JUnit 4, Kotlinx Coroutines Test, Room Migration Test, AndroidX Test Core, Pytest

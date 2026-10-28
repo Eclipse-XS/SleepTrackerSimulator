@@ -11,5 +11,6 @@ class SleepTrackerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this)
+        com.example.sleeptrackersimulator.data.sessions.DataRetentionWorker.schedule(this)
     }
 }

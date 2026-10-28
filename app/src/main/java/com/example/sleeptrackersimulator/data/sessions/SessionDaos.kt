@@ -55,8 +55,8 @@ interface SensorSampleDao {
     @Query("SELECT COUNT(*) FROM sensor_samples WHERE sessionId = :sessionId")
     suspend fun countSamplesForSession(sessionId: String): Int
 
-    @Query("DELETE FROM sensor_samples WHERE utcTimestampMillis < :olderThanUtcMillis")
-    suspend fun deleteOldSamples(olderThanUtcMillis: Long): Int
+    @Query("DELETE FROM sensor_samples WHERE utcTimestampMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId)")
+    suspend fun deleteOldSamples(olderThanUtcMillis: Long, activeSessionId: String? = null): Int
 }
 
 @Dao
@@ -67,8 +67,8 @@ interface HeartRateSampleDao {
     @Query("SELECT * FROM heart_rate_samples WHERE sessionId = :sessionId ORDER BY utcTimestampMillis ASC")
     suspend fun getSamplesForSession(sessionId: String): List<HeartRateSampleEntity>
 
-    @Query("DELETE FROM heart_rate_samples WHERE utcTimestampMillis < :olderThanUtcMillis")
-    suspend fun deleteOldSamples(olderThanUtcMillis: Long): Int
+    @Query("DELETE FROM heart_rate_samples WHERE utcTimestampMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId)")
+    suspend fun deleteOldSamples(olderThanUtcMillis: Long, activeSessionId: String? = null): Int
 }
 
 @Dao
@@ -79,8 +79,8 @@ interface FeatureWindowDao {
     @Query("SELECT * FROM feature_windows WHERE sessionId = :sessionId ORDER BY startUtcMillis ASC")
     suspend fun getWindowsForSession(sessionId: String): List<FeatureWindowEntity>
 
-    @Query("DELETE FROM feature_windows WHERE startUtcMillis < :olderThanUtcMillis")
-    suspend fun deleteOldWindows(olderThanUtcMillis: Long): Int
+    @Query("DELETE FROM feature_windows WHERE startUtcMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId)")
+    suspend fun deleteOldWindows(olderThanUtcMillis: Long, activeSessionId: String? = null): Int
 }
 
 @Dao
@@ -91,8 +91,8 @@ interface PredictionDao {
     @Query("SELECT * FROM predictions WHERE sessionId = :sessionId ORDER BY timestampMillis ASC")
     suspend fun getPredictionsForSession(sessionId: String): List<PredictionEntity>
 
-    @Query("DELETE FROM predictions WHERE timestampMillis < :olderThanUtcMillis")
-    suspend fun deleteOldPredictions(olderThanUtcMillis: Long): Int
+    @Query("DELETE FROM predictions WHERE timestampMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId)")
+    suspend fun deleteOldPredictions(olderThanUtcMillis: Long, activeSessionId: String? = null): Int
 }
 
 @Dao

@@ -36,12 +36,16 @@ import java.util.UUID
 
 class SessionCoordinatorImpl(
     private val sessionRepository: SessionRepository,
-    private val activityClassifier: ActivityClassifier?,
+    private val activityClassifier: ActivityClassifier? = null,
     private val sampleValidator: SampleValidator = SampleValidator(),
     private val cloudRepository: CloudRepository? = null,
     private val authRepository: AuthRepository? = null,
     private val cloudStateStore: com.example.sleeptrackersimulator.cloud.CloudStateStore? = null,
     private val cloudRecoveryScheduler: com.example.sleeptrackersimulator.cloud.CloudRecoveryScheduler? = null,
+    private val modelSelectionEngine: com.example.sleeptrackersimulator.ml.ModelSelectionEngine =
+        com.example.sleeptrackersimulator.ml.DefaultModelSelectionEngine(activityClassifier),
+    private val automationCoordinator: com.example.sleeptrackersimulator.smart.BackgroundAutomationCoordinator? = null,
+    private val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SessionCoordinator {
 
@@ -58,6 +62,7 @@ class SessionCoordinatorImpl(
     private var currentClockAnchor: ClockAnchor? = null
     private val windowSegmenter = SlidingWindowSegmenter(windowSize = 20, stride = 20)
     private val pendingSamples = mutableListOf<RawSensorSample>()
+    private var latestHeartRateSample: HeartRateSample? = null
 
     // O(1) statistical counters avoiding unbounded heap growth during long recordings
     private var totalPredictionsCount = 0
@@ -190,6 +195,9 @@ class SessionCoordinatorImpl(
                 for (w in windows) {
                     processWindow(w, session)
                 }
+
+                // Evaluate background automations for physical sensor inputs
+                automationCoordinator?.evaluateSensorSample(sample, session.sessionId)
             }
             is com.example.sleeptrackersimulator.domain.signalprocessing.SampleValidationResult.Invalid -> {
                 // Drop corrupted sample silently or report to quality metrics
@@ -215,6 +223,7 @@ class SessionCoordinatorImpl(
             timingUncertaintyMillis = timingUncertaintyMillis,
             sourceKind = sourceKind,
         )
+        latestHeartRateSample = sample
         sessionRepository.insertHeartRateSamples(listOf(sample))
     }
 
@@ -222,54 +231,62 @@ class SessionCoordinatorImpl(
         val featureWindow = FeatureExtractor.extractFeatures(samples, expectedSampleCount = 20)
         sessionRepository.insertFeatureWindows(listOf(featureWindow))
 
-        // On-device ML classification
-        if (activityClassifier != null) {
-            val inputWindow = Array(20) { i ->
-                floatArrayOf(samples[i].x, samples[i].y, samples[i].z)
-            }
-            val result = activityClassifier.classify(inputWindow)
-            val durationNs = result.inferenceNanos
+        // Robust Model Selection Engine (TFLite -> Fallback -> Insufficient Data)
+        val selection = modelSelectionEngine.selectAndClassify(
+            samples = samples,
+            recentHeartRate = latestHeartRateSample,
+            windowEndTimestampNanos = featureWindow.endElapsedNanos,
+        )
 
-            val activityClass = when (result.activity.name) {
-                "REST" -> ActivityClass.REST
-                "RESTLESS" -> ActivityClass.RESTLESS
-                "ACTIVE" -> ActivityClass.ACTIVE
-                else -> ActivityClass.UNCERTAIN
-            }
+        val prediction = Prediction(
+            predictionId = selection.predictionId,
+            windowId = featureWindow.windowId,
+            sessionId = session.sessionId,
+            modelId = selection.modelId,
+            predictedClass = selection.activity,
+            probabilities = selection.probabilities,
+            confidence = selection.confidence,
+            inferenceDurationNs = selection.inferenceDurationNs,
+            timestampMillis = featureWindow.endUtcMillis,
+        )
 
-            val domainProbabilities = result.probabilities.mapKeys { (k, _) ->
-                ActivityClass.fromString(k.name)
-            }
-
-            val prediction = Prediction(
-                windowId = featureWindow.windowId,
-                sessionId = session.sessionId,
-                modelId = "activity-v2.1",
-                predictedClass = activityClass,
-                probabilities = domainProbabilities,
-                confidence = result.confidence,
-                inferenceDurationNs = durationNs,
-                timestampMillis = featureWindow.endUtcMillis,
-            )
-
-            totalPredictionsCount++
-            when (activityClass) {
-                ActivityClass.REST -> restPredictionsCount++
-                ActivityClass.RESTLESS -> restlessPredictionsCount++
-                ActivityClass.ACTIVE -> activePredictionsCount++
-                else -> {}
-            }
-            if (activityClass.isMovement) {
-                if (!lastWasMovement) {
-                    movementEpisodeCount++
-                    lastWasMovement = true
-                }
-            } else {
-                lastWasMovement = false
-            }
-
-            sessionRepository.insertPredictions(listOf(prediction))
+        totalPredictionsCount++
+        when (selection.activity) {
+            ActivityClass.REST -> restPredictionsCount++
+            ActivityClass.RESTLESS -> restlessPredictionsCount++
+            ActivityClass.ACTIVE -> activePredictionsCount++
+            else -> {}
         }
+        if (selection.activity.isMovement) {
+            if (!lastWasMovement) {
+                movementEpisodeCount++
+                lastWasMovement = true
+            }
+        } else {
+            lastWasMovement = false
+        }
+
+        sessionRepository.insertPredictions(listOf(prediction))
+
+        // Trigger ML-based background automations
+        val predictionForAutomation = com.example.sleeptrackersimulator.ml.ActivityPrediction(
+            predictionId = prediction.predictionId,
+            windowEndTimestampNanos = featureWindow.endElapsedNanos,
+            activity = when (selection.activity) {
+                ActivityClass.REST -> com.example.sleeptrackersimulator.ml.ActivityClass.REST
+                ActivityClass.RESTLESS -> com.example.sleeptrackersimulator.ml.ActivityClass.RESTLESS
+                ActivityClass.ACTIVE -> com.example.sleeptrackersimulator.ml.ActivityClass.ACTIVE
+                ActivityClass.UNCERTAIN -> com.example.sleeptrackersimulator.ml.ActivityClass.REST
+            },
+            confidence = selection.confidence,
+            probabilities = mapOf(
+                com.example.sleeptrackersimulator.ml.ActivityClass.REST to (selection.probabilities[ActivityClass.REST] ?: 0f),
+                com.example.sleeptrackersimulator.ml.ActivityClass.RESTLESS to (selection.probabilities[ActivityClass.RESTLESS] ?: 0f),
+                com.example.sleeptrackersimulator.ml.ActivityClass.ACTIVE to (selection.probabilities[ActivityClass.ACTIVE] ?: 0f),
+            ),
+            inferenceNanos = selection.inferenceDurationNs,
+        )
+        automationCoordinator?.evaluatePrediction(predictionForAutomation, session.sessionId)
     }
 
     override suspend fun pauseSession(): Result<Unit> = mutex.withLock {
@@ -425,6 +442,11 @@ class SessionCoordinatorImpl(
 
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE
+
+            // Asynchronously prune expired data (samples > 7d, windows/preds > 30d) without blocking stop
+            scope.launch {
+                runCatching { dataRetentionPolicy?.pruneExpiredData(activeSessionId = null) }
+            }
 
             Result.success(completed)
         }
