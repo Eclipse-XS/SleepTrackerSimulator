@@ -8,7 +8,7 @@
 - **Input Specification**: Tensor `[1, 20, 3]` (Float32, 20 tri-axial accelerometer samples at 20 Hz)
 - **Output Specification**: Tensor `[1, 3]` (Float32, normalized Softmax probabilities for `REST`, `RESTLESS`, `ACTIVE`)
 - **Model Size**: 11.10 KB
-- **Average Inference Time**: 12.4 $\mu$s on Android CPU
+- **Average Inference Time**: 8.2 $\mu$s on Android CPU
 
 ## Intended Use
 - **Primary Intended Uses**: Real-time on-device estimation of gross nocturnal movement intensity into coarse activity categories.
@@ -21,7 +21,7 @@
 - **Fairness & Privacy**: Inference runs 100% on-device. No raw accelerometer data is transmitted to cloud servers without explicit user consent.
 
 ## Performance Metrics (Holdout N=750)
-- **Accuracy**: 0.9853
-- **Macro F1 Score**: 0.9853
-- **Macro Precision**: 0.9855
-- **Macro Recall**: 0.9853
+- **Accuracy**: 0.9813
+- **Macro F1 Score**: 0.9813
+- **Macro Precision**: 0.9816
+- **Macro Recall**: 0.9813

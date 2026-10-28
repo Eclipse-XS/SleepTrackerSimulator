@@ -6,12 +6,19 @@
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
 [![Firebase](https://img.shields.io/badge/Firebase-Realtime%20Database-FFA000.svg?style=flat&logo=firebase)](https://firebase.google.com)
-[![Tests](https://img.shields.io/badge/Unit%20Tests-185%20PASSED-brightgreen.svg?style=flat)]()
+[![Tests](https://img.shields.io/badge/Unit%20Tests-197%20PASSED-brightgreen.svg?style=flat)]()
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, and an offline-first Firebase cloud synchronizer.
 
 > [!NOTE]
 > **Product Positioning & Medical Disclaimer**: SleepSense is an observational activity tracker and rest diary designed for wellness and behavioral insights. It does **not** diagnose medical conditions (e.g. sleep apnea, narcolepsy, restless leg syndrome) and does not pretend to deliver clinical polysomnography (PSG) sleep staging (NREM/REM) from an uncalibrated smartphone accelerometer. All data is classified transparently as gross body movement intensity with explicit source provenance.
+
+### Quick Repository Links & Academic Delivery
+- 🎓 **[University Laboratory Reports (Labs 1–7)](deliverables/README.md)** — Complete course deliverables (`.docx` / `.pdf`) and final defense slide deck (`.pptx`).
+- 📚 **[Technical Documentation Index](docs/README.md)** — Comprehensive index of architecture documents, defense guides, and technical specifications.
+- 🔬 **[Independent Acceptance Audits & Visual Screenshots](docs/acceptance/)** — 11 deep-dive audit reports and 25 UI & Developer Lab screenshots.
+- 🧠 **[ML Model Card & Holdout Benchmarks](docs/ml/MODEL_CARD.md)** — Neural network architecture, Holdout metrics ($N=750$), and on-device latency.
+- 📱 **[Internal Testing & QA Distribution](dist/internal-testing/SleepSense-2.0/INSTALL_AND_TEST_UK.md)** — Test plans, APK checksums, and tester guidelines.
 
 ---
 
@@ -147,15 +154,15 @@ SleepSense treats the cloud as a secondary, opt-in replica:
 
 All educational requirements from University Labs 1–7 remain fully functional and independently testable inside the **Developer Lab**:
 
-| Lab | Educational Subject | Implementation Component | Developer Lab Tab | Verification Test |
-| :---: | :--- | :--- | :---: | :--- |
-| **L1** | Sensors & Accelerometer | `AndroidAccelerometerDataSource` | **Sensors (L1)** | `SensorViewModelTest` |
-| **L2** | BLE Wearable Transport | `MockDeviceTransport`, `VirtualSleepBand` | **BLE (L2)** | `MockBleConnectorTest`, `MockDeviceTransportTest` |
-| **L3** | Firebase Cloud Sync | `FirebaseCloudRepository`, `RoomCloudStateStore` | **Cloud (L3)** | `database.rules.test.mjs` (11 tests) |
-| **L4** | Hardware Actuators | `AndroidSmartActuator` (Camera & Vibrator) | **Actuators (L4)** | `ActuatorViewModelTest` |
-| **L5** | Room Database v7 | `SleepTrackerDatabase`, `RoomSessionRepository` | **Room (L5)** | `SleepTrackerMigrationV6ToV7Test` |
-| **L6** | On-Device TFLite ML | `ActivityClassifier`, `SlidingWindowSegmenter` | **ML (L6)** | `ActivityClassifierInstrumentedTest` |
-| **L7** | Correlated Smart Rules | `SmartRuleEngine`, `ReplayEngine` | **Trace (L7)** | `ReplayEngineTest`, `SmartRuleEngineTest` |
+| Lab | Educational Subject | Implementation Component | Developer Lab Tab | University Report | Verification Test |
+| :---: | :--- | :--- | :---: | :--- | :--- |
+| **L1** | Sensors & Accelerometer | `AndroidAccelerometerDataSource` | **Sensors (L1)** | [Звіт ЛР-1](deliverables/ЛР-1_МПСС_Гончаров_Вадим_ОІ-43.docx) | `SensorViewModelTest` |
+| **L2** | BLE Wearable Transport | `MockDeviceTransport`, `VirtualSleepBand` | **BLE (L2)** | [Звіт ЛР-2](deliverables/ЛР-2_МПСС_Гончаров_Вадим_ОІ-43.docx) | `MockBleConnectorTest`, `MockDeviceTransportTest` |
+| **L3** | Firebase Cloud Sync | `FirebaseCloudRepository`, `RoomCloudStateStore` | **Cloud (L3)** | [Звіт ЛР-3](deliverables/ЛР-3_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `database.rules.test.mjs` (11 tests) |
+| **L4** | Hardware Actuators | `AndroidSmartActuator` (Camera & Vibrator) | **Actuators (L4)** | [Звіт ЛР-4](deliverables/ЛР-4_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActuatorViewModelTest` |
+| **L5** | Room Database v7 | `SleepTrackerDatabase`, `RoomSessionRepository` | **Room (L5)** | [Звіт ЛР-5](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.docx) ([PDF](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.pdf)) | `SleepTrackerMigrationV6ToV7Test` |
+| **L6** | On-Device TFLite ML | `ActivityClassifier`, `SlidingWindowSegmenter` | **ML (L6)** | [Звіт ЛР-6](deliverables/ЛР-6_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActivityClassifierInstrumentedTest` |
+| **L7** | Correlated Smart Rules | `SmartRuleEngine`, `ReplayEngine` | **Trace (L7)** | [Звіт ЛР-7](deliverables/ЛР-7_ПМСС_Гончаров_Вадим_ОІ-43.docx) ([Слайди](deliverables/ЛР-7_Презентація_SleepTrackerSimulator.pptx)) | `ReplayEngineTest`, `SmartRuleEngineTest` |
 
 ---
 

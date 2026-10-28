@@ -4,7 +4,7 @@
     "macro_f1": 1.0,
     "macro_precision": 1.0,
     "macro_recall": 1.0,
-    "latency_us": 126.80620001628994,
+    "latency_us": 47.719999914988875,
     "size_kb": 0.0,
     "confusion_matrix": [
       [
@@ -31,7 +31,7 @@
     "macro_f1": 1.0,
     "macro_precision": 1.0,
     "macro_recall": 1.0,
-    "latency_us": 8718.77380006481,
+    "latency_us": 4662.602399941534,
     "size_kb": 142.5,
     "confusion_matrix": [
       [
@@ -54,11 +54,11 @@
     "battery_impact": "Low (~0.3% per hr)"
   },
   "Dense TFLite (Production On-Device)": {
-    "accuracy": 0.9853333333333333,
-    "macro_f1": 0.9853319936586283,
-    "macro_precision": 0.985522771310197,
-    "macro_recall": 0.9853333333333333,
-    "latency_us": 12.351599987596273,
+    "accuracy": 0.9813333333333333,
+    "macro_f1": 0.9813315036413804,
+    "macro_precision": 0.9815875486381324,
+    "macro_recall": 0.9813333333333333,
+    "latency_us": 8.18419991992414,
     "size_kb": 11.1015625,
     "confusion_matrix": [
       [
@@ -73,8 +73,8 @@
       ],
       [
         0,
-        4,
-        246
+        7,
+        243
       ]
     ],
     "architecture": "Input(20x3) -> MeanNorm -> Dense(32, ReLU) -> Dense(3, Softmax)",
@@ -85,7 +85,7 @@
     "macro_f1": 1.0,
     "macro_precision": 1.0,
     "macro_recall": 1.0,
-    "latency_us": 10.354399913921952,
+    "latency_us": 8.006200077943504,
     "size_kb": 14.0703125,
     "confusion_matrix": [
       [

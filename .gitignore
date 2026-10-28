@@ -15,33 +15,31 @@ captures/
 *.keystore
 keystore.properties
 google-services.json
+
+# Local Python virtual environments & bytecode
 tools/.venv/
 ml/.venv/
-tools/__pycache__/
-tools/**/__pycache__/
+__pycache__/
+*.py[cod]
+
+# Secrets, Service Accounts & Keystores
 tools/*service-account*.json
 tools/*credentials*.json
 tools/*.key.json
 service-account*.json
 credentials*.json
-PLAN.md
+
+# Distribution & Local testing packages
+dist/
+
+# Emulator & test logs
+database-debug.log
+
+# Node dependencies
+node_modules/
+
+# Legacy AI-agent scratch directories (preserved in ignore for safety)
 .codex-doc/
 .codex-docx-qa/
 .codex-pptx/
 .codex-artifacts/
-database-debug.log
-tools/word_lock_backup.tmp
-node_modules/
-
-# Local document QA renders and intermediate inspection output
-tools/qa_*/
-tools/qa_*.pdf
-tools/doc*.json
-tools/*_final.json
-tools/inspect_*.json
-tools/screen_*.png
-tools/emulator_current.png
-tools/logcat_screen.png
-tools/device_found_cropped.png
-tools/lr2_final.pdf
-tools/test_omml.docx
