@@ -250,6 +250,8 @@ class MainActivity : ComponentActivity() {
             SleepTrackerTheme {
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.TODAY) }
                 var activeOverlay by rememberSaveable { mutableStateOf(AppOverlay.NONE) }
+                var overlayBackDestination by rememberSaveable { mutableStateOf(AppOverlay.NONE) }
+
                 LaunchedEffect(selectedTab) {
                     if (selectedTab == AppTab.INSIGHTS) insightsViewModel.refresh()
                 }
@@ -280,8 +282,14 @@ class MainActivity : ComponentActivity() {
                         BackHandler { activeOverlay = AppOverlay.NONE }
                         SettingsScreen(
                             onBack = { activeOverlay = AppOverlay.NONE },
-                            onOpenDeveloperLab = { activeOverlay = AppOverlay.DEVELOPER_LAB },
-                            onExportData = { activeOverlay = AppOverlay.DEVELOPER_LAB },
+                            onOpenDeveloperLab = {
+                                overlayBackDestination = AppOverlay.SETTINGS
+                                activeOverlay = AppOverlay.DEVELOPER_LAB
+                            },
+                            onExportData = {
+                                overlayBackDestination = AppOverlay.SETTINGS
+                                activeOverlay = AppOverlay.DEVELOPER_LAB
+                            },
                             onDeleteAllData = {
                                 lifecycleScope.launch {
                                     container.sessionRepository.clearAllLocalData()
@@ -292,46 +300,29 @@ class MainActivity : ComponentActivity() {
                     }
                     AppOverlay.AUTOMATIONS -> {
                         BackHandler { activeOverlay = AppOverlay.NONE }
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(NightBlue),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IconButton(onClick = { activeOverlay = AppOverlay.NONE }) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = "Back",
-                                        tint = MistBlue,
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Automations & Rules",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MistBlue,
-                                )
-                            }
-                            SmartScenariosScreen(
-                                state = smartState,
-                                onSave = smartScenariosViewModel::save,
-                                onEnabled = smartScenariosViewModel::setEnabled,
-                                onDelete = smartScenariosViewModel::delete,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                        SmartScenariosScreen(
+                            state = smartState,
+                            onSave = smartScenariosViewModel::save,
+                            onEnabled = smartScenariosViewModel::setEnabled,
+                            onDelete = smartScenariosViewModel::delete,
+                            onBack = { activeOverlay = AppOverlay.NONE },
+                            actuatorState = actuatorState,
+                            onEmergencyOff = { actuatorViewModel.emergencyOff() },
+                        )
                     }
                     AppOverlay.DEVELOPER_LAB -> {
-                        BackHandler { activeOverlay = AppOverlay.NONE }
+                        val returnDest = overlayBackDestination
+                        BackHandler {
+                            activeOverlay = returnDest
+                            overlayBackDestination = AppOverlay.NONE
+                        }
                         val appContainer = (application as SleepTrackerApplication).container
                         val bleAdvState by appContainer.virtualSleepBandAdvertiser.state.collectAsStateWithLifecycle()
                         DeveloperLabScreen(
-                            onBack = { activeOverlay = AppOverlay.NONE },
+                            onBack = {
+                                activeOverlay = returnDest
+                                overlayBackDestination = AppOverlay.NONE
+                            },
                             actuatorState = actuatorState,
                             onTriggerVibration = { actuatorViewModel.testVibration() },
                             onPersistentVibrationChanged = actuatorViewModel::setManualVibration,
@@ -358,11 +349,15 @@ class MainActivity : ComponentActivity() {
                     }
                     AppOverlay.LEGACY_DASHBOARD -> {
                         BackHandler { activeOverlay = AppOverlay.DEVELOPER_LAB }
-                        Column(Modifier.fillMaxSize()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(DarkSurfaceRaised)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -370,14 +365,14 @@ class MainActivity : ComponentActivity() {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                                         contentDescription = "Back to Developer Lab",
-                                        tint = MistBlue,
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Lab View (All 7 Subsystems)",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MistBlue,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                             SensorScreen(
@@ -407,65 +402,68 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     AppOverlay.NONE -> {
+                        val isInspectingHistoryDetails = selectedTab == AppTab.HISTORY && historyState.selectedSessionDetails != null
                         Scaffold(
-                            containerColor = NightBlue,
+                            containerColor = MaterialTheme.colorScheme.background,
                             bottomBar = {
-                                NavigationBar(
-                                    containerColor = DarkSurface,
-                                    contentColor = MistBlue,
-                                ) {
-                                    NavigationBarItem(
-                                        selected = selectedTab == AppTab.TODAY,
-                                        onClick = { selectedTab = AppTab.TODAY },
-                                        icon = { Icon(Icons.Rounded.NightsStay, contentDescription = "Today") },
-                                        label = { Text("Today") },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = DarkSurface,
-                                            selectedTextColor = MoonBlue,
-                                            indicatorColor = MoonBlue,
-                                            unselectedIconColor = MistBlue.copy(alpha = 0.6f),
-                                            unselectedTextColor = MistBlue.copy(alpha = 0.6f),
-                                        ),
-                                    )
-                                    NavigationBarItem(
-                                        selected = selectedTab == AppTab.HISTORY,
-                                        onClick = { selectedTab = AppTab.HISTORY },
-                                        icon = { Icon(Icons.Rounded.History, contentDescription = "History") },
-                                        label = { Text("History") },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = DarkSurface,
-                                            selectedTextColor = MoonBlue,
-                                            indicatorColor = MoonBlue,
-                                            unselectedIconColor = MistBlue.copy(alpha = 0.6f),
-                                            unselectedTextColor = MistBlue.copy(alpha = 0.6f),
-                                        ),
-                                    )
-                                    NavigationBarItem(
-                                        selected = selectedTab == AppTab.INSIGHTS,
-                                        onClick = { selectedTab = AppTab.INSIGHTS },
-                                        icon = { Icon(Icons.Rounded.Analytics, contentDescription = "Insights") },
-                                        label = { Text("Insights") },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = DarkSurface,
-                                            selectedTextColor = MoonBlue,
-                                            indicatorColor = MoonBlue,
-                                            unselectedIconColor = MistBlue.copy(alpha = 0.6f),
-                                            unselectedTextColor = MistBlue.copy(alpha = 0.6f),
-                                        ),
-                                    )
-                                    NavigationBarItem(
-                                        selected = selectedTab == AppTab.DEVICES,
-                                        onClick = { selectedTab = AppTab.DEVICES },
-                                        icon = { Icon(Icons.Rounded.Watch, contentDescription = "Devices") },
-                                        label = { Text("Devices") },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = DarkSurface,
-                                            selectedTextColor = MoonBlue,
-                                            indicatorColor = MoonBlue,
-                                            unselectedIconColor = MistBlue.copy(alpha = 0.6f),
-                                            unselectedTextColor = MistBlue.copy(alpha = 0.6f),
-                                        ),
-                                    )
+                                if (!isInspectingHistoryDetails) {
+                                    NavigationBar(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                    ) {
+                                        NavigationBarItem(
+                                            selected = selectedTab == AppTab.TODAY,
+                                            onClick = { selectedTab = AppTab.TODAY },
+                                            icon = { Icon(Icons.Rounded.NightsStay, contentDescription = "Today") },
+                                            label = { Text("Today") },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                        )
+                                        NavigationBarItem(
+                                            selected = selectedTab == AppTab.HISTORY,
+                                            onClick = { selectedTab = AppTab.HISTORY },
+                                            icon = { Icon(Icons.Rounded.History, contentDescription = "History") },
+                                            label = { Text("History") },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                        )
+                                        NavigationBarItem(
+                                            selected = selectedTab == AppTab.INSIGHTS,
+                                            onClick = { selectedTab = AppTab.INSIGHTS },
+                                            icon = { Icon(Icons.Rounded.Analytics, contentDescription = "Insights") },
+                                            label = { Text("Insights") },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                        )
+                                        NavigationBarItem(
+                                            selected = selectedTab == AppTab.DEVICES,
+                                            onClick = { selectedTab = AppTab.DEVICES },
+                                            icon = { Icon(Icons.Rounded.Watch, contentDescription = "Devices") },
+                                            label = { Text("Devices") },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                        )
+                                    }
                                 }
                             },
                         ) { innerPadding ->

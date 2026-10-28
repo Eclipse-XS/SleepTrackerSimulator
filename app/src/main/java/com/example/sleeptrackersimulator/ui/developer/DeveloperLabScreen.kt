@@ -8,6 +8,7 @@ import android.hardware.SensorManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -111,7 +113,8 @@ fun DeveloperLabScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(NightBlue),
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding(),
     ) {
         // Top app bar
         Row(
@@ -124,7 +127,7 @@ fun DeveloperLabScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                     contentDescription = "Back",
-                    tint = MistBlue,
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -132,7 +135,7 @@ fun DeveloperLabScreen(
                 Text(
                     text = "Developer Lab",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MistBlue,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = "Labs 1–7 Diagnostic & Verification Console",
@@ -144,15 +147,15 @@ fun DeveloperLabScreen(
                 onClick = onOpenLegacyDashboard,
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text("Lab View", color = MoonBlue, style = MaterialTheme.typography.labelSmall)
+                Text("Lab View", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
             }
         }
 
         // Horizontal tabs
         ScrollableTabRow(
             selectedTabIndex = selectedTabIndex,
-            containerColor = DarkSurface,
-            contentColor = MoonBlue,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
             edgePadding = 12.dp,
         ) {
             tabs.forEachIndexed { index, tab ->
@@ -163,7 +166,7 @@ fun DeveloperLabScreen(
                         Text(
                             text = tab.title,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (selectedTabIndex == index) MoonBlue else MistBlue.copy(alpha = 0.6f),
+                            color = if (selectedTabIndex == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             softWrap = false,
                         )
@@ -682,7 +685,7 @@ private fun MlInspectorTab() {
                     color = MistBlue.copy(alpha = 0.6f),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(ExperimentType.CONTROLLED_REST, ExperimentType.READING_IN_BED, ExperimentType.STATIC_BENCH).forEach { exp ->
                         FilterChip(
                             selected = selectedExperiment == exp,
@@ -705,7 +708,7 @@ private fun MlInspectorTab() {
                     color = MistBlue.copy(alpha = 0.6f),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(DevicePlacement.MATTRESS, DevicePlacement.NIGHTSTAND, DevicePlacement.BODY_WRIST).forEach { plc ->
                         FilterChip(
                             selected = selectedPlacement == plc,
@@ -728,7 +731,7 @@ private fun MlInspectorTab() {
                     color = MistBlue.copy(alpha = 0.6f),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(GroundTruthActivity.RESTING, GroundTruthActivity.READING, GroundTruthActivity.OUT_OF_BED).forEach { tag ->
                         FilterChip(
                             selected = selectedGroundTruth == tag,

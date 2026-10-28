@@ -1,6 +1,7 @@
 package com.example.sleeptrackersimulator.ui.today
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,8 +18,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.DirectionsRun
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -35,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,12 +53,8 @@ import com.example.sleeptrackersimulator.ui.components.MetricCard
 import com.example.sleeptrackersimulator.ui.components.ProvenanceChip
 import com.example.sleeptrackersimulator.ui.components.StatusBadge
 import com.example.sleeptrackersimulator.ui.theme.CalmGreen
-import com.example.sleeptrackersimulator.ui.theme.DarkSurface
-import com.example.sleeptrackersimulator.ui.theme.DarkSurfaceRaised
-import com.example.sleeptrackersimulator.ui.theme.MistBlue
 import com.example.sleeptrackersimulator.ui.theme.MoonBlue
 import com.example.sleeptrackersimulator.ui.theme.MotionAmber
-import com.example.sleeptrackersimulator.ui.theme.NightBlue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -87,7 +86,7 @@ fun TodayScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = NightBlue,
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize(),
     ) { innerPadding ->
         Column(
@@ -110,7 +109,7 @@ fun TodayScreen(
                             letterSpacing = 1.2.sp,
                             fontWeight = FontWeight.SemiBold,
                         ),
-                        color = MistBlue.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -118,7 +117,7 @@ fun TodayScreen(
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.Bold,
                         ),
-                        color = MistBlue,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
@@ -127,7 +126,7 @@ fun TodayScreen(
                         Icon(
                             imageVector = Icons.Rounded.Settings,
                             contentDescription = "Settings",
-                            tint = MistBlue.copy(alpha = 0.8f),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -150,7 +149,7 @@ fun TodayScreen(
             Text(
                 text = "Last Session Summary",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MistBlue,
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -166,7 +165,7 @@ fun TodayScreen(
                         value = "${hours}h ${mins}m",
                         subtitle = "Data coverage ${(sum.dataCoverageFraction * 100).toInt()}%",
                         icon = Icons.Rounded.NightsStay,
-                        accentColor = MoonBlue,
+                        accentColor = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -183,19 +182,21 @@ fun TodayScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Text(
                             text = "No recorded sessions yet",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = MistBlue,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Start tonight's session above to observe phone movement and review your activity timeline in the morning.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MistBlue.copy(alpha = 0.65f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -203,14 +204,56 @@ fun TodayScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Quick shortcut to automations
-            OutlinedButton(
-                onClick = onOpenAutomations,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MoonBlue),
+            // Informative Automations Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenAutomations),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             ) {
-                Text(text = "Smart Automation Rules")
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        modifier = Modifier.size(42.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Automations & Rules",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "Configure haptic pulses & wearable alerts",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = "Open Automations",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -228,7 +271,9 @@ private fun SessionHeroCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             when (state.sessionStatus) {
@@ -239,7 +284,7 @@ private fun SessionHeroCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         StatusBadge(text = "READY TO RECORD", color = CalmGreen)
-                        StatusBadge(text = "LOCAL ONLY", color = MistBlue.copy(alpha = 0.7f))
+                        StatusBadge(text = "LOCAL ONLY", color = MaterialTheme.colorScheme.outlineVariant)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -247,7 +292,7 @@ private fun SessionHeroCard(
                     Text(
                         text = "Tonight's Session",
                         style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MistBlue,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -255,7 +300,7 @@ private fun SessionHeroCard(
                     Text(
                         text = "Monitor device movement and view your activity timeline afterward.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MistBlue.copy(alpha = 0.75f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -266,7 +311,7 @@ private fun SessionHeroCard(
                         Text(
                             text = "Phone Accelerometer · Ready",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MistBlue.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
@@ -278,14 +323,20 @@ private fun SessionHeroCard(
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MoonBlue),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
                     ) {
-                        Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, tint = DarkSurface)
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Start Recording",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = DarkSurface,
                         )
                     }
                 }
@@ -318,7 +369,7 @@ private fun SessionHeroCard(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.5.sp,
                         ),
-                        color = MistBlue,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -326,7 +377,7 @@ private fun SessionHeroCard(
                     Text(
                         text = "Phone sensor active · 20 Hz · On-device TFLite model",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MistBlue.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     Spacer(modifier = Modifier.height(20.dp))
@@ -339,11 +390,14 @@ private fun SessionHeroCard(
                                     .weight(1f)
                                     .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CalmGreen),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = CalmGreen,
+                                    contentColor = Color.White,
+                                ),
                             ) {
-                                Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, tint = DarkSurface)
+                                Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Resume", fontWeight = FontWeight.Bold, color = DarkSurface)
+                                Text(text = "Resume", fontWeight = FontWeight.Bold)
                             }
                         } else {
                             OutlinedButton(
@@ -353,9 +407,9 @@ private fun SessionHeroCard(
                                     .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
                             ) {
-                                Icon(imageVector = Icons.Rounded.Pause, contentDescription = null, tint = MistBlue)
+                                Icon(imageVector = Icons.Rounded.Pause, contentDescription = null)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = "Pause", fontWeight = FontWeight.SemiBold, color = MistBlue)
+                                Text(text = "Pause", fontWeight = FontWeight.SemiBold)
                             }
                         }
 
@@ -367,11 +421,14 @@ private fun SessionHeroCard(
                                 .weight(1f)
                                 .height(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
                         ) {
-                            Icon(imageVector = Icons.Rounded.Stop, contentDescription = null, tint = Color.White)
+                            Icon(imageVector = Icons.Rounded.Stop, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Finish", fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(text = "Finish", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -388,7 +445,7 @@ private fun SessionHeroCard(
                             "Committing local summaries..."
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MistBlue,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (interrupted) {
                         Spacer(modifier = Modifier.height(16.dp))
@@ -396,9 +453,12 @@ private fun SessionHeroCard(
                             onClick = onStop,
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MotionAmber),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MotionAmber,
+                                contentColor = Color.Black,
+                            ),
                         ) {
-                            Text(text = "Finish preserved session", fontWeight = FontWeight.Bold, color = DarkSurface)
+                            Text(text = "Finish preserved session", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
