@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -54,11 +55,13 @@ import java.util.Locale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sleeptrackersimulator.core.model.SensorSample
+import com.example.sleeptrackersimulator.actuator.ActuatorUiState
 import com.example.sleeptrackersimulator.dataset.DatasetCsvExporter
 import com.example.sleeptrackersimulator.dataset.DatasetRecordingController
 import com.example.sleeptrackersimulator.dataset.DatasetSession
 import com.example.sleeptrackersimulator.dataset.DevicePlacement
 import com.example.sleeptrackersimulator.dataset.ExperimentType
+import com.example.sleeptrackersimulator.dataset.DemoDatasetUiState
 import com.example.sleeptrackersimulator.dataset.GroundTruthActivity
 import com.example.sleeptrackersimulator.ui.components.MetricCard
 import com.example.sleeptrackersimulator.ui.components.StatusBadge
@@ -84,12 +87,22 @@ enum class DevLabTab(val title: String) {
 @Composable
 fun DeveloperLabScreen(
     onBack: () -> Unit,
+    actuatorState: ActuatorUiState = ActuatorUiState(),
     onTriggerVibration: () -> Unit,
-    onTriggerFlashlight: () -> Unit,
+    onPersistentVibrationChanged: (Boolean) -> Unit = {},
+    onFlashlightChanged: (Boolean) -> Unit = {},
+    onEmergencyOff: () -> Unit = {},
+    onAutomaticControlChanged: (Boolean) -> Unit = {},
     onTriggerBleAlert: () -> Unit,
     onOpenLegacyDashboard: () -> Unit = {},
     isBleAdvertising: Boolean = false,
     onToggleBleAdvertising: () -> Unit = {},
+    demoDatasetState: DemoDatasetUiState = DemoDatasetUiState(),
+    onGenerateDemo: () -> Unit = {},
+    onImportDemo: () -> Unit = {},
+    onVerifyDemo: () -> Unit = {},
+    onExportDemo: () -> Unit = {},
+    onResetDemo: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -173,8 +186,17 @@ fun DeveloperLabScreen(
                     onToggleAdvertising = onToggleBleAdvertising,
                 )
                 DevLabTab.CLOUD -> CloudInspectorTab()
-                DevLabTab.ACTUATORS -> ActuatorInspectorTab(onTriggerVibration, onTriggerFlashlight)
-                DevLabTab.DATABASE -> DatabaseInspectorTab()
+                DevLabTab.ACTUATORS -> ActuatorInspectorTab(
+                    state = actuatorState,
+                    onVibrate = onTriggerVibration,
+                    onPersistentVibrationChanged = onPersistentVibrationChanged,
+                    onFlashlightChanged = onFlashlightChanged,
+                    onEmergencyOff = onEmergencyOff,
+                    onAutomaticControlChanged = onAutomaticControlChanged,
+                )
+                DevLabTab.DATABASE -> DatabaseInspectorTab(
+                    demoDatasetState, onGenerateDemo, onImportDemo, onVerifyDemo, onExportDemo, onResetDemo,
+                )
                 DevLabTab.ML -> MlInspectorTab()
                 DevLabTab.TRACE -> PipelineTraceTab()
             }
@@ -344,7 +366,14 @@ private fun CloudInspectorTab() {
 }
 
 @Composable
-private fun ActuatorInspectorTab(onVibrate: () -> Unit, onFlashlight: () -> Unit) {
+private fun ActuatorInspectorTab(
+    state: ActuatorUiState,
+    onVibrate: () -> Unit,
+    onPersistentVibrationChanged: (Boolean) -> Unit,
+    onFlashlightChanged: (Boolean) -> Unit,
+    onEmergencyOff: () -> Unit,
+    onAutomaticControlChanged: (Boolean) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -371,33 +400,93 @@ private fun ActuatorInspectorTab(onVibrate: () -> Unit, onFlashlight: () -> Unit
             colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Manual Actuator Trigger", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text(text = "Manual Actuator Controls", fontWeight = FontWeight.Bold, color = MistBlue)
                 Spacer(modifier = Modifier.height(12.dp))
-                Row {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = onVibrate,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MoonBlue),
                     ) {
-                        Text("Vibrate Pulse", color = DarkSurface, fontWeight = FontWeight.Bold)
+                        Text("Vibration Pulse", color = DarkSurface, fontWeight = FontWeight.Bold)
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
                     OutlinedButton(
-                        onClick = onFlashlight,
+                        onClick = { onPersistentVibrationChanged(true) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Text("Test Flashlight")
+                        Text("Persistent Vibration ON")
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { onPersistentVibrationChanged(false) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Persistent Vibration OFF") }
+                    Button(
+                        onClick = { onFlashlightChanged(true) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Flashlight ON") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { onFlashlightChanged(false) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Flashlight OFF") }
+                    Button(
+                        onClick = onEmergencyOff,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = HeartCoral),
+                    ) { Text("Emergency OFF") }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Automatic Control", color = MistBlue)
+                    Switch(
+                        checked = state.automaticControlEnabled,
+                        onCheckedChange = onAutomaticControlChanged,
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Actuator Diagnostics", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text("Control mode: ${if (state.automaticControlEnabled) "AUTOMATIC + MANUAL SAFETY" else "MANUAL"}", color = MistBlue)
+                Text("Vibrator: ${if (state.vibratorAvailable) "AVAILABLE" else "UNAVAILABLE"}; amplitude control: ${state.amplitudeControlAvailable}", color = MistBlue)
+                Text("Persistent vibration requested: ${state.vibrationEnabled}", color = MistBlue)
+                Text("Flashlight available: ${state.flashlightAvailable}", color = MistBlue)
+                Text("Flashlight requested: ${state.flashlightEnabled}", color = MistBlue)
+                Text(
+                    "TorchCallback observed: ${state.observedFlashlightEnabled?.let { if (it) "ON" else "OFF" } ?: "UNAVAILABLE / UNKNOWN"}",
+                    color = MistBlue,
+                )
+                Text("Last API result: ${state.lastApiResult ?: "No command yet"}", color = CalmGreen)
+                Text("Physical effect confirmed: false", color = MotionAmber)
+                state.lastError?.let { Text("Error: $it", color = HeartCoral) }
             }
         }
     }
 }
 
 @Composable
-private fun DatabaseInspectorTab() {
+private fun DatabaseInspectorTab(
+    demoState: DemoDatasetUiState,
+    onGenerate: () -> Unit,
+    onImport: () -> Unit,
+    onVerify: () -> Unit,
+    onExport: () -> Unit,
+    onReset: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -414,6 +503,25 @@ private fun DatabaseInspectorTab() {
             MetricCard(title = "Database Version", value = "v7", subtitle = "Room 2.8.5", accentColor = MoonBlue, modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.width(12.dp))
             MetricCard(title = "Migration Path", value = "1 → 7 PASS", subtitle = "Additive evolution", accentColor = CalmGreen, modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("90-night synthetic demo history", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text(demoState.message, color = MistBlue.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                Text("Generated: ${demoState.generatedCount} · Imported: ${demoState.importedCount}", color = CalmGreen)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = onGenerate, enabled = !demoState.isBusy) { Text("Generate") }
+                    Button(onClick = onImport, enabled = !demoState.isBusy) { Text("Import") }
+                    OutlinedButton(onClick = onVerify, enabled = !demoState.isBusy) { Text("Verify") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = onExport, enabled = !demoState.isBusy) { Text("Export CSV") }
+                    OutlinedButton(onClick = onReset, enabled = !demoState.isBusy) { Text("Reset demo") }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -127,7 +127,11 @@ fun HistoryScreen(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(state.sessions, key = { it.sessionId }) { session ->
-                            SessionListItem(session = session, onClick = { onOpenSession(session.sessionId) })
+                            SessionListItem(
+                                session = session,
+                                sourceKind = state.provenanceBySessionId[session.sessionId] ?: fallbackProvenance(session.sourceMode),
+                                onClick = { onOpenSession(session.sessionId) },
+                            )
                         }
                     }
                 }
@@ -139,6 +143,7 @@ fun HistoryScreen(
 @Composable
 private fun SessionListItem(
     session: RecordingSession,
+    sourceKind: SourceKind,
     onClick: () -> Unit,
 ) {
     val dateFormatted = remember(session.startUtcMillis) {
@@ -170,13 +175,7 @@ private fun SessionListItem(
                     color = MistBlue,
                 )
                 ProvenanceChip(
-                    sourceKind = when (session.sourceMode) {
-                        SourceMode.PHONE_ONLY -> SourceKind.PHONE_REAL
-                        SourceMode.WEARABLE_ONLY -> SourceKind.BLE_REAL
-                        SourceMode.COMBINED -> SourceKind.PHONE_REAL
-                        SourceMode.DEMO -> SourceKind.SIMULATED
-                        SourceMode.REPLAY -> SourceKind.REPLAY
-                    },
+                    sourceKind = sourceKind,
                 )
             }
 
@@ -267,6 +266,8 @@ fun SessionDetailsView(
                 StatusBadge(text = session.status.name, color = CalmGreen)
                 Spacer(modifier = Modifier.width(8.dp))
                 StatusBadge(text = session.devicePlacement.label, color = MoonBlue)
+                Spacer(modifier = Modifier.width(8.dp))
+                ProvenanceChip(sourceKind = summary?.sourceKind ?: fallbackProvenance(session.sourceMode))
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -334,4 +335,12 @@ fun SessionDetailsView(
             }
         }
     }
+}
+
+internal fun fallbackProvenance(sourceMode: SourceMode): SourceKind = when (sourceMode) {
+    SourceMode.PHONE_ONLY -> SourceKind.PHONE_REAL
+    SourceMode.WEARABLE_ONLY -> SourceKind.BLE_UNVERIFIED
+    SourceMode.COMBINED -> SourceKind.BLE_UNVERIFIED
+    SourceMode.DEMO -> SourceKind.SIMULATED
+    SourceMode.REPLAY -> SourceKind.REPLAY
 }

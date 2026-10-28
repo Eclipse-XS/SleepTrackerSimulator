@@ -11,6 +11,9 @@ enum class SourceKind {
     /** Real Bluetooth Low Energy peripheral (smart band, chest strap, smartwatch) */
     BLE_REAL,
 
+    /** BLE transport is real, but physiological authenticity is not established. */
+    BLE_UNVERIFIED,
+
     /** Synthetic generated signal (e.g., VirtualSleepBand or in-memory demo) */
     SIMULATED,
 

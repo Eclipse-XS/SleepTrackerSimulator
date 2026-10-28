@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -17,9 +18,8 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,7 +40,7 @@ import com.example.sleeptrackersimulator.ui.theme.NightBlue
 @Composable
 fun InsightsScreen(
     state: InsightsUiState,
-    onSelectRange: (Int) -> Unit,
+    onSelectMode: (InsightsMode) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -62,25 +62,66 @@ fun InsightsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Range switcher
-            Row(modifier = Modifier.fillMaxWidth()) {
-                listOf(7, 30, 90).forEach { days ->
-                    FilterChip(
-                        selected = state.timeRangeDays == days,
-                        onClick = { onSelectRange(days) },
-                        label = { Text("$days Days") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MoonBlue.copy(alpha = 0.2f),
-                            selectedLabelColor = MistBlue,
-                        ),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
+            Text(
+                text = "Full retained history · ${state.summaries.size} completed session(s)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MistBlue.copy(alpha = 0.7f),
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = state.selectedMode == InsightsMode.REAL, onClick = { onSelectMode(InsightsMode.REAL) }, label = { Text("Real") })
+                FilterChip(selected = state.selectedMode == InsightsMode.DEMO, onClick = { onSelectMode(InsightsMode.DEMO) }, label = { Text("Demo (${state.demoMetrics.sessionCount})") })
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (!state.isQualityGateSatisfied) {
+            state.errorMessage?.let { message ->
+                EmptyStateCard(
+                    title = "Insights unavailable",
+                    message = message,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (state.selectedMetrics.sessionCount == 0) {
+                EmptyStateCard(title = "No ${state.selectedMode.name.lowercase()} analytics", message = "Import demo history or complete a recording to populate descriptive metrics.")
+            } else {
+                val metrics = state.selectedMetrics
+                val hours = metrics.averageDurationMs / 3_600_000L
+                val minutes = (metrics.averageDurationMs % 3_600_000L) / 60_000L
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    MetricCard(title = "Avg Duration", value = "${hours}h ${minutes}m", subtitle = "${metrics.sessionCount} session(s)", modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    MetricCard(title = "Avg Low-Motion", value = "${(metrics.averageLowMotionFraction * 100).toInt()}%", subtitle = "Descriptive only", accentColor = CalmGreen, modifier = Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    MetricCard(title = "Movement", value = String.format("%.1f", metrics.averageMovementEpisodes), subtitle = "episodes/night", accentColor = MotionAmber, modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    MetricCard(title = "Coverage", value = "${(metrics.averageCoverageFraction * 100).toInt()}%", subtitle = metrics.averageHeartRateBpm?.let { "Avg BPM ${it.toInt()}" } ?: "No BPM", accentColor = MoonBlue, modifier = Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Nightly low-motion trend", style = MaterialTheme.typography.titleSmall, color = MistBlue)
+                Canvas(modifier = Modifier.fillMaxWidth().height(96.dp).padding(vertical = 8.dp)) {
+                    val points = metrics.nightlyTrend
+                    if (points.size > 1) {
+                        val step = size.width / (points.size - 1)
+                        for (i in 0 until points.lastIndex) {
+                            drawLine(
+                                color = MoonBlue,
+                                start = androidx.compose.ui.geometry.Offset(i * step, size.height * (1f - points[i].lowMotionFraction)),
+                                end = androidx.compose.ui.geometry.Offset((i + 1) * step, size.height * (1f - points[i + 1].lowMotionFraction)),
+                                strokeWidth = 3f,
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (state.selectedMode == InsightsMode.REAL && !state.isQualityGateSatisfied) {
                 // Quality Gate Notice
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -107,7 +148,7 @@ fun InsightsScreen(
                         )
                     }
                 }
-            } else {
+            } else if (state.selectedMode == InsightsMode.REAL) {
                 // Baseline Comparison Card
                 val comp = state.latestComparison
                 if (comp != null) {
@@ -154,27 +195,6 @@ fun InsightsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // Summary KPIs
-                val medianHrs = state.medianDurationMs / 3_600_000L
-                val medianMins = (state.medianDurationMs % 3_600_000L) / 60_000L
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    MetricCard(
-                        title = "Avg Low-Motion",
-                        value = "${(state.averageLowMotionFraction * 100).toInt()}%",
-                        subtitle = "Across ${state.comparableSessionCount} sessions",
-                        accentColor = CalmGreen,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    MetricCard(
-                        title = "Median Duration",
-                        value = "${medianHrs}h ${medianMins}m",
-                        subtitle = "Valid observations",
-                        accentColor = MoonBlue,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
             }
         }
     }

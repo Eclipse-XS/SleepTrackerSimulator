@@ -107,6 +107,12 @@ class TodayViewModel(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
+    fun reportServiceCommandFailure(operation: String, error: Throwable?) {
+        _uiState.value = _uiState.value.copy(
+            errorMessage = "$operation failed: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown error"}",
+        )
+    }
+
     companion object {
         fun factory(
             sessionCoordinator: SessionCoordinator,

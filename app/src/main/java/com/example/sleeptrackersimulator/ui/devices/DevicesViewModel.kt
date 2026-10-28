@@ -3,72 +3,74 @@ package com.example.sleeptrackersimulator.ui.devices
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.sleeptrackersimulator.ble.BleConnectionState
-import com.example.sleeptrackersimulator.ble.BleDevice
-import com.example.sleeptrackersimulator.ble.IBleConnector
+import com.example.sleeptrackersimulator.core.model.DeviceConnectionState
 import com.example.sleeptrackersimulator.core.model.DeviceInfo
+import com.example.sleeptrackersimulator.core.model.HeartRateSample
+import com.example.sleeptrackersimulator.data.ble.BleMode
+import com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 data class DevicesUiState(
     val phoneSensorAvailable: Boolean = true,
-    val bleState: BleConnectionState = BleConnectionState.Idle,
+    val mode: BleMode = BleMode.REAL,
+    val connectionState: DeviceConnectionState = DeviceConnectionState.DISCONNECTED,
     val heartRate: Int? = null,
-    val isDemoBandActive: Boolean = false,
+    val lastPacketUtcMillis: Long? = null,
+    val connectedDevice: DeviceInfo? = null,
     val discoveredDevices: List<DeviceInfo> = emptyList(),
+    val errorMessage: String? = null,
 )
 
-class DevicesViewModel(
-    private val bleConnector: IBleConnector,
-) : ViewModel() {
+class DevicesViewModel(private val transport: SwitchingDeviceTransport) : ViewModel() {
+    private val _uiState = MutableStateFlow(DevicesUiState())
+    val uiState: StateFlow<DevicesUiState> = _uiState
 
-    private val _isDemoBandActive = MutableStateFlow(false)
-
-    val uiState: StateFlow<DevicesUiState> = combine(
-        bleConnector.state,
-        bleConnector.heartRate,
-        _isDemoBandActive,
-    ) { bleState, hr, demoActive ->
-        DevicesUiState(
-            phoneSensorAvailable = true,
-            bleState = bleState,
-            heartRate = if (bleState is BleConnectionState.Connected) hr?.beatsPerMinute else null,
-            isDemoBandActive = demoActive,
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = DevicesUiState(),
-    )
-
-    fun toggleDemoBand() {
-        val willActivate = !_isDemoBandActive.value
-        _isDemoBandActive.value = willActivate
-        if (willActivate) {
-            bleConnector.startScan()
-        } else {
-            bleConnector.disconnect()
+    init {
+        viewModelScope.launch {
+            combine(transport.mode, transport.connectionState, transport.connectedDevice) { mode, state, device ->
+                Triple(mode, state, device)
+            }.collect { (mode, state, device) ->
+                _uiState.update { it.copy(mode = mode, connectionState = state, connectedDevice = device) }
+            }
         }
+        viewModelScope.launch {
+            transport.observeDiscoveredDevices().collect { devices ->
+                _uiState.update { it.copy(discoveredDevices = devices) }
+            }
+        }
+        viewModelScope.launch { transport.heartRateStream.collect(::onHeartRate) }
     }
 
-    fun connectDevice(device: BleDevice = BleDevice("Virtual Sleep Band", "00:11:22:33:AA:BB")) {
-        bleConnector.connect(device)
+    fun selectMode(mode: BleMode) = launchOperation("Switch BLE mode") { transport.selectMode(mode) }
+    fun startScan() = launchResult("Scan") { transport.startScan() }
+    fun connectDevice(device: DeviceInfo) = launchResult("Connect") { transport.connect(device.deviceId) }
+    fun disconnectDevice() = launchResult("Disconnect") { transport.disconnect() }
+    fun dismissError() = _uiState.update { it.copy(errorMessage = null) }
+
+    private fun onHeartRate(sample: HeartRateSample) {
+        _uiState.update { it.copy(heartRate = sample.bpm, lastPacketUtcMillis = sample.utcTimestampMillis) }
     }
 
-    fun disconnectDevice() {
-        bleConnector.disconnect()
+    private fun launchOperation(name: String, operation: suspend () -> Unit) {
+        viewModelScope.launch { runCatching { operation() }.onFailure { setError(name, it) } }
+    }
+
+    private fun launchResult(name: String, operation: suspend () -> Result<Unit>) {
+        viewModelScope.launch { operation().onFailure { setError(name, it) } }
+    }
+
+    private fun setError(operation: String, error: Throwable) {
+        _uiState.update { it.copy(errorMessage = "$operation failed: ${error.message ?: error.javaClass.simpleName}") }
     }
 
     companion object {
-        fun factory(bleConnector: IBleConnector): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return DevicesViewModel(bleConnector) as T
-                }
-            }
+        fun factory(transport: SwitchingDeviceTransport): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = DevicesViewModel(transport) as T
+        }
     }
 }

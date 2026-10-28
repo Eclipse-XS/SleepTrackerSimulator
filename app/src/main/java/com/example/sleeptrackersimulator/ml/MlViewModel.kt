@@ -65,7 +65,9 @@ class MlViewModel(
     override fun onCleared() {
         windows.close()
         buffer.clear()
-        classifier.close()
+        // The classifier is application-scoped and is also used by RecordingService through
+        // SessionCoordinator. A screen rotation or Activity teardown must not close a shared
+        // native TFLite interpreter while background recording is still running.
         super.onCleared()
     }
 

@@ -31,6 +31,15 @@ interface SessionDao {
     @Query("DELETE FROM recording_sessions WHERE sessionId = :sessionId")
     suspend fun deleteSession(sessionId: String)
 
+    @Query("DELETE FROM recording_sessions WHERE sourceMode = 'DEMO' AND sessionId LIKE 'demo-v1-%'")
+    suspend fun deleteDemoSessions(): Int
+
+    @Query("SELECT COUNT(*) FROM recording_sessions WHERE sourceMode = 'DEMO' AND sessionId LIKE 'demo-v1-%'")
+    suspend fun countDemoSessions(): Int
+
+    @Query("SELECT * FROM recording_sessions WHERE sourceMode = 'DEMO' OR sessionId LIKE 'demo-v1-%' ORDER BY startUtcMillis ASC")
+    suspend fun getDemoSessions(): List<RecordingSessionEntity>
+
     @Query("UPDATE recording_sessions SET status = :status, updatedAt = :updatedAt WHERE sessionId = :sessionId")
     suspend fun updateStatus(sessionId: String, status: String, updatedAt: Long)
 }
@@ -96,6 +105,12 @@ interface SessionSummaryDao {
 
     @Query("SELECT * FROM session_summaries ORDER BY calculatedAtUtcMillis DESC LIMIT :limit")
     suspend fun getRecentSummaries(limit: Int): List<SessionSummaryEntity>
+
+    @Query("SELECT * FROM session_summaries ORDER BY calculatedAtUtcMillis DESC LIMIT :limit")
+    fun observeRecentSummaries(limit: Int): Flow<List<SessionSummaryEntity>>
+
+    @Query("SELECT * FROM session_summaries WHERE sessionId LIKE 'demo-v1-%' ORDER BY calculatedAtUtcMillis ASC")
+    suspend fun getDemoSummaries(): List<SessionSummaryEntity>
 
     @Query("SELECT * FROM session_summaries WHERE calculatedAtUtcMillis >= :sinceUtcMillis ORDER BY calculatedAtUtcMillis DESC")
     suspend fun getSummariesSince(sinceUtcMillis: Long): List<SessionSummaryEntity>

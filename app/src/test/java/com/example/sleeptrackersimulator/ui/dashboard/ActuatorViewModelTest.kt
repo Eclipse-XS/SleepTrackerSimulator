@@ -138,6 +138,86 @@ class ActuatorViewModelTest {
     }
 
     @Test
+    fun `ten rapid flashlight cycles preserve exact command order and finish off`() = actuatorTest { fixture ->
+        repeat(10) {
+            fixture.viewModel.setManualFlashlight(true)
+            fixture.viewModel.setManualFlashlight(false)
+        }
+
+        assertEquals(List(10) { listOf(true, false) }.flatten(), fixture.actuator.flashlightStates)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+        assertTrue(fixture.viewModel.state.value.lastApiResult!!.contains("API=SUCCESS"))
+    }
+
+    @Test
+    fun `manual flashlight off remains available while automatic control is active`() = actuatorTest { fixture ->
+        assertTrue(fixture.viewModel.state.value.automaticControlEnabled)
+        fixture.viewModel.setManualFlashlight(true)
+        fixture.viewModel.setManualFlashlight(false)
+
+        assertEquals(listOf(true, false), fixture.actuator.flashlightStates)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+    }
+
+    @Test
+    fun `emergency off disables every control path and always reaches hardware`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualVibration(true)
+        fixture.viewModel.setManualFlashlight(true)
+
+        val result = fixture.viewModel.emergencyOff()
+
+        assertTrue(result.successful)
+        assertEquals(listOf(true, false), fixture.actuator.vibrationStates)
+        assertEquals(listOf(true, false), fixture.actuator.flashlightStates)
+        assertEquals(1, fixture.actuator.stopCalls)
+        assertFalse(fixture.viewModel.state.value.vibrationEnabled)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+        assertFalse(fixture.viewModel.state.value.automaticControlEnabled)
+    }
+
+    @Test
+    fun `failed flashlight call exposes error and next manual retry succeeds`() = actuatorTest { fixture ->
+        fixture.actuator.nextFailure = "camera busy"
+        fixture.viewModel.setManualFlashlight(true)
+        assertEquals("camera busy", fixture.viewModel.state.value.lastError)
+
+        fixture.viewModel.setManualFlashlight(true)
+        assertEquals(listOf(true), fixture.actuator.flashlightStates)
+        assertTrue(fixture.viewModel.state.value.flashlightEnabled)
+        assertEquals(null, fixture.viewModel.state.value.lastError)
+    }
+
+
+    @Test
+    fun `explicit local flashlight OFF reaches hardware even when UI already says off`() = actuatorTest { fixture ->
+        fixture.viewModel.setManualFlashlight(false)
+        assertEquals(listOf(false), fixture.actuator.flashlightStates)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+    }
+
+    @Test
+    fun `manual flashlight OFF cannot be undone by stale remote ON snapshot`() = actuatorTest { fixture ->
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(flashlightEnabled = true)))
+        runCurrent()
+        fixture.viewModel.setManualFlashlight(false)
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(flashlightEnabled = true)))
+        runCurrent()
+        assertEquals(listOf(true, false), fixture.actuator.flashlightStates)
+        assertFalse(fixture.viewModel.state.value.flashlightEnabled)
+    }
+
+    @Test
+    fun `manual vibration OFF cannot be undone by stale remote ON snapshot`() = actuatorTest { fixture ->
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = true)))
+        runCurrent()
+        fixture.viewModel.setManualVibration(false)
+        fixture.remote.emit(RemoteControlEvent.Updated(RemoteControlState(vibrationEnabled = true)))
+        runCurrent()
+        assertEquals(listOf(true, false), fixture.actuator.vibrationStates)
+        assertFalse(fixture.viewModel.state.value.vibrationEnabled)
+    }
+
+    @Test
     fun `camera permission denial leaves flashlight off without hardware call`() = actuatorTest { fixture ->
         fixture.viewModel.reportFlashlightPermissionDenied()
 

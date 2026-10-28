@@ -151,6 +151,7 @@ fun ProvenanceChip(
     val (label, color) = when (sourceKind) {
         SourceKind.PHONE_REAL -> "PHONE" to CalmGreen
         SourceKind.BLE_REAL -> "WEARABLE" to MoonBlue
+        SourceKind.BLE_UNVERIFIED -> "BLE UNVERIFIED" to MotionAmber
         SourceKind.SIMULATED -> "SIMULATED" to HeartCoral
         SourceKind.REPLAY -> "REPLAY" to MotionAmber
         SourceKind.IMPORTED -> "IMPORTED" to Color(0xFFC084FC)

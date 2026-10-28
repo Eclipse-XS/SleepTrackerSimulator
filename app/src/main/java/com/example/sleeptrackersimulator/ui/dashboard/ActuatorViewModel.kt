@@ -51,6 +51,7 @@ class ActuatorViewModel(
         ActuatorUiState(
             vibratorAvailable = actuator.vibratorAvailable,
             flashlightAvailable = actuator.flashlightAvailable,
+            amplitudeControlAvailable = actuator.amplitudeControlAvailable,
         ),
     )
     val state: StateFlow<ActuatorUiState> = _state
@@ -62,8 +63,16 @@ class ActuatorViewModel(
     private var manualVibrationBeforeInitialRemoteSnapshot = false
     private var manualFlashlightBeforeInitialRemoteSnapshot = false
     private var lastMlCritical = false
+    // A local OFF is a safety command: stale remote ON snapshots cannot immediately undo it.
+    private var manualVibrationOffLatch = false
+    private var manualFlashlightOffLatch = false
 
     init {
+        actuator.observedFlashlightEnabled?.let { observed ->
+            viewModelScope.launch {
+                observed.collect { enabled -> _state.update { it.copy(observedFlashlightEnabled = enabled) } }
+            }
+        }
         viewModelScope.launch {
             sensorState.collect { sensor ->
                 val analysis = (sensor as? SensorUiState.Active)?.analysis
@@ -165,13 +174,16 @@ class ActuatorViewModel(
 
     fun setManualVibration(enabled: Boolean) {
         if (!foregroundActive) return
+        manualVibrationOffLatch = !enabled
         if (!receivedInitialRemoteSnapshot) manualVibrationBeforeInitialRemoteSnapshot = true
         DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setVibration", DiagnosticResult.STARTED, source = TriggerSource.MANUAL.name, details = mapOf("enabled" to enabled))
         applyPersistentVibration(enabled, TriggerSource.MANUAL)
     }
 
     fun setManualFlashlight(enabled: Boolean) {
-        if (!foregroundActive) return
+        // Allow OFF while backgrounded, e.g. after launching a screen recorder.
+        if (enabled && !foregroundActive) return
+        manualFlashlightOffLatch = !enabled
         if (!receivedInitialRemoteSnapshot) manualFlashlightBeforeInitialRemoteSnapshot = true
         DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.STARTED, source = TriggerSource.MANUAL.name, details = mapOf("enabled" to enabled))
         applyFlashlight(enabled, TriggerSource.MANUAL)
@@ -194,6 +206,45 @@ class ActuatorViewModel(
         return result
     }
 
+    fun testVibration(): ActuatorResult {
+        if (!foregroundActive) return ActuatorResult(ActuatorOperationStatus.ERROR, "App must be in foreground")
+        val result = actuator.triggerVibrationPulse()
+        _state.update {
+            it.copy(
+                lastApiResult = "Vibrator=${actuator.vibratorAvailable}; amplitudeControl=${actuator.amplitudeControlAvailable}; API=${result.status}; physicalEffectConfirmed=false; ${result.message}",
+                lastError = if (result.successful) null else result.message,
+            )
+        }
+        return result
+    }
+
+    fun emergencyOff(): ActuatorResult {
+        manualVibrationOffLatch = true
+        manualFlashlightOffLatch = true
+        setAutomaticControlEnabled(false)
+        val vibrationResult = actuator.setPersistentVibration(false)
+        val flashlightResult = actuator.setFlashlightEnabled(false)
+        actuator.stopAll()
+        val failed = listOf(vibrationResult, flashlightResult).firstOrNull { !it.successful }
+        val result = failed ?: ActuatorResult(
+            ActuatorOperationStatus.SUCCESS,
+            "Emergency OFF completed",
+        )
+        _state.update {
+            it.copy(
+                vibrationEnabled = false,
+                flashlightEnabled = false,
+                automaticControlEnabled = false,
+                lastTriggerSource = TriggerSource.MANUAL,
+                lastActionTriggered = ActuatorAction.FLASHLIGHT_DISABLED,
+                lastApiResult = apiResultDescription(result),
+                lastError = if (result.successful) null else result.message,
+            )
+        }
+        log(result.message, if (result.successful) null else IllegalStateException(result.message))
+        return result
+    }
+
     private fun applyPulse(result: ActuatorResult, source: TriggerSource) {
         applyResult(result, ActuatorAction.VIBRATION_PULSE, source) {
             it.copy(
@@ -211,12 +262,24 @@ class ActuatorViewModel(
         if (initialSnapshot && manualVibrationBeforeInitialRemoteSnapshot) {
             log("Initial remote vibration state ignored: a manual command was already issued", null)
         } else {
-            controls.vibrationEnabled?.let { applyPersistentVibration(it, TriggerSource.REMOTE) }
+            controls.vibrationEnabled?.let { enabled ->
+                if (enabled && manualVibrationOffLatch) {
+                    log("Remote vibration ON ignored after explicit local OFF", null)
+                } else {
+                    applyPersistentVibration(enabled, TriggerSource.REMOTE)
+                }
+            }
         }
         if (initialSnapshot && manualFlashlightBeforeInitialRemoteSnapshot) {
             log("Initial remote flashlight state ignored: a manual command was already issued", null)
         } else {
-            controls.flashlightEnabled?.let { applyFlashlight(it, TriggerSource.REMOTE) }
+            controls.flashlightEnabled?.let { enabled ->
+                if (enabled && manualFlashlightOffLatch) {
+                    log("Remote flashlight ON ignored after explicit local OFF", null)
+                } else {
+                    applyFlashlight(enabled, TriggerSource.REMOTE)
+                }
+            }
         }
     }
 
@@ -242,7 +305,8 @@ class ActuatorViewModel(
     }
 
     private fun applyFlashlight(enabled: Boolean, source: TriggerSource) {
-        if (_state.value.flashlightEnabled == enabled) {
+        // OFF must always reach CameraManager: UI state can diverge from hardware state.
+        if (enabled && _state.value.flashlightEnabled) {
             DiagnosticLog.event(DiagnosticTags.ACTUATORS, "setFlashlight", DiagnosticResult.SKIPPED, source = source.name, details = mapOf("enabled" to enabled, "reason" to "duplicate"))
             return
         }
@@ -270,17 +334,27 @@ class ActuatorViewModel(
     ) {
         if (result.status == ActuatorOperationStatus.SUCCESS) {
             log(result.message, null)
-            _state.update(onSuccess)
+            _state.update { current ->
+                onSuccess(current).copy(lastApiResult = apiResultDescription(result))
+            }
             if (activation != null) {
                 activationChannel.trySend(
                     ActuatorActivation(activation, source, currentTimeMillis()),
                 )
             }
         } else {
-            _state.update { it.copy(lastError = result.message) }
+            _state.update {
+                it.copy(
+                    lastApiResult = apiResultDescription(result),
+                    lastError = result.message,
+                )
+            }
             log("Actuator operation failed: ${result.message}", null)
         }
     }
+
+    private fun apiResultDescription(result: ActuatorResult): String =
+        "API=${result.status}; physicalEffectConfirmed=false; ${result.message}"
 
     override fun onCleared() {
         decisionEngine.reset()

@@ -1,5 +1,7 @@
 package com.example.virtualsleepband.ui
 
+import com.example.virtualsleepband.BuildConfig
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.virtualsleepband.gatt.BandPeripheralState
+import com.example.virtualsleepband.gatt.SimulationScenario
 
 val DarkBg = Color(0xFF0A0E17)
 val CardBg = Color(0xFF141C2B)
@@ -66,6 +69,7 @@ fun VirtualBandScreen(
     onSetBpm: (Int) -> Unit,
     onSetBattery: (Int) -> Unit,
     onSetInterval: (Long) -> Unit,
+    onSetScenario: (SimulationScenario) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -78,7 +82,7 @@ fun VirtualBandScreen(
                             color = TextPrimary,
                         )
                         Text(
-                            text = "GATT Peripheral Simulator (0x180D & 0x180F)",
+                            text = "${BuildConfig.VERSION_NAME} · GATT Peripheral Simulator (0x180D & 0x180F)",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextMuted,
                         )
@@ -96,6 +100,21 @@ fun VirtualBandScreen(
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text("Automatic scenario", color = TextPrimary, fontWeight = FontWeight.Bold)
+            SimulationScenario.values().forEach { scenario ->
+                FilterChip(
+                    selected = state.scenario == scenario,
+                    onClick = { onSetScenario(scenario) },
+                    label = { Text(scenario.label) },
+                )
+            }
+            Text(
+                "Elapsed ${state.elapsedSeconds}s · transmitted ${state.transmittedPacketCount} packets · synthetic source",
+                color = TextMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
             // 1. Advertising Control Card
@@ -210,15 +229,10 @@ fun VirtualBandScreen(
                         )
                     }
 
-                    Slider(
-                        value = state.currentBpm.toFloat(),
-                        onValueChange = { onSetBpm(it.toInt()) },
-                        valueRange = 40f..180f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = CoralRed,
-                            activeTrackColor = CoralRed,
-                            inactiveTrackColor = CardBorder,
-                        ),
+                    Text(
+                        "Automatic simulated waveform; values are generated independently of user input.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -274,15 +288,10 @@ fun VirtualBandScreen(
                         )
                     }
 
-                    Slider(
-                        value = state.batteryLevel.toFloat(),
-                        onValueChange = { onSetBattery(it.toInt()) },
-                        valueRange = 0f..100f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = EmeraldGreen,
-                            activeTrackColor = EmeraldGreen,
-                            inactiveTrackColor = CardBorder,
-                        ),
+                    Text(
+                        "Simulated battery drain (not a hardware reading).",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }

@@ -612,6 +612,14 @@ private fun ActuatorPanel(
                 enabled = state.vibratorAvailable,
                 onCheckedChange = onAutomaticControlChanged,
             )
+            Text(
+                "System torch state: ${state.observedFlashlightEnabled?.toString() ?: "unavailable"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.lastApiResult?.let { result ->
+                Text(result, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
             Text("Manual control", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SettingSwitchRow(

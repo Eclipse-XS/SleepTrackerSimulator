@@ -23,6 +23,8 @@ interface SessionCoordinator {
     suspend fun pauseSession(): Result<Unit>
     suspend fun resumeSession(): Result<Unit>
     suspend fun stopSession(): Result<RecordingSession>
+    suspend fun failSession(reason: String, droppedSamples: Long = 0): Result<RecordingSession>
+    suspend fun reportDroppedSamples(count: Long)
     suspend fun recoverSession(sessionId: String): Result<RecordingSession>
     suspend fun discardSession(): Result<Unit>
 
@@ -41,6 +43,6 @@ interface SessionCoordinator {
         bpm: Int,
         utcTimestampMillis: Long = System.currentTimeMillis(),
         timingUncertaintyMillis: Long = 0,
-        sourceKind: com.example.sleeptrackersimulator.core.model.SourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.BLE_REAL,
+        sourceKind: com.example.sleeptrackersimulator.core.model.SourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.BLE_UNVERIFIED,
     )
 }

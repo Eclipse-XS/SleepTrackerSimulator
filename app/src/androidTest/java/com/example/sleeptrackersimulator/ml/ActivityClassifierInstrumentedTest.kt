@@ -4,10 +4,84 @@ import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.sin
 
 class ActivityClassifierInstrumentedTest {
+    @Test fun sharedClassifierSerializesConcurrentNativeInference() {
+        val classifier = ActivityClassifier(ApplicationProvider.getApplicationContext())
+        val executor = Executors.newFixedThreadPool(2)
+        val start = CountDownLatch(1)
+        val completed = CountDownLatch(2)
+        val failures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+        repeat(2) { worker ->
+            executor.execute {
+                try {
+                    start.await()
+                    repeat(100) { iteration ->
+                        val phase = worker * 100 + iteration
+                        val window = Array(20) { index ->
+                            val wave = sin((index + phase) * 0.31).toFloat()
+                            floatArrayOf(wave, -wave, 9.81f + wave)
+                        }
+                        classifier.classify(window)
+                    }
+                } catch (error: Throwable) {
+                    failures.add(error)
+                } finally {
+                    completed.countDown()
+                }
+            }
+        }
+
+        start.countDown()
+        assertTrue("Concurrent inference timed out", completed.await(30, TimeUnit.SECONDS))
+        executor.shutdownNow()
+        classifier.close()
+        assertTrue("Concurrent inference failed: $failures", failures.isEmpty())
+    }
+
+    @Test fun closeWaitsForNativeInferenceAndPreventsUseAfterClose() {
+        val classifier = ActivityClassifier(ApplicationProvider.getApplicationContext())
+        val executor = Executors.newFixedThreadPool(2)
+        val started = CountDownLatch(1)
+        val completed = CountDownLatch(2)
+        val unexpected = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+        val window = Array(20) { floatArrayOf(0f, 0f, 9.81f) }
+
+        executor.execute {
+            try {
+                started.countDown()
+                repeat(100) { classifier.classify(window) }
+            } catch (closed: IllegalStateException) {
+                // Closing between serialized calls is an expected terminal outcome.
+            } catch (error: Throwable) {
+                unexpected.add(error)
+            } finally {
+                completed.countDown()
+            }
+        }
+        executor.execute {
+            try {
+                started.await()
+                classifier.close()
+            } catch (error: Throwable) {
+                unexpected.add(error)
+            } finally {
+                completed.countDown()
+            }
+        }
+
+        assertTrue("Concurrent close timed out", completed.await(30, TimeUnit.SECONDS))
+        executor.shutdownNow()
+        assertTrue("Native inference/close failed: $unexpected", unexpected.isEmpty())
+        val afterClose = runCatching { classifier.classify(window) }.exceptionOrNull()
+        assertTrue(afterClose is IllegalStateException)
+    }
+
     @Test fun realTfliteModelClassifiesRestWindow() {
         ActivityClassifier(ApplicationProvider.getApplicationContext()).use { classifier ->
             val window = Array(20) { floatArrayOf(0f, 0f, 9.81f) }

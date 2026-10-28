@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.virtualsleepband"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2000001
+        versionName = "2.0-RC1"
     }
 
     compileOptions {
@@ -24,6 +24,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -38,4 +39,5 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
 }

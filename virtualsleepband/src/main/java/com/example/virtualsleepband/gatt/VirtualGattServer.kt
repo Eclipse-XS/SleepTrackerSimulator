@@ -29,11 +29,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.UUID
-import kotlin.random.Random
+import java.util.concurrent.ConcurrentHashMap
+import java.time.Instant
 
 data class CommandLogEntry(
     val timestamp: String,
@@ -48,6 +46,9 @@ data class BandPeripheralState(
     val currentBpm: Int = 68,
     val batteryLevel: Int = 88,
     val packetIntervalMs: Long = 1000L,
+    val scenario: SimulationScenario = SimulationScenario.NORMAL_REST,
+    val elapsedSeconds: Long = 0L,
+    val transmittedPacketCount: Long = 0L,
     val commandLogs: List<CommandLogEntry> = emptyList(),
     val errorMessage: String? = null,
 )
@@ -64,17 +65,25 @@ class VirtualGattServer(
     val state: StateFlow<BandPeripheralState> = _state.asStateFlow()
 
     private var gattServer: BluetoothGattServer? = null
-    private val connectedDevices = mutableSetOf<BluetoothDevice>()
+    private val connectedDevices = ConcurrentHashMap.newKeySet<BluetoothDevice>()
+    private val heartRateSubscribers = ConcurrentHashMap.newKeySet<BluetoothDevice>()
     private var streamJob: Job? = null
+    private var syntheticHeartRate = SimulatedHeartRate()
+    private var simulationSeconds = 0L
 
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private var pendingBatteryService: BluetoothGattService? = null
+    @Volatile private var isStarting = false
+    private val registrationSequencer = GattRegistrationSequencer()
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             _state.value = _state.value.copy(isAdvertising = true, errorMessage = null)
+            startTransmissionLoop()
         }
 
         override fun onStartFailure(errorCode: Int) {
+            streamJob?.cancel()
+            streamJob = null
             _state.value = _state.value.copy(
                 isAdvertising = false,
                 errorMessage = "Advertising failed: error code $errorCode",
@@ -84,12 +93,27 @@ class VirtualGattServer(
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
         @SuppressLint("MissingPermission")
+        override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+            if (!isStarting) return
+            when (registrationSequencer.onServiceAdded(status == BluetoothGatt.GATT_SUCCESS, service?.uuid)) {
+                RegistrationAction.ADD_BATTERY -> {
+                    val battery = pendingBatteryService
+                    if (battery == null || gattServer?.addService(battery) != true) failStartup("Battery service registration could not start")
+                }
+                RegistrationAction.START_ADVERTISING -> startAdvertiserAfterServicesRegistered()
+                RegistrationAction.FAIL -> failStartup("GATT service registration failed or arrived out of order: $status")
+                RegistrationAction.IGNORE -> Unit
+            }
+        }
+
+        @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
             if (device == null) return
             if (newState == BluetoothGatt.STATE_CONNECTED) {
                 connectedDevices.add(device)
             } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
                 connectedDevices.remove(device)
+                heartRateSubscribers.remove(device)
             }
             _state.value = _state.value.copy(connectedCentrals = connectedDevices.size)
         }
@@ -130,7 +154,7 @@ class VirtualGattServer(
             val target = device ?: return
             val commandText = value?.let { String(it, Charsets.UTF_8) } ?: "<empty>"
             val logEntry = CommandLogEntry(
-                timestamp = timeFormat.format(Date()),
+                timestamp = Instant.now().toString(),
                 sourceDevice = target.address ?: "Central",
                 characteristicUuid = characteristic?.uuid?.toString()?.take(8) ?: "Unknown",
                 command = commandText,
@@ -155,6 +179,13 @@ class VirtualGattServer(
             value: ByteArray?,
         ) {
             val target = device ?: return
+            if (descriptor?.uuid == UUID_CCCD && descriptor.characteristic.uuid == UUID_HEART_RATE_MEASUREMENT) {
+                if (value?.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == true) {
+                    heartRateSubscribers.add(target)
+                } else {
+                    heartRateSubscribers.remove(target)
+                }
+            }
             if (responseNeeded) {
                 gattServer?.sendResponse(target, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
             }
@@ -173,33 +204,28 @@ class VirtualGattServer(
 
     @SuppressLint("MissingPermission")
     fun startAdvertising(): Result<Unit> {
+        if (_state.value.isAdvertising || isStarting) return Result.success(Unit)
         if (!hasPermissions()) {
             val msg = "Missing required Bluetooth permissions"
             _state.value = _state.value.copy(errorMessage = msg)
             return Result.failure(SecurityException(msg))
         }
 
-        val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+        bluetoothAdapter?.bluetoothLeAdvertiser
             ?: return Result.failure(IllegalStateException("BLE Advertising is not supported on this hardware"))
 
         // Set up GATT Server
         gattServer = bluetoothManager?.openGattServer(context, gattServerCallback)
-        setupServices()
-
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(true)
-            .build()
-
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
-            .addServiceUuid(ParcelUuid(UUID_BATTERY_SERVICE))
-            .build()
-
-        advertiser.startAdvertising(settings, data, advertiseCallback)
-        startTransmissionLoop()
+            ?: return Result.failure(IllegalStateException("Unable to open GATT server"))
+        val (heartRateService, batteryService) = createServices()
+        pendingBatteryService = batteryService
+        isStarting = true
+        registrationSequencer.start()
+        if (gattServer?.addService(heartRateService) != true) {
+            failStartup("Heart-rate service registration could not start")
+            return Result.failure(IllegalStateException("Heart-rate service registration could not start"))
+        }
+        simulationSeconds = 0L
 
         return Result.success(Unit)
     }
@@ -215,7 +241,11 @@ class VirtualGattServer(
             gattServer?.close()
         }
         gattServer = null
+        pendingBatteryService = null
+        isStarting = false
+        registrationSequencer.stop()
         connectedDevices.clear()
+        heartRateSubscribers.clear()
         _state.value = _state.value.copy(isAdvertising = false, connectedCentrals = 0)
     }
 
@@ -224,6 +254,12 @@ class VirtualGattServer(
         if (_state.value.isAdvertising) {
             startTransmissionLoop()
         }
+    }
+
+    fun setScenario(scenario: SimulationScenario) {
+        syntheticHeartRate = SimulatedHeartRate(scenario = scenario)
+        simulationSeconds = 0L
+        _state.value = _state.value.copy(scenario = scenario, elapsedSeconds = 0L, transmittedPacketCount = 0L)
     }
 
     fun setBpm(bpm: Int) {
@@ -247,7 +283,7 @@ class VirtualGattServer(
     }
 
     @SuppressLint("MissingPermission")
-    private fun setupServices() {
+    private fun createServices(): Pair<BluetoothGattService, BluetoothGattService> {
         // 1. Heart Rate Service (0x180D)
         val hrService = BluetoothGattService(UUID_HEART_RATE_SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 
@@ -276,7 +312,6 @@ class VirtualGattServer(
             BluetoothGattCharacteristic.PERMISSION_WRITE,
         )
         hrService.addCharacteristic(customCommand)
-        gattServer?.addService(hrService)
 
         // 2. Battery Service (0x180F)
         val batService = BluetoothGattService(UUID_BATTERY_SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
@@ -291,7 +326,43 @@ class VirtualGattServer(
         )
         batLevel.addDescriptor(batCccd)
         batService.addCharacteristic(batLevel)
-        gattServer?.addService(batService)
+        return hrService to batService
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startAdvertiserAfterServicesRegistered() {
+        if (!isStarting || !hasPermissions()) {
+            failStartup("Bluetooth permission lost during startup")
+            return
+        }
+        val advertiser = bluetoothAdapter?.bluetoothLeAdvertiser ?: run {
+            failStartup("BLE advertiser became unavailable")
+            return
+        }
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            .setConnectable(true)
+            .build()
+        val data = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
+            .addManufacturerData(SIMULATOR_MANUFACTURER_ID, SIMULATOR_MARKER)
+            .build()
+        isStarting = false
+        registrationSequencer.stop()
+        advertiser.startAdvertising(settings, data, advertiseCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun failStartup(message: String) {
+        isStarting = false
+        streamJob?.cancel()
+        streamJob = null
+        runCatching { gattServer?.close() }
+        gattServer = null
+        pendingBatteryService = null
+        _state.value = _state.value.copy(isAdvertising = false, errorMessage = message)
     }
 
     @SuppressLint("MissingPermission")
@@ -300,20 +371,22 @@ class VirtualGattServer(
         streamJob = scope.launch {
             while (isActive) {
                 delay(_state.value.packetIntervalMs)
-                val currentBpm = _state.value.currentBpm
-                val jitter = Random.nextInt(-1, 2)
-                val emittedBpm = (currentBpm + jitter).coerceIn(40, 180)
+                simulationSeconds += (_state.value.packetIntervalMs / 1000L).coerceAtLeast(1L)
+                val emittedBpm = syntheticHeartRate.bpm(simulationSeconds)
+                val battery = syntheticHeartRate.batteryPercent(simulationSeconds)
+                _state.value = _state.value.copy(currentBpm = emittedBpm, batteryLevel = battery, elapsedSeconds = simulationSeconds)
 
-                if (connectedDevices.isNotEmpty() && hasPermissions()) {
+                if (syntheticHeartRate.hasSignal(simulationSeconds) && heartRateSubscribers.isNotEmpty() && hasPermissions()) {
                     val hrChar = gattServer?.getService(UUID_HEART_RATE_SERVICE)
                         ?.getCharacteristic(UUID_HEART_RATE_MEASUREMENT)
 
                     if (hrChar != null) {
                         val payload = byteArrayOf(0x00, emittedBpm.toByte())
                         hrChar.value = payload
-                        for (dev in connectedDevices) {
+                        for (dev in heartRateSubscribers.toList()) {
                             gattServer?.notifyCharacteristicChanged(dev, hrChar, false)
                         }
+                        _state.value = _state.value.copy(transmittedPacketCount = _state.value.transmittedPacketCount + heartRateSubscribers.size)
                     }
                 }
             }
@@ -328,5 +401,7 @@ class VirtualGattServer(
         val UUID_BATTERY_LEVEL: UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
         val UUID_CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val UUID_COMMAND_CHARACTERISTIC: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
+        const val SIMULATOR_MANUFACTURER_ID = 0xFFFF
+        val SIMULATOR_MARKER = byteArrayOf(0x53, 0x53, 0x56, 0x31)
     }
 }

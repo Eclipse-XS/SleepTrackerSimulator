@@ -30,14 +30,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +47,7 @@ import com.example.sleeptrackersimulator.ui.theme.DarkSurfaceRaised
 import com.example.sleeptrackersimulator.ui.theme.MistBlue
 import com.example.sleeptrackersimulator.ui.theme.MoonBlue
 import com.example.sleeptrackersimulator.ui.theme.NightBlue
+import com.example.sleeptrackersimulator.BuildConfig
 
 @Composable
 fun SettingsScreen(
@@ -56,9 +55,9 @@ fun SettingsScreen(
     onOpenDeveloperLab: () -> Unit,
     onExportData: () -> Unit,
     onDeleteAllData: () -> Unit,
+    deleteAllEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    var cloudSyncEnabled by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     if (showDeleteDialog) {
@@ -148,18 +147,16 @@ fun SettingsScreen(
                                 color = MistBlue,
                             )
                             Text(
-                                text = "Synchronizes only session summaries and rules when enabled. Offline-first by default.",
+                                text = "Availability is determined by this APK's Firebase configuration. Runtime status and outbox diagnostics are shown in Lab View.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MistBlue.copy(alpha = 0.65f),
                             )
                         }
-                        Switch(
-                            checked = cloudSyncEnabled,
-                            onCheckedChange = { cloudSyncEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = NightBlue,
-                                checkedTrackColor = MoonBlue,
-                            ),
+                        Text(
+                            text = "BUILD CONFIG",
+                            color = CalmGreen,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -193,12 +190,12 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Export Local Data",
+                                text = "Open Data Export Tools",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                 color = MistBlue,
                             )
                             Text(
-                                text = "Export sessions and summaries as JSON/CSV",
+                                text = "Developer Lab → Room provides verified demo CSV export",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MistBlue.copy(alpha = 0.65f),
                             )
@@ -210,7 +207,7 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(onClick = { showDeleteDialog = true })
+                            .clickable(enabled = deleteAllEnabled, onClick = { showDeleteDialog = true })
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -223,7 +220,11 @@ fun SettingsScreen(
                                 color = Color(0xFFEF4444),
                             )
                             Text(
-                                text = "Permanently remove all local history and baselines",
+                                text = if (deleteAllEnabled) {
+                                    "Permanently remove all local history and baselines"
+                                } else {
+                                    "Stop the active recording before deleting local data"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MistBlue.copy(alpha = 0.65f),
                             )
@@ -281,6 +282,14 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "SleepSense ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MistBlue.copy(alpha = 0.6f),
+            )
         }
     }
 }

@@ -15,15 +15,18 @@ enum class DeviceConnectionState {
     DISCONNECTED,
     SCANNING,
     CONNECTING,
+    DISCOVERING_SERVICES,
+    SUBSCRIBING,
     CONNECTED,
     RECONNECTING,
+    ERROR,
     UNSUPPORTED;
 
     val isConnected: Boolean
         get() = this == CONNECTED
 
     val isBusy: Boolean
-        get() = this == SCANNING || this == CONNECTING || this == RECONNECTING
+        get() = this == SCANNING || this == CONNECTING || this == DISCOVERING_SERVICES || this == SUBSCRIBING || this == RECONNECTING
 }
 
 data class DeviceInfo(

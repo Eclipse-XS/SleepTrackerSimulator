@@ -8,6 +8,7 @@ import com.example.sleeptrackersimulator.core.model.FeatureWindow
 import com.example.sleeptrackersimulator.core.model.Prediction
 import com.example.sleeptrackersimulator.core.model.RecordingSession
 import com.example.sleeptrackersimulator.core.model.SessionSummary
+import com.example.sleeptrackersimulator.core.model.SourceKind
 import com.example.sleeptrackersimulator.domain.recording.SessionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +33,7 @@ data class SessionDetailsUiState(
 
 data class HistoryUiState(
     val sessions: List<RecordingSession> = emptyList(),
+    val provenanceBySessionId: Map<String, SourceKind> = emptyMap(),
     val selectedFilter: HistoryFilter = HistoryFilter.ALL,
     val selectedSessionDetails: SessionDetailsUiState? = null,
     val isLoading: Boolean = false,
@@ -47,10 +49,11 @@ class HistoryViewModel(
 
     val uiState: StateFlow<HistoryUiState> = combine(
         sessionRepository.observeAllSessions(),
+        sessionRepository.observeAllSummaries(),
         _filter,
         _selectedDetails,
         _isLoading,
-    ) { sessions, filter, details, loading ->
+    ) { sessions, summaries, filter, details, loading ->
         val filtered = when (filter) {
             HistoryFilter.ALL -> sessions
             HistoryFilter.REAL_ONLY -> sessions.filter { it.sourceMode.requiresPhoneSensor || it.sourceMode.requiresBleConnection }
@@ -58,6 +61,7 @@ class HistoryViewModel(
         }
         HistoryUiState(
             sessions = filtered,
+            provenanceBySessionId = summaries.associate { it.sessionId to it.sourceKind },
             selectedFilter = filter,
             selectedSessionDetails = details,
             isLoading = loading,
