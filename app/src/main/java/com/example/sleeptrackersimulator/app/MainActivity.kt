@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
         TodayViewModel.factory(
             sessionCoordinator = container.sessionCoordinator,
             analyticsRepository = container.analyticsRepository,
+            context = this@MainActivity,
         )
     }
 
@@ -296,6 +297,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             deleteAllEnabled = !todayState.sessionStatus.isActive,
+                            onOpenPlacementGuide = {
+                                activeOverlay = AppOverlay.NONE
+                                todayViewModel.openOnboarding()
+                            },
                         )
                     }
                     AppOverlay.AUTOMATIONS -> {
@@ -494,6 +499,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenAutomations = { activeOverlay = AppOverlay.AUTOMATIONS },
                                         onDismissError = todayViewModel::dismissError,
                                         onSelectPlacement = todayViewModel::setPlacement,
+                                        onDismissOnboarding = todayViewModel::dismissOnboarding,
                                     )
                                     AppTab.HISTORY -> HistoryScreen(
                                         state = historyState,

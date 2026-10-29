@@ -102,9 +102,9 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     reader = AndroidExportReader()
     input_path = Path(args.input)
     if input_path.suffix.lower() == ".json":
-        accel_df, hr_df = reader.read_session_json(input_path)
+        accel_df, hr_df = reader.read_json_export(input_path)
     else:
-        accel_df = reader.read_accelerometer_csv(input_path)
+        accel_df = reader.read_csv_export(input_path)
         hr_df = pl.DataFrame()
 
     print(f"Loaded {len(accel_df)} accelerometer samples across {accel_df['session_id'].n_unique()} session(s).")
@@ -117,9 +117,9 @@ def cmd_validate(args: argparse.Namespace) -> None:
     reader = AndroidExportReader()
     input_path = Path(args.input)
     if input_path.suffix.lower() == ".json":
-        accel_df, hr_df = reader.read_session_json(input_path)
+        accel_df, hr_df = reader.read_json_export(input_path)
     else:
-        accel_df = reader.read_accelerometer_csv(input_path)
+        accel_df = reader.read_csv_export(input_path)
         hr_df = pl.DataFrame()
 
     import pandera.errors
@@ -145,9 +145,9 @@ def cmd_build_dataset(args: argparse.Namespace) -> None:
     reader = AndroidExportReader()
     input_path = Path(args.input)
     if input_path.suffix.lower() == ".json":
-        accel_df, hr_df = reader.read_session_json(input_path)
+        accel_df, hr_df = reader.read_json_export(input_path)
     else:
-        accel_df = reader.read_accelerometer_csv(input_path)
+        accel_df = reader.read_csv_export(input_path)
         hr_df = pl.DataFrame()
 
     # Step 1: Clean

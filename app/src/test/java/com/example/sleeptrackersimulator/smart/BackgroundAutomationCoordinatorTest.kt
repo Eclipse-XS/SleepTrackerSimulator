@@ -149,4 +149,62 @@ class BackgroundAutomationCoordinatorTest {
         assertEquals(1, eventCoordinator.prepared.size)
         assertEquals("rule-ml-active", eventCoordinator.prepared.first().ruleId)
     }
+
+    @Test
+    fun testResetSessionStateClearsConsecutiveMatchesAndArms() = runTest {
+        val rule = SmartRule(
+            id = "rule-consecutive",
+            name = "Requires 2 consecutive matches",
+            enabled = true,
+            source = RuleSource.ACCELEROMETER_X,
+            operator = RuleOperator.GREATER_THAN,
+            threshold = 5.0f,
+            targetClass = null,
+            action = RuleAction.VIBRATION_PULSE,
+            cooldownMillis = 10_000L,
+            requiredConsecutiveMatches = 2,
+            createdAt = 1000L,
+            updatedAt = 1000L,
+        )
+
+        val vibrationCount = AtomicInteger(0)
+        val eventCoordinator = FakeSmartRuleEventCoordinator()
+        val coordinator = DefaultBackgroundAutomationCoordinator(
+            repository = FakeSmartRuleRepository(listOf(rule)),
+            eventCoordinator = eventCoordinator,
+            vibration = {
+                vibrationCount.incrementAndGet()
+                "VIBRATION_OK"
+            },
+            bleAlert = { "BLE_OK" },
+        )
+
+        fun sample(t: Long, x: Float) = RawSensorSample(
+            sampleId = t,
+            sessionId = "s1",
+            sourceId = "accel",
+            elapsedRealtimeNanos = t * 1_000_000L,
+            utcTimestampMillis = t,
+            x = x,
+            y = 0.0f,
+            z = 9.81f,
+            sensorAccuracy = 3,
+            sourceKind = SourceKind.PHONE_REAL,
+        )
+
+        // 1st match
+        coordinator.evaluateSensorSample(sample(100L, 8.0f), "s1")
+        assertEquals(0, vibrationCount.get()) // 1 of 2 -> not triggered
+
+        // Session reset occurs (e.g. night 1 ends, night 2 starts)
+        coordinator.resetSessionState()
+
+        // 1st match after reset
+        coordinator.evaluateSensorSample(sample(200L, 8.0f), "s2")
+        assertEquals(0, vibrationCount.get()) // Reset to 1 of 2 -> not triggered
+
+        // 2nd match after reset
+        coordinator.evaluateSensorSample(sample(300L, 8.0f), "s2")
+        assertEquals(1, vibrationCount.get()) // 2 of 2 -> triggered!
+    }
 }

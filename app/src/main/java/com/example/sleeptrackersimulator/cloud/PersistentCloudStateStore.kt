@@ -17,6 +17,7 @@ interface CloudStateStore {
     fun saveActiveSession(session: ActiveCloudSession?)
     fun completeSessionEnd(sessionId: String)
     fun recordFirstFailure(message: String, permanent: Boolean) = Unit
+    fun removeOperationsForSession(sessionId: String): Int = 0
 }
 
 data class PersistedCloudState(
@@ -73,6 +74,16 @@ class AtomicJsonCloudStateStore(
             "The first pending operation is not END_SESSION for $sessionId"
         }
         persist(state.copy(operations = state.operations.drop(1), activeSession = null))
+    }
+
+    @Synchronized override fun removeOperationsForSession(sessionId: String): Int {
+        val before = state.operations.size
+        val filtered = state.operations.filterNot { it.sessionId == sessionId }
+        val removed = before - filtered.size
+        if (removed > 0) {
+            persist(state.copy(operations = filtered))
+        }
+        return removed
     }
 
     private fun readSafely(): PersistedCloudState = try {

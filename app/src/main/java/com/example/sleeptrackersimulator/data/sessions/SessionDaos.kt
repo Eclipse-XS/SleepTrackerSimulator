@@ -114,6 +114,9 @@ interface SessionSummaryDao {
 
     @Query("SELECT * FROM session_summaries WHERE calculatedAtUtcMillis >= :sinceUtcMillis ORDER BY calculatedAtUtcMillis DESC")
     suspend fun getSummariesSince(sinceUtcMillis: Long): List<SessionSummaryEntity>
+
+    @Query("DELETE FROM session_summaries WHERE sessionId = :sessionId")
+    suspend fun deleteSummaryForSession(sessionId: String): Int
 }
 
 @Dao

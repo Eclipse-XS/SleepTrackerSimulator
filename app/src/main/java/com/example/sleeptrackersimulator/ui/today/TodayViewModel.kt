@@ -26,17 +26,23 @@ data class TodayUiState(
     val selectedSourceMode: SourceMode = SourceMode.PHONE_ONLY,
     val selectedPlacement: DevicePlacement = DevicePlacement.MATTRESS,
     val errorMessage: String? = null,
+    val showOnboarding: Boolean = false,
 )
 
 class TodayViewModel(
     private val sessionCoordinator: SessionCoordinator,
     private val analyticsRepository: AnalyticsRepository,
+    private val isFirstRun: () -> Boolean = { false },
+    private val markOnboardingCompleted: () -> Unit = {},
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TodayUiState())
     val uiState: StateFlow<TodayUiState> = _uiState.asStateFlow()
 
     init {
+        if (isFirstRun()) {
+            _uiState.value = _uiState.value.copy(showOnboarding = true)
+        }
         // Observe active session from coordinator
         viewModelScope.launch {
             var previousSession: RecordingSession? = null
@@ -121,14 +127,30 @@ class TodayViewModel(
         )
     }
 
+    fun dismissOnboarding() {
+        _uiState.value = _uiState.value.copy(showOnboarding = false)
+        markOnboardingCompleted()
+    }
+
+    fun openOnboarding() {
+        _uiState.value = _uiState.value.copy(showOnboarding = true)
+    }
+
     companion object {
         fun factory(
             sessionCoordinator: SessionCoordinator,
             analyticsRepository: AnalyticsRepository,
+            context: android.content.Context? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return TodayViewModel(sessionCoordinator, analyticsRepository) as T
+                val prefs = context?.getSharedPreferences("sleepsense_settings", android.content.Context.MODE_PRIVATE)
+                return TodayViewModel(
+                    sessionCoordinator = sessionCoordinator,
+                    analyticsRepository = analyticsRepository,
+                    isFirstRun = { prefs?.getBoolean("has_completed_onboarding", false)?.not() ?: false },
+                    markOnboardingCompleted = { prefs?.edit()?.putBoolean("has_completed_onboarding", true)?.apply() },
+                ) as T
             }
         }
     }

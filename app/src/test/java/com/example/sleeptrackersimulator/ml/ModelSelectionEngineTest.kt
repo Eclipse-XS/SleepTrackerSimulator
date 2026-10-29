@@ -1,6 +1,7 @@
 package com.example.sleeptrackersimulator.ml
 
 import com.example.sleeptrackersimulator.core.model.ActivityClass
+import com.example.sleeptrackersimulator.core.model.HeartRateSample
 import com.example.sleeptrackersimulator.core.model.RawSensorSample
 import com.example.sleeptrackersimulator.core.model.SourceKind
 import org.junit.Assert.assertEquals
@@ -15,18 +16,72 @@ class ModelSelectionEngineTest {
         y: Float = 0f,
         z: Float = 9.81f,
         elapsedNanos: Long = 1_000_000_000L,
+        utcTimestampMillis: Long = 1_700_000_000_000L,
     ) = RawSensorSample(
         sampleId = 0L,
         sessionId = "test-session",
         sourceId = "phone_accelerometer",
         elapsedRealtimeNanos = elapsedNanos,
-        utcTimestampMillis = 1_700_000_000_000L,
+        utcTimestampMillis = utcTimestampMillis,
         x = x,
         y = y,
         z = z,
         sensorAccuracy = 3,
         sourceKind = SourceKind.PHONE_REAL,
     )
+
+    private fun makeHeartRate(
+        bpm: Int = 62,
+        utcTimestampMillis: Long = 1_700_000_000_000L,
+        sourceKind: SourceKind = SourceKind.BLE_REAL,
+    ) = HeartRateSample(
+        sessionId = "test-session",
+        deviceId = "ble-band-001",
+        bpm = bpm,
+        utcTimestampMillis = utcTimestampMillis,
+        sourceKind = sourceKind,
+    )
+
+    private val fakeAccelClassifier = object : ActivityClassifier {
+        override fun classify(window: Array<FloatArray>, windowEndTimestampNanos: Long): ActivityPrediction {
+            return ActivityPrediction(
+                predictionId = "fake-accel-pred",
+                windowEndTimestampNanos = windowEndTimestampNanos,
+                activity = com.example.sleeptrackersimulator.ml.ActivityClass.REST,
+                confidence = 0.95f,
+                probabilities = mapOf(
+                    com.example.sleeptrackersimulator.ml.ActivityClass.REST to 0.95f,
+                    com.example.sleeptrackersimulator.ml.ActivityClass.RESTLESS to 0.03f,
+                    com.example.sleeptrackersimulator.ml.ActivityClass.ACTIVE to 0.02f,
+                ),
+                inferenceNanos = 120_000L,
+            )
+        }
+        override fun close() {}
+    }
+
+    private val fakeMultimodalClassifier = object : MultimodalClassifier {
+        override fun classify(
+            accelerometerWindow: Array<FloatArray>,
+            heartRateBpm: Float?,
+            isHeartRateFresh: Boolean,
+            windowEndTimestampNanos: Long,
+        ): ActivityPrediction {
+            return ActivityPrediction(
+                predictionId = "fake-multi-pred",
+                windowEndTimestampNanos = windowEndTimestampNanos,
+                activity = com.example.sleeptrackersimulator.ml.ActivityClass.REST,
+                confidence = 0.98f,
+                probabilities = mapOf(
+                    com.example.sleeptrackersimulator.ml.ActivityClass.REST to 0.98f,
+                    com.example.sleeptrackersimulator.ml.ActivityClass.RESTLESS to 0.01f,
+                    com.example.sleeptrackersimulator.ml.ActivityClass.ACTIVE to 0.01f,
+                ),
+                inferenceNanos = 200_000L,
+            )
+        }
+        override fun close() {}
+    }
 
     @Test
     fun testIncompleteWindowReturnsInsufficientData() {
@@ -124,5 +179,117 @@ class ModelSelectionEngineTest {
         assertEquals(ActivityClass.ACTIVE, result.activity)
         assertTrue(result.confidence >= 0.80f)
         assertEquals("rule-based-fallback", result.modelId)
+    }
+
+    @Test
+    fun testMultimodalClassifierUsedWhenFreshHeartRateAvailable() {
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = fakeMultimodalClassifier,
+        )
+        val window = List(20) { makeSample(utcTimestampMillis = 1_700_000_000_000L) }
+        val freshHr = makeHeartRate(bpm = 65, utcTimestampMillis = 1_700_000_000_500L)
+
+        val result = engine.selectAndClassify(window, recentHeartRate = freshHr)
+
+        assertEquals(InferenceMode.MULTIMODAL_TFLITE, result.inferenceMode)
+        assertEquals(ActivityClass.REST, result.activity)
+        assertEquals(0.98f, result.confidence, 0.001f)
+        assertEquals("multimodal-tflite-v1.0", result.modelId)
+    }
+
+    @Test
+    fun testMultimodalFallsBackToAccelerometerWhenHeartRateStale() {
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = fakeMultimodalClassifier,
+        )
+        val window = List(20) { makeSample(utcTimestampMillis = 1_700_000_020_000L) }
+        // 20 seconds old -> exceeds 10s max staleness
+        val staleHr = makeHeartRate(bpm = 65, utcTimestampMillis = 1_700_000_000_000L)
+
+        val result = engine.selectAndClassify(window, recentHeartRate = staleHr)
+
+        assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
+        assertEquals(ActivityClass.REST, result.activity)
+        assertEquals("activity-v2.1", result.modelId)
+        assertTrue(result.qualityFlags.contains("STALE_HEART_RATE"))
+    }
+
+    @Test
+    fun testMultimodalFallsBackToAccelerometerWhenHeartRateNull() {
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = fakeMultimodalClassifier,
+        )
+        val window = List(20) { makeSample() }
+
+        val result = engine.selectAndClassify(window, recentHeartRate = null)
+
+        assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
+        assertEquals(ActivityClass.REST, result.activity)
+        assertEquals("activity-v2.1", result.modelId)
+        assertTrue(result.qualityFlags.contains("NO_HEART_RATE_AVAILABLE"))
+    }
+
+    @Test
+    fun testMultimodalFallsBackToAccelerometerWhenHeartRateOutOfRange() {
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = fakeMultimodalClassifier,
+        )
+        val window = List(20) { makeSample() }
+        val invalidHr = makeHeartRate(bpm = 15) // Physically impossible sleep HR
+
+        val result = engine.selectAndClassify(window, recentHeartRate = invalidHr)
+
+        assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
+        assertTrue(result.qualityFlags.contains("INVALID_HEART_RATE"))
+    }
+
+    @Test
+    fun testMultimodalSetsSimulatedHeartRateQualityFlag() {
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = fakeMultimodalClassifier,
+        )
+        val window = List(20) { makeSample(utcTimestampMillis = 1_700_000_000_000L) }
+        val simHr = makeHeartRate(
+            bpm = 62,
+            utcTimestampMillis = 1_700_000_000_000L,
+            sourceKind = SourceKind.SIMULATED,
+        )
+
+        val result = engine.selectAndClassify(window, recentHeartRate = simHr)
+
+        assertEquals(InferenceMode.MULTIMODAL_TFLITE, result.inferenceMode)
+        assertTrue(result.qualityFlags.contains("SIMULATED_HEART_RATE"))
+    }
+
+    @Test
+    fun testMultimodalThrowsFallsBackToAccelerometer() {
+        val throwingMulti = object : MultimodalClassifier {
+            override fun classify(
+                accelerometerWindow: Array<FloatArray>,
+                heartRateBpm: Float?,
+                isHeartRateFresh: Boolean,
+                windowEndTimestampNanos: Long,
+            ): ActivityPrediction {
+                throw IllegalStateException("Multimodal native crash")
+            }
+            override fun close() {}
+        }
+
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = throwingMulti,
+        )
+        val window = List(20) { makeSample() }
+        val freshHr = makeHeartRate(bpm = 65)
+
+        val result = engine.selectAndClassify(window, recentHeartRate = freshHr)
+
+        assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
+        assertEquals("activity-v2.1", result.modelId)
     }
 }

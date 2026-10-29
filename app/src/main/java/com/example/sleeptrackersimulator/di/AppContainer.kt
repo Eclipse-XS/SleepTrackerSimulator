@@ -47,6 +47,7 @@ interface AppContainer {
     val smartRuleRepository: SmartRuleRepository
     val smartRuleEventCoordinator: SmartRuleEventCoordinator
     val activityClassifier: ActivityClassifier
+    val multimodalClassifier: com.example.sleeptrackersimulator.ml.MultimodalClassifier?
     val modelSelectionEngine: com.example.sleeptrackersimulator.ml.ModelSelectionEngine
     val backgroundAutomationCoordinator: com.example.sleeptrackersimulator.smart.BackgroundAutomationCoordinator
     val sessionRepository: com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
@@ -119,8 +120,19 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
         ActivityClassifier(context)
     }
 
+    override val multimodalClassifier: com.example.sleeptrackersimulator.ml.MultimodalClassifier? by lazy {
+        try {
+            com.example.sleeptrackersimulator.ml.MultimodalClassifier(context)
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     override val modelSelectionEngine: com.example.sleeptrackersimulator.ml.ModelSelectionEngine by lazy {
-        com.example.sleeptrackersimulator.ml.DefaultModelSelectionEngine(activityClassifier)
+        com.example.sleeptrackersimulator.ml.DefaultModelSelectionEngine(
+            activityClassifier = activityClassifier,
+            multimodalClassifier = multimodalClassifier,
+        )
     }
 
     override val backgroundAutomationCoordinator: com.example.sleeptrackersimulator.smart.BackgroundAutomationCoordinator by lazy {

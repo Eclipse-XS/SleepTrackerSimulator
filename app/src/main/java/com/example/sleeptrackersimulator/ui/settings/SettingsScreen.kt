@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -57,6 +58,7 @@ fun SettingsScreen(
     onExportData: () -> Unit,
     onDeleteAllData: () -> Unit,
     deleteAllEnabled: Boolean = true,
+    onOpenPlacementGuide: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -238,7 +240,49 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Section 3: Developer & Labs Access
+            // Section 3: Help & Placement Guide
+            Text(
+                text = "HELP & GUIDES",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MistBlue.copy(alpha = 0.6f),
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenPlacementGuide)
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(imageVector = Icons.Rounded.Info, contentDescription = null, tint = MoonBlue)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Phone Placement & Architecture Guide",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MistBlue,
+                            )
+                            Text(
+                                text = "Review mattress vs nightstand physics, BLE heart rate requirements, and ML pipeline",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MistBlue.copy(alpha = 0.65f),
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Section 4: Developer & Labs Access
             Text(
                 text = "ADVANCED / PORTFOLIO",
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),

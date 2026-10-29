@@ -63,6 +63,9 @@ class RoomSessionRepository(
 
     override suspend fun deleteSession(sessionId: String) = withContext(dispatcher) {
         sessionDao.deleteSession(sessionId)
+        sessionSummaryDao.deleteSummaryForSession(sessionId)
+        database?.cloudOutboxDao()?.deleteForSession(sessionId)
+        Unit
     }
 
     override suspend fun insertSamplesBatch(samples: List<RawSensorSample>) = withContext(dispatcher) {

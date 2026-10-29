@@ -141,6 +141,7 @@ class SessionCoordinatorImpl(
             movementEpisodeCount = 0
             lastWasMovement = false
             droppedSamplesCount = 0L
+            automationCoordinator?.resetSessionState()
 
             sessionRepository.saveSession(session)
             _activeSession.value = session
@@ -442,6 +443,7 @@ class SessionCoordinatorImpl(
 
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE
+            automationCoordinator?.resetSessionState()
 
             // Asynchronously prune expired data (samples > 7d, windows/preds > 30d) without blocking stop
             scope.launch {
@@ -475,6 +477,7 @@ class SessionCoordinatorImpl(
             sessionRepository.updateSession(failed)
             _activeSession.value = failed
             _sessionStatus.value = SessionStatus.FAILED
+            automationCoordinator?.resetSessionState()
             Result.success(failed)
         }
     }
@@ -533,6 +536,7 @@ class SessionCoordinatorImpl(
             lastWasMovement = false
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE
+            automationCoordinator?.resetSessionState()
             Result.success(Unit)
         }
     }

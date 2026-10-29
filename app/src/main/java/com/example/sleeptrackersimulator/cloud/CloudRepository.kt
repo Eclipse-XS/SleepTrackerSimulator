@@ -10,5 +10,8 @@ interface CloudRepository {
         // Optional operation for session summaries
     }
     suspend fun endSession(ownerUid: String, sessionId: String, endedAt: Long)
+    suspend fun deleteSession(ownerUid: String, sessionId: String) {
+        // Optional operation for deleting session from cloud
+    }
     suspend fun applyRetention(ownerUid: String, activeSessionId: String?, now: Long)
 }

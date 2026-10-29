@@ -38,6 +38,13 @@ class FirebaseCloudRepository(
         users.child(ownerUid).child("sessions").child(sessionId).child("endedAt").setValue(endedAt).await(); Unit
     }
 
+    override suspend fun deleteSession(ownerUid: String, sessionId: String) = databaseCall {
+        val userRef = users.child(ownerUid)
+        userRef.child("sessions").child(sessionId).removeValue().await()
+        userRef.child("sessionSummaries").child(sessionId).removeValue().await()
+        Unit
+    }
+
     override suspend fun applyRetention(ownerUid: String, activeSessionId: String?, now: Long) = databaseCall {
         val reference = users.child(ownerUid).child("sessions")
         val snapshot = reference.get().await()
@@ -46,8 +53,10 @@ class FirebaseCloudRepository(
             val startedAt = child.child("startedAt").getValue(Long::class.java) ?: return@mapNotNull null
             CloudSessionSummary(id, startedAt, child.child("endedAt").getValue(Long::class.java))
         }
+        val userRef = users.child(ownerUid)
         retentionPolicy.selectForDeletion(summaries, activeSessionId, now).forEach { id ->
-            reference.child(id).removeValue().await()
+            userRef.child("sessions").child(id).removeValue().await()
+            userRef.child("sessionSummaries").child(id).removeValue().await()
         }
     }
 

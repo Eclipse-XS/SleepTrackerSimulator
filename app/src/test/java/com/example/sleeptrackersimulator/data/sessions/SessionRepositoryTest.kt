@@ -348,6 +348,12 @@ class FakeSessionSummaryDao : SessionSummaryDao {
 
     override suspend fun getSummariesSince(sinceUtcMillis: Long): List<SessionSummaryEntity> =
         summaries.values.filter { it.calculatedAtUtcMillis >= sinceUtcMillis }
+
+    override suspend fun deleteSummaryForSession(sessionId: String): Int {
+        val removed = summaries.remove(sessionId)
+        if (removed != null) stateFlow.value = summaries.values.toList()
+        return if (removed != null) 1 else 0
+    }
 }
 
 class FakePersonalBaselineDao : PersonalBaselineDao {

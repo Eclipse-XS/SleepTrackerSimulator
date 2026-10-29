@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -27,6 +28,7 @@ import java.util.UUID
 interface BackgroundAutomationCoordinator {
     suspend fun evaluateSensorSample(sample: RawSensorSample, sessionId: String? = null)
     suspend fun evaluatePrediction(prediction: ActivityPrediction, sessionId: String? = null)
+    fun resetSessionState()
 }
 
 class DefaultBackgroundAutomationCoordinator(
@@ -53,6 +55,16 @@ class DefaultBackgroundAutomationCoordinator(
     @Volatile
     private var latestMovement: MovementAnalysis? = null
 
+    override fun resetSessionState() {
+        engine.clear()
+        latestMovement = null
+    }
+
+    private suspend fun getEnabledRules(): List<SmartRule> {
+        val cached = enabledRules.value
+        return if (cached.isNotEmpty()) cached else runCatching { repository.observeEnabled().first() }.getOrDefault(emptyList())
+    }
+
     override suspend fun evaluateSensorSample(sample: RawSensorSample, sessionId: String?) {
         val converted = SensorSample(
             x = sample.x,
@@ -63,7 +75,7 @@ class DefaultBackgroundAutomationCoordinator(
         val movement = movementClassifier.analyze(converted)
         latestMovement = movement
 
-        val rules = enabledRules.value.filter { it.source != RuleSource.ML_CLASS }
+        val rules = getEnabledRules().filter { it.source != RuleSource.ML_CLASS }
         if (rules.isEmpty()) return
 
         val inputId = "sensor-${sample.elapsedRealtimeNanos}"
@@ -79,7 +91,7 @@ class DefaultBackgroundAutomationCoordinator(
     }
 
     override suspend fun evaluatePrediction(prediction: ActivityPrediction, sessionId: String?) {
-        val rules = enabledRules.value.filter { it.source == RuleSource.ML_CLASS }
+        val rules = getEnabledRules().filter { it.source == RuleSource.ML_CLASS }
         if (rules.isEmpty()) return
 
         val movement = latestMovement ?: MovementAnalysis(

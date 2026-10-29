@@ -40,6 +40,7 @@ interface ModelSelectionEngine {
 
 class DefaultModelSelectionEngine(
     private val activityClassifier: ActivityClassifier?,
+    private val multimodalClassifier: MultimodalClassifier? = null,
     private val minConfidenceThreshold: Float = 0.35f,
     private val maxHeartRateStalenessMillis: Long = 10_000L,
 ) : ModelSelectionEngine {
@@ -93,13 +94,69 @@ class DefaultModelSelectionEngine(
         val avgAccuracy = samples.map { it.sensorAccuracy }.average()
         if (avgAccuracy < 1.0) qualityFlags.add("LOW_SENSOR_ACCURACY")
 
-        // 2. Try Primary On-Device TFLite Accelerometer Model
+        val inputWindow = Array(20) { i ->
+            floatArrayOf(samples[i].x, samples[i].y, samples[i].z)
+        }
+
         var fallbackReason: String? = null
+
+        // 2. Try Multimodal TFLite Classifier (Late fusion of Accel + BLE Heart Rate)
+        if (multimodalClassifier != null && recentHeartRate != null) {
+            val refTimeMs = samples.lastOrNull()?.utcTimestampMillis ?: System.currentTimeMillis()
+            val hrAgeMs = kotlin.math.abs(refTimeMs - recentHeartRate.utcTimestampMillis)
+            val isHrFresh = hrAgeMs <= maxHeartRateStalenessMillis
+            val isHrValid = recentHeartRate.bpm in 30..240
+
+            if (isHrFresh && isHrValid) {
+                try {
+                    val pred = multimodalClassifier.classify(
+                        accelerometerWindow = inputWindow,
+                        heartRateBpm = recentHeartRate.bpm.toFloat(),
+                        isHeartRateFresh = true,
+                        windowEndTimestampNanos = windowEndTimestampNanos,
+                    )
+                    val domainClass = ActivityClass.fromString(pred.activity.name)
+                    val domainProbs = pred.probabilities.mapKeys { ActivityClass.fromString(it.key.name) }
+
+                    if (pred.confidence >= minConfidenceThreshold && domainClass != ActivityClass.UNCERTAIN) {
+                        activeModeRef.set(InferenceMode.MULTIMODAL_TFLITE)
+                        val multiFlags = qualityFlags.toMutableSet()
+                        if (recentHeartRate.sourceKind.name.contains("SIMULATED")) {
+                            multiFlags.add("SIMULATED_HEART_RATE")
+                        }
+                        return ModelSelectionResult(
+                            predictionId = pred.predictionId,
+                            activity = domainClass,
+                            probabilities = domainProbs,
+                            confidence = pred.confidence,
+                            inferenceMode = InferenceMode.MULTIMODAL_TFLITE,
+                            modelId = "multimodal-tflite-v1.0",
+                            modelVersion = "multimodal-v1.0",
+                            fallbackReason = null,
+                            qualityFlags = multiFlags,
+                            inferenceDurationNs = pred.inferenceNanos,
+                            windowEndTimestampNanos = windowEndTimestampNanos,
+                        )
+                    } else {
+                        fallbackReason = "multimodal_low_confidence_${String.format("%.2f", pred.confidence)}"
+                    }
+                } catch (t: Throwable) {
+                    fallbackReason = "multimodal_inference_failed: ${t.message ?: t.javaClass.simpleName}"
+                }
+            } else if (!isHrFresh) {
+                qualityFlags.add("STALE_HEART_RATE")
+                fallbackReason = "stale_heart_rate_${hrAgeMs}ms"
+            } else {
+                qualityFlags.add("INVALID_HEART_RATE")
+                fallbackReason = "invalid_heart_rate_${recentHeartRate.bpm}bpm"
+            }
+        } else if (recentHeartRate == null) {
+            qualityFlags.add("NO_HEART_RATE_AVAILABLE")
+        }
+
+        // 3. Try Accelerometer-Only TFLite Classifier
         if (activityClassifier != null) {
             try {
-                val inputWindow = Array(20) { i ->
-                    floatArrayOf(samples[i].x, samples[i].y, samples[i].z)
-                }
                 val pred = activityClassifier.classify(inputWindow, windowEndTimestampNanos)
                 val domainClass = ActivityClass.fromString(pred.activity.name)
                 val domainProbs = pred.probabilities.mapKeys { ActivityClass.fromString(it.key.name) }
@@ -114,7 +171,7 @@ class DefaultModelSelectionEngine(
                         inferenceMode = InferenceMode.ACCELEROMETER_TFLITE,
                         modelId = "activity-v2.1",
                         modelVersion = "activity-v2.1",
-                        fallbackReason = null,
+                        fallbackReason = fallbackReason,
                         qualityFlags = qualityFlags,
                         inferenceDurationNs = pred.inferenceNanos,
                         windowEndTimestampNanos = windowEndTimestampNanos,
@@ -126,10 +183,10 @@ class DefaultModelSelectionEngine(
                 fallbackReason = "tflite_inference_failed: ${t.message ?: t.javaClass.simpleName}"
             }
         } else {
-            fallbackReason = "tflite_model_unavailable"
+            fallbackReason = fallbackReason ?: "tflite_model_unavailable"
         }
 
-        // 3. Deterministic Heuristic Fallback on Physical RMS and Variance
+        // 4. Deterministic Heuristic Fallback on Physical RMS and Variance
         val fallbackStartNs = System.nanoTime()
         val (fallbackClass, fallbackConf, fallbackProbs) = computeRuleBasedFallback(samples)
         val fallbackDurationNs = System.nanoTime() - fallbackStartNs

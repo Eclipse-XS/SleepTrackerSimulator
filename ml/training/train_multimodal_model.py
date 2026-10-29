@@ -13,6 +13,8 @@ import numpy as np
 import tensorflow as tf
 from sklearn.metrics import accuracy_score, f1_score
 
+from ml.export.export_tflite import ASSETS, TfliteExporter
+
 ROOT = Path(__file__).resolve().parents[2]
 DOCS_ML = ROOT / "docs" / "ml"
 WINDOW = 20
@@ -213,6 +215,87 @@ def run_ablation_study(seed: int = 42) -> dict[str, any]:
     return ablation_results
 
 
+def train_and_export_multimodal_model(seed: int = 42) -> Path:
+    """Trains the multimodal model on synthetic session data and exports to TFLite."""
+    xs_accel, xs_hr, ys, sessions = generate_multimodal_dataset(n_sessions=25, windows_per_session=100, seed=seed)
+
+    unique_sessions = np.unique(sessions)
+    test_sessions = set(unique_sessions[:5])
+    train_mask = ~np.isin(sessions, list(test_sessions))
+    test_mask = np.isin(sessions, list(test_sessions))
+
+    train_accel, test_accel = xs_accel[train_mask], xs_accel[test_mask]
+    train_hr, test_hr = xs_hr[train_mask], xs_hr[test_mask]
+    train_y, test_y = ys[train_mask], ys[test_mask]
+
+    model = build_multimodal_fusion_model()
+    model.fit(
+        [train_accel, train_hr],
+        train_y,
+        validation_data=([test_accel, test_hr], test_y),
+        epochs=20,
+        batch_size=64,
+        verbose=1,
+    )
+
+    out_tflite = ASSETS / "multimodal_classifier.tflite"
+    print(f"\nExporting multimodal TFLite model to: {out_tflite}")
+    report = TfliteExporter.export_and_verify(
+        model=model,
+        output_path=out_tflite,
+        golden_inputs=[test_accel[:100], test_hr[:100]],
+        tolerance=1e-4,
+    )
+    print(f"Parity verification report: {report}")
+
+    # Generate multimodal golden vectors for Android tests
+    golden_test_path = ROOT / "app" / "src" / "test" / "resources" / "ml_multimodal_golden_vectors.json"
+    interpreter = tf.lite.Interpreter(model_path=str(out_tflite))
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()[0]
+
+    accel_detail = next(d for d in input_details if tuple(d["shape"][1:]) == (WINDOW, 3))
+    hr_detail = next(d for d in input_details if tuple(d["shape"][1:]) == (2,))
+
+    golden_cases = []
+    for idx in range(min(12, len(test_y))):
+        sample_accel = test_accel[idx]
+        sample_hr = test_hr[idx]
+        gt_label = CLASSES[test_y[idx]]
+
+        interpreter.set_tensor(accel_detail["index"], np.expand_dims(sample_accel, axis=0))
+        interpreter.set_tensor(hr_detail["index"], np.expand_dims(sample_hr, axis=0))
+        interpreter.invoke()
+        probs = interpreter.get_tensor(output_details["index"])[0]
+
+        pred_idx = int(np.argmax(probs))
+        golden_cases.append({
+            "sample_index": idx,
+            "ground_truth_label": gt_label,
+            "expected_predicted_class": CLASSES[pred_idx],
+            "expected_confidence": float(probs[pred_idx]),
+            "expected_probabilities": {
+                "REST": float(probs[0]),
+                "RESTLESS": float(probs[1]),
+                "ACTIVE": float(probs[2]),
+            },
+            "norm_bpm": float(sample_hr[0]),
+            "hr_mask": float(sample_hr[1]),
+            "input_window": sample_accel.tolist(),
+        })
+
+    golden_test_path.parent.mkdir(parents=True, exist_ok=True)
+    golden_test_path.write_text(json.dumps({
+        "model_file": "multimodal_classifier.tflite",
+        "description": "Golden test vectors for on-device multimodal TFLite numerical parity",
+        "golden_vectors": golden_cases,
+    }, indent=2), encoding="utf-8")
+    print(f"Generated golden vectors at: {golden_test_path}")
+
+    return out_tflite
+
+
 def main() -> None:
     print("=" * 65)
     print("SleepSense 2.0: Multimodal ML & Feature Ablation Study")
@@ -234,6 +317,9 @@ def main() -> None:
     report_file = DOCS_ML / "multimodal_ablation_study.json"
     report_file.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"\nSaved report to: {report_file}")
+
+    print("\nTraining and exporting production multimodal TFLite artifact...")
+    train_and_export_multimodal_model(seed=42)
 
 
 if __name__ == "__main__":

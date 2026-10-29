@@ -80,12 +80,17 @@ fun TodayScreen(
     onDismissError: () -> Unit,
     modifier: Modifier = Modifier,
     onSelectPlacement: (DevicePlacement) -> Unit = {},
+    onDismissOnboarding: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showInfoDialog by remember { mutableStateOf(false) }
 
-    if (showInfoDialog) {
-        SleepSenseInfoDialog(onDismiss = { showInfoDialog = false })
+    val shouldShowDialog = showInfoDialog || state.showOnboarding
+    if (shouldShowDialog) {
+        SleepSenseInfoDialog(onDismiss = {
+            showInfoDialog = false
+            onDismissOnboarding()
+        })
     }
 
     LaunchedEffect(state.errorMessage) {
@@ -351,6 +356,34 @@ private fun SessionHeroCard(
                         )
                     }
 
+                    if (state.selectedPlacement == DevicePlacement.NIGHTSTAND) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MotionAmber.copy(alpha = 0.15f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MotionAmber.copy(alpha = 0.4f)),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Info,
+                                    contentDescription = null,
+                                    tint = MotionAmber,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Requires Wearable HR: Phone on nightstand is physically decoupled from bed motion. Heart rate from a BLE band or chest strap is required for accurate rest monitoring.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MotionAmber,
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -547,7 +580,7 @@ fun SleepSenseInfoDialog(onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    text = "• Mattress (Near Pillow): Recommended for capturing subtle micro-movements, positional shifts, and restlessness.\n• Nightstand / Flat Surface: Captures ambient vibrations and room movements without direct mattress coupling.",
+                    text = "• Mattress (Near Pillow): Recommended for capturing direct body micro-movements, positional shifts, and restlessness through mattress coupling.\n• Nightstand / Flat Surface: Physically decoupled from bed movements. Captures only ambient vibrations. Requires an external BLE wearable heart rate monitor for accurate rest monitoring.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

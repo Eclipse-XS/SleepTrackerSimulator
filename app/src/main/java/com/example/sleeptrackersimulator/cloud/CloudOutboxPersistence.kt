@@ -77,6 +77,9 @@ abstract class CloudOutboxDao {
     @Query("DELETE FROM cloud_active_session WHERE sessionId = :sessionId")
     protected abstract fun deleteSession(sessionId: String): Int
 
+    @Query("DELETE FROM cloud_outbox WHERE sessionId = :sessionId")
+    abstract fun deleteForSession(sessionId: String): Int
+
     @Query("UPDATE cloud_outbox SET retryCount = retryCount + 1, lastError = :message, deliveryState = :state WHERE sequence = :sequence")
     protected abstract fun updateFailure(sequence: Long, message: String, state: String): Int
 
@@ -169,6 +172,10 @@ class RoomCloudStateStore(
         if (session == null) dao.clearSession() else dao.saveSession(session.toEntity())
     }
     override fun completeSessionEnd(sessionId: String) = dao.completeSessionEnd(sessionId)
+    override fun removeOperationsForSession(sessionId: String): Int {
+        ensureLegacyImported()
+        return dao.deleteForSession(sessionId)
+    }
     override fun recordFirstFailure(message: String, permanent: Boolean) =
         dao.recordFirstFailure(message, permanent)
 

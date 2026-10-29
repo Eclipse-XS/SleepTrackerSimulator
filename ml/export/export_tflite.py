@@ -19,7 +19,7 @@ class TfliteExporter:
     def export_and_verify(
         model: tf.keras.Model,
         output_path: Path | str,
-        golden_inputs: np.ndarray,
+        golden_inputs: np.ndarray | list[np.ndarray],
         quantize_dynamic_range: bool = False,
         tolerance: float = 1e-4,
     ) -> dict[str, any]:
@@ -41,13 +41,31 @@ class TfliteExporter:
         # 3. Compute TFLite predictions via Interpreter
         interpreter = tf.lite.Interpreter(model_content=tflite_bytes)
         interpreter.allocate_tensors()
-        input_details = interpreter.get_input_details()[0]
+        input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()[0]
 
+        is_multi_input = isinstance(golden_inputs, (list, tuple))
+        num_samples = len(golden_inputs[0]) if is_multi_input else len(golden_inputs)
+
+        # For multi-input, map model inputs to interpreter inputs by shape or name
         tflite_outputs = []
-        for x in golden_inputs:
-            x_expanded = np.expand_dims(x, axis=0).astype(input_details["dtype"])
-            interpreter.set_tensor(input_details["index"], x_expanded)
+        for i in range(num_samples):
+            if is_multi_input:
+                for k, g_in in enumerate(golden_inputs):
+                    # Match input_detail with shape
+                    sample_k = np.expand_dims(g_in[i], axis=0).astype(np.float32)
+                    matched_detail = None
+                    for detail in input_details:
+                        if tuple(detail["shape"][1:]) == tuple(sample_k.shape[1:]):
+                            matched_detail = detail
+                            break
+                    if matched_detail is None:
+                        matched_detail = input_details[k]
+                    interpreter.set_tensor(matched_detail["index"], sample_k)
+            else:
+                x_expanded = np.expand_dims(golden_inputs[i], axis=0).astype(input_details[0]["dtype"])
+                interpreter.set_tensor(input_details[0]["index"], x_expanded)
+
             interpreter.invoke()
             pred = interpreter.get_tensor(output_details["index"])[0]
             tflite_outputs.append(pred)
@@ -63,7 +81,7 @@ class TfliteExporter:
         verification_report = {
             "model_size_bytes": len(tflite_bytes),
             "quantized_dynamic_range": quantize_dynamic_range,
-            "golden_sample_count": len(golden_inputs),
+            "golden_sample_count": num_samples,
             "max_absolute_error": max_diff,
             "mean_absolute_error": mean_diff,
             "tolerance": tolerance,

@@ -23,10 +23,15 @@ class SensorSynchronizer:
 
         # Group by session_id
         sessions = accel_df["session_id"].unique().to_list()
+        has_hr_data = not hr_df.is_empty() and "session_id" in hr_df.columns and "utc_millis" in hr_df.columns
 
         for session_id in sessions:
             session_accel = accel_df.filter(pl.col("session_id") == session_id).sort("elapsed_nanos")
-            session_hr = hr_df.filter(pl.col("session_id") == session_id).sort("utc_millis")
+            session_hr = (
+                hr_df.filter(pl.col("session_id") == session_id).sort("utc_millis")
+                if has_hr_data
+                else pl.DataFrame()
+            )
 
             n_samples = len(session_accel)
             n_windows = n_samples // window_size
@@ -39,9 +44,13 @@ class SensorSynchronizer:
                 end_elapsed = int(w_accel["elapsed_nanos"][-1])
 
                 # Match HR samples within [start_utc - max_hr_staleness_ms, end_utc + 1000]
-                matching_hr = session_hr.filter(
-                    (pl.col("utc_millis") >= (start_utc - max_hr_staleness_ms)) &
-                    (pl.col("utc_millis") <= (end_utc + 1_000))
+                matching_hr = (
+                    session_hr.filter(
+                        (pl.col("utc_millis") >= (start_utc - max_hr_staleness_ms)) &
+                        (pl.col("utc_millis") <= (end_utc + 1_000))
+                    )
+                    if has_hr_data and len(session_hr) > 0
+                    else pl.DataFrame()
                 )
 
                 if len(matching_hr) > 0:

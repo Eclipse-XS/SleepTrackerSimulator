@@ -6,8 +6,8 @@
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
-[![Android Tests](https://img.shields.io/badge/Android%20Tests-237%20PASSED-brightgreen.svg?style=flat)]()
-[![Python Tests](https://img.shields.io/badge/Python%20Tests-16%20PASSED-brightgreen.svg?style=flat)]()
+[![Android Tests](https://img.shields.io/badge/Android%20Tests-241%20PASSED-brightgreen.svg?style=flat)]()
+[![Python Tests](https://img.shields.io/badge/Python%20Tests-11%20PASSED-brightgreen.svg?style=flat)]()
 [![Release Status](https://img.shields.io/badge/Status-READY__FOR__CONTROLLED__BETA-success.svg?style=flat)]()
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
@@ -86,15 +86,23 @@ flowchart TD
 ```
 
 ### Key Architectural Tenets:
-1. **Single Source of Truth (`SessionCoordinatorImpl`)**: Ingestion, ML inference via `ModelSelectionEngine`, smart automations via `BackgroundAutomationCoordinator`, and Room persistence are unified under a single background-safe lifecycle. Short-lived ViewModels merely observe StateFlows.
+1. **Single Source of Truth & Zero Duplicate Execution ("Two Brains" Eliminated)**:
+   - Ingestion, ML inference via `ModelSelectionEngine`, smart automations via `BackgroundAutomationCoordinator`, and Room persistence are unified under a single background-safe lifecycle (`SessionCoordinatorImpl`).
+   - `SmartScenariosViewModel` is a purely reactive UI state holder observing database states; it executes zero independent rule checks or vibrations.
+   - Session boundary transitions (`startSession`, `stopSession`, `cancelSession`, `failSession`) explicitly call `resetSessionState()` to guarantee clean rule cooldowns and eliminate state leakage across sessions.
 2. **Transparent Model Selection & Fallback Engine**:
-   - `ACCELEROMETER_TFLITE`: On-device TensorFlow Lite model ($1, 20, 3$).
-   - `MULTIMODAL_TFLITE`: Late-fusion model combining 20-sample motion windows with BLE heart rate telemetry.
+   - `MULTIMODAL_TFLITE`: Dual-input late-fusion model (`multimodal_classifier.tflite`, 12.96 KB) combining 20-sample motion windows `[1, 20, 3]` with BLE heart rate telemetry `[1, 2]`. Executed via multi-tensor `Interpreter.runForMultipleInputsOutputs`.
+   - `ACCELEROMETER_TFLITE`: Single-input on-device model (`activity_classifier.tflite`, 11.10 KB, `[1, 20, 3]`), automatically selected when HR is missing, disconnected, or stale (>10s).
    - `RULE_BASED_FALLBACK`: Physical heuristic baseline evaluating centered dynamic acceleration RMS ($<0.10$ m/s$^2$) and variance ($<0.015$). Activates automatically during sensor dropouts or TFLite faults.
    - `INSUFFICIENT_DATA`: Transparently flags windows with $<20$ samples or NaN/Inf readings.
 3. **Decoupled Background Automations**: `BackgroundAutomationCoordinator` executes rules inside `RecordingService` under partial WakeLock. Vibration pulses and BLE alert packets fire reliably even when the device is locked and screen is off.
-4. **Automated SQLite Retention (`DataRetentionWorker`)**: Periodic 24-hour WorkManager job cleans raw samples older than 7 days and feature windows older than 30 days while explicitly protecting active recording sessions with zero destructive schema migrations.
-5. **Strict Data Provenance**: Every sensor sample, feature window, and baseline records its origin (`PHONE_REAL`, `BLE_REAL`, `BLE_SIMULATED`, `DEMO`, `IMPORTED`). Synthetic demo data is strictly isolated from genuine personal baselines.
+4. **Automated SQLite Retention & Complete Firebase Purge**:
+   - Periodic 24-hour WorkManager job cleans raw samples older than 7 days and feature windows older than 30 days while explicitly protecting active recording sessions with zero destructive schema migrations.
+   - Cloud deletion atomically removes both `users/{uid}/sessions/{id}` and `users/{uid}/sessionSummaries/{id}`, cascading to clear pending outbox records from Room SQLite.
+5. **First-Run Onboarding & Nightstand UX**:
+   - Automated onboarding guide triggered on first app launch, persisted via `SharedPreferences`, and accessible anytime from Settings.
+   - Uncalibrated nightstand placement features an explicit physical decoupling warning: placing the phone on a nightstand mechanically isolates it from bed motion, requiring wearable BLE HR for reliable rest tracking.
+6. **Strict Data Provenance**: Every sensor sample, feature window, and baseline records its origin (`PHONE_REAL`, `BLE_REAL`, `SIMULATED`, `DEMO`, `IMPORTED`). Synthetic demo data is strictly isolated from genuine personal baselines.
 
 ---
 
@@ -247,21 +255,20 @@ All educational requirements from University Labs 1–7 remain fully functional 
 - Android SDK 35 (Android 15)
 - Python 3.11+ (in `ml/.venv`)
 
-### 1. Execute Complete Android Unit Test Suite (237 Tests)
+### 1. Execute Complete Android Unit Test Suite (241 Tests)
 ```powershell
-.\gradlew testDebugUnitTest
+.\gradlew :app:testDebugUnitTest :virtualsleepband:testDebugUnitTest
 ```
 
-### 2. Assemble Debug & Release APKs
+### 2. Assemble Debug APK
 ```powershell
-.\gradlew assembleDebug assembleRelease
-# Generated Debug APK:   app/build/outputs/apk/debug/app-debug.apk
-# Generated Release APK: app/build/outputs/apk/release/app-release-unsigned.apk
+.\gradlew assembleDebug
+# Generated Debug APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 3. Execute Complete Python Test Suite (16 Tests)
+### 3. Execute Complete Python Test Suite (11 Tests)
 ```powershell
-.\ml\.venv\Scripts\pytest.exe -v
+.\ml\.venv\Scripts\pytest.exe -v tests
 ```
 
 ### 4. Run Python Linter (Ruff)
