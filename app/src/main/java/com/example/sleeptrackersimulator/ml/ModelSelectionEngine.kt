@@ -93,6 +93,7 @@ class DefaultModelSelectionEngine(
         val qualityFlags = mutableSetOf<String>()
         val avgAccuracy = samples.map { it.sensorAccuracy }.average()
         if (avgAccuracy < 1.0) qualityFlags.add("LOW_SENSOR_ACCURACY")
+        if (samples.any { !it.sourceKind.isRealData }) qualityFlags.add("SIMULATED_ACCELEROMETER")
 
         val inputWindow = Array(20) { i ->
             floatArrayOf(samples[i].x, samples[i].y, samples[i].z)
@@ -102,6 +103,9 @@ class DefaultModelSelectionEngine(
 
         // 2. Try Multimodal TFLite Classifier (Late fusion of Accel + BLE Heart Rate)
         if (multimodalClassifier != null && recentHeartRate != null) {
+            if (!recentHeartRate.sourceKind.isRealData) {
+                qualityFlags.add("SIMULATED_HEART_RATE")
+            }
             val refTimeMs = samples.lastOrNull()?.utcTimestampMillis ?: System.currentTimeMillis()
             val hrAgeMs = kotlin.math.abs(refTimeMs - recentHeartRate.utcTimestampMillis)
             val isHrFresh = hrAgeMs <= maxHeartRateStalenessMillis
@@ -120,10 +124,6 @@ class DefaultModelSelectionEngine(
 
                     if (pred.confidence >= minConfidenceThreshold && domainClass != ActivityClass.UNCERTAIN) {
                         activeModeRef.set(InferenceMode.MULTIMODAL_TFLITE)
-                        val multiFlags = qualityFlags.toMutableSet()
-                        if (recentHeartRate.sourceKind.name.contains("SIMULATED")) {
-                            multiFlags.add("SIMULATED_HEART_RATE")
-                        }
                         return ModelSelectionResult(
                             predictionId = pred.predictionId,
                             activity = domainClass,
@@ -133,7 +133,7 @@ class DefaultModelSelectionEngine(
                             modelId = "multimodal-tflite-v1.0",
                             modelVersion = "multimodal-v1.0",
                             fallbackReason = null,
-                            qualityFlags = multiFlags,
+                            qualityFlags = qualityFlags.toSet(),
                             inferenceDurationNs = pred.inferenceNanos,
                             windowEndTimestampNanos = windowEndTimestampNanos,
                         )

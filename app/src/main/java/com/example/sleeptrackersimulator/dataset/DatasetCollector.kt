@@ -200,6 +200,38 @@ object DatasetCsvExporter {
     }
 }
 
+object DatasetJsonExporter {
+    fun generateJson(
+        session: DatasetSession,
+        heartRateSamples: List<Map<String, Any>> = emptyList(),
+    ): String {
+        val root = mapOf(
+            "sessionId" to session.sessionId,
+            "experimentType" to session.experimentType.name,
+            "placement" to session.placement.name,
+            "groundTruthActivity" to session.groundTruthActivity.name,
+            "deviceModel" to session.deviceModel,
+            "startTimeUtcMs" to session.startTimeUtcMs,
+            "endTimeUtcMs" to session.endTimeUtcMs,
+            "samples" to session.samples.map { s ->
+                mapOf(
+                    "utcTimestampMillis" to s.timestampUtcMs,
+                    "elapsedRealtimeNanos" to s.elapsedRealtimeNanos,
+                    "x" to s.x,
+                    "y" to s.y,
+                    "z" to s.z,
+                    "sensorAccuracy" to 3,
+                    "sourceKind" to "PHONE_REAL",
+                    "groundTruthLabel" to s.groundTruthLabel,
+                    "predictedMotionClass" to s.predictedMotionClass,
+                )
+            },
+            "heartRateSamples" to heartRateSamples,
+        )
+        return com.google.gson.Gson().toJson(root)
+    }
+}
+
 class DatasetRecordingController {
 
     private val samples = mutableListOf<DatasetSample>()

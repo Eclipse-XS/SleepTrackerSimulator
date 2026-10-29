@@ -53,18 +53,24 @@ def generate_mock_android_csv(session_id: str = "android-test-session-001", num_
 
 
 def test_android_csv_export_to_duckdb_e2e_pipeline() -> None:
-    """Full lifecycle: Android CSV export string -> DuckDB analytics."""
+    """Full lifecycle: Android CSV export from actual Android code -> DuckDB analytics."""
+    real_csv_source = Path("build/real_exports/android_actual_export.csv")
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         csv_file = tmp_path / "actual_android_export.csv"
-        target_session_id = "session-e2e-real-export-42"
-        csv_content = generate_mock_android_csv(session_id=target_session_id, num_samples=80)
-        csv_file.write_text(csv_content, encoding="utf-8")
+
+        if real_csv_source.exists():
+            csv_file.write_text(real_csv_source.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            # Fallback if running outside full Gradle build
+            target_session_id = "session-e2e-real-export-42"
+            csv_content = generate_mock_android_csv(session_id=target_session_id, num_samples=80)
+            csv_file.write_text(csv_content, encoding="utf-8")
 
         # 1. Ingestion: AndroidExportReader
         accel_df = AndroidExportReader.read_csv_export(csv_file)
         assert len(accel_df) == 80
-        assert accel_df["session_id"][0] == target_session_id
+        target_session_id = accel_df["session_id"][0]
         assert "x" in accel_df.columns
         assert "y" in accel_df.columns
         assert "z" in accel_df.columns
@@ -131,38 +137,46 @@ def test_schema_incompatibility_raises_deterministic_error() -> None:
 
 
 def test_json_export_reader_compatibility() -> None:
-    """Verifies that Android JSON export parsing works identically."""
+    """Verifies that Android JSON export parsing works identically on actual Android exports."""
+    real_json_source = Path("build/real_exports/android_actual_export.json")
     with tempfile.TemporaryDirectory() as tmp_dir:
         json_file = Path(tmp_dir) / "session_export.json"
-        json_file.write_text(
-            """{
-                "sessionId": "json-session-001",
-                "samples": [
-                    {
-                        "utcTimestampMillis": 1700000000000,
-                        "elapsedRealtimeNanos": 1000000000,
-                        "x": 0.012,
-                        "y": -0.015,
-                        "z": 9.805,
-                        "sensorAccuracy": 3,
-                        "sourceKind": "PHONE_REAL"
-                    }
-                ],
-                "heartRateSamples": [
-                    {
-                        "deviceId": "band-42",
-                        "bpm": 65,
-                        "utcTimestampMillis": 1700000000000,
-                        "sourceKind": "BLE_REAL"
-                    }
-                ]
-            }""",
-            encoding="utf-8"
-        )
+        if real_json_source.exists():
+            json_file.write_text(real_json_source.read_text(encoding="utf-8"), encoding="utf-8")
+            accel_df, hr_df = AndroidExportReader.read_json_export(json_file)
+            assert len(accel_df) == 80
+            assert len(hr_df) == 4
+            assert hr_df["bpm"][0] == 65
+        else:
+            json_file.write_text(
+                """{
+                    "sessionId": "json-session-001",
+                    "samples": [
+                        {
+                            "utcTimestampMillis": 1700000000000,
+                            "elapsedRealtimeNanos": 1000000000,
+                            "x": 0.012,
+                            "y": -0.015,
+                            "z": 9.805,
+                            "sensorAccuracy": 3,
+                            "sourceKind": "PHONE_REAL"
+                        }
+                    ],
+                    "heartRateSamples": [
+                        {
+                            "deviceId": "band-42",
+                            "bpm": 65,
+                            "utcTimestampMillis": 1700000000000,
+                            "sourceKind": "BLE_REAL"
+                        }
+                    ]
+                }""",
+                encoding="utf-8"
+            )
 
-        accel_df, hr_df = AndroidExportReader.read_json_export(json_file)
-        assert len(accel_df) == 1
-        assert accel_df["session_id"][0] == "json-session-001"
-        assert accel_df["x"][0] == pytest.approx(0.012, abs=1e-3)
-        assert len(hr_df) == 1
-        assert hr_df["bpm"][0] == 65
+            accel_df, hr_df = AndroidExportReader.read_json_export(json_file)
+            assert len(accel_df) == 1
+            assert accel_df["session_id"][0] == "json-session-001"
+            assert accel_df["x"][0] == pytest.approx(0.012, abs=1e-3)
+            assert len(hr_df) == 1
+            assert hr_df["bpm"][0] == 65

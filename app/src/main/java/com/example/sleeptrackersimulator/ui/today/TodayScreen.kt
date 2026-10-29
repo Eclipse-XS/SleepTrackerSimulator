@@ -376,7 +376,7 @@ private fun SessionHeroCard(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Requires Wearable HR: Phone on nightstand is physically decoupled from bed motion. Heart rate from a BLE band or chest strap is required for accurate rest monitoring.",
+                                    text = "Physical Limitation: Phone on nightstand is mechanically decoupled from bed motion. Wearable HR provides resting cardiovascular data, but cannot detect mattress movement or replace direct actigraphy.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MotionAmber,
                                 )
@@ -580,7 +580,7 @@ fun SleepSenseInfoDialog(onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    text = "• Mattress (Near Pillow): Recommended for capturing direct body micro-movements, positional shifts, and restlessness through mattress coupling.\n• Nightstand / Flat Surface: Physically decoupled from bed movements. Captures only ambient vibrations. Requires an external BLE wearable heart rate monitor for accurate rest monitoring.",
+                    text = "• Mattress (Near Pillow): Recommended for capturing direct body micro-movements, positional shifts, and restlessness through mattress coupling.\n• Nightstand / Flat Surface: Physically decoupled from bed movements. Captures only ambient vibrations. Even with a paired wearable heart rate monitor providing resting cardiovascular trends, a phone on a nightstand cannot physically detect bed body movement or reliably determine sleep/wake state.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

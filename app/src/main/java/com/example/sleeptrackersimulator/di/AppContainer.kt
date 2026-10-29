@@ -144,9 +144,29 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
                 if (res.successful) res.message else "ERROR:${res.message}"
             },
             bleAlert = { eventId ->
-                when (val res = bleConnector.sendAlert(eventId)) {
-                    is com.example.sleeptrackersimulator.ble.BleOperationResult.Success -> res.message
-                    is com.example.sleeptrackersimulator.ble.BleOperationResult.Error -> "ERROR:${res.message}"
+                val device = deviceTransport.connectedDevice.value
+                if (device == null || deviceTransport.connectionState.value != com.example.sleeptrackersimulator.core.model.DeviceConnectionState.CONNECTED) {
+                    "NOT_CONNECTED"
+                } else {
+                    val cmd = com.example.sleeptrackersimulator.core.model.DeviceCommand(
+                        commandId = eventId,
+                        targetDeviceId = device.deviceId,
+                        action = "ALERT",
+                    )
+                    val result = kotlinx.coroutines.runBlocking {
+                        deviceTransport.executeCommand(cmd)
+                    }
+                    result.fold(
+                        onSuccess = { res ->
+                            if (res.success) {
+                                if (device.sourceKind.isRealData) "DELIVERED:${res.statusMessage}"
+                                else "SIMULATED_DELIVERED:${res.statusMessage}"
+                            } else {
+                                "ERROR:${res.statusMessage}"
+                            }
+                        },
+                        onFailure = { err -> "ERROR:${err.message ?: err.javaClass.simpleName}" }
+                    )
                 }
             },
             recoveryScheduler = cloudRecoveryScheduler,

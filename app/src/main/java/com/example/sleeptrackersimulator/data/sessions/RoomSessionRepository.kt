@@ -34,6 +34,7 @@ class RoomSessionRepository(
     private val personalBaselineDao: PersonalBaselineDao,
     private val deviceDao: DeviceDao,
     private val database: SleepTrackerDatabase? = null,
+    private val cloudOutboxDao: com.example.sleeptrackersimulator.cloud.CloudOutboxDao? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SessionRepository, AnalyticsRepository {
 
@@ -62,9 +63,13 @@ class RoomSessionRepository(
     }
 
     override suspend fun deleteSession(sessionId: String) = withContext(dispatcher) {
+        sensorSampleDao.deleteForSession(sessionId)
+        heartRateSampleDao.deleteForSession(sessionId)
+        featureWindowDao.deleteForSession(sessionId)
+        predictionDao.deleteForSession(sessionId)
         sessionDao.deleteSession(sessionId)
         sessionSummaryDao.deleteSummaryForSession(sessionId)
-        database?.cloudOutboxDao()?.deleteForSession(sessionId)
+        (cloudOutboxDao ?: database?.cloudOutboxDao())?.deleteForSession(sessionId)
         Unit
     }
 

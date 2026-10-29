@@ -198,6 +198,118 @@ class SessionRepositoryTest {
         assertEquals(0, remainingOld.size)
         assertEquals(1, remainingNew.size)
     }
+
+    @Test
+    fun `deleteSession purges session, summaries, samples, and outbox operations preventing resurrection`() = runTest {
+        val fakeOutboxDao = FakeCloudOutboxDao()
+        val repoWithOutbox = RoomSessionRepository(
+            sessionDao = sessionDao,
+            sensorSampleDao = sensorSampleDao,
+            heartRateSampleDao = heartRateSampleDao,
+            featureWindowDao = featureWindowDao,
+            predictionDao = predictionDao,
+            sessionSummaryDao = sessionSummaryDao,
+            personalBaselineDao = personalBaselineDao,
+            deviceDao = deviceDao,
+            cloudOutboxDao = fakeOutboxDao,
+        )
+
+        // 1. Setup session, samples, summary
+        val session = RecordingSession(
+            sessionId = "session-to-delete",
+            startUtcMillis = 10_000L,
+            endUtcMillis = 20_000L,
+            startElapsedRealtimeNanos = 50_000L,
+            status = SessionStatus.COMPLETED,
+        )
+        repoWithOutbox.saveSession(session)
+        val sample = RawSensorSample(1L, "session-to-delete", "phone", 0L, 10_000L, 0f, 0f, 9.8f)
+        repoWithOutbox.insertSamplesBatch(listOf(sample))
+        val summary = SessionSummary(
+            sessionId = "session-to-delete",
+            observationDurationMs = 10_000L,
+            validDurationMs = 10_000L,
+            dataCoverageFraction = 1.0f,
+            lowMotionFraction = 0.8f,
+            movementEpisodeCount = 1,
+            movementRatePerHour = 1.0f,
+        )
+        repoWithOutbox.saveSessionSummary(summary)
+
+        // 2. Queue pending outbox operations
+        fakeOutboxDao.insertDirect(
+            com.example.sleeptrackersimulator.cloud.CloudOutboxEntity(
+                sequence = 1L,
+                operationId = "op-1",
+                type = "UPLOAD_SESSION_SUMMARY",
+                sessionId = "session-to-delete",
+                payloadJson = "{}",
+                endedAt = null,
+                createdAt = 10_000L,
+                retryCount = 0,
+                lastError = null,
+                deliveryState = "PENDING",
+            )
+        )
+        fakeOutboxDao.insertDirect(
+            com.example.sleeptrackersimulator.cloud.CloudOutboxEntity(
+                sequence = 2L,
+                operationId = "op-2",
+                type = "UPLOAD_SESSION_SUMMARY",
+                sessionId = "session-other",
+                payloadJson = "{}",
+                endedAt = null,
+                createdAt = 10_000L,
+                retryCount = 0,
+                lastError = null,
+                deliveryState = "PENDING",
+            )
+        )
+
+        assertEquals(2, fakeOutboxDao.count())
+
+        // 3. Delete session
+        repoWithOutbox.deleteSession("session-to-delete")
+
+        // 4. Assert session, samples, summary are gone
+        assertNull(repoWithOutbox.getSessionById("session-to-delete"))
+        assertEquals(0, repoWithOutbox.getSamplesForSession("session-to-delete").size)
+        assertNull(repoWithOutbox.getSessionSummary("session-to-delete"))
+
+        // 5. Assert outbox operations for that session are purged (prevents resurrection)
+        val remainingOps = fakeOutboxDao.all()
+        assertEquals(1, remainingOps.size)
+        assertEquals("session-other", remainingOps[0].sessionId)
+    }
+}
+
+class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDao() {
+    private val records = mutableListOf<com.example.sleeptrackersimulator.cloud.CloudOutboxEntity>()
+
+    fun insertDirect(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity) {
+        records.add(entity)
+    }
+
+    override fun count(): Int = records.size
+    override fun countTypeForSession(type: String, sessionId: String): Int = records.count { it.type == type && it.sessionId == sessionId }
+    override fun first(): com.example.sleeptrackersimulator.cloud.CloudOutboxEntity? = records.firstOrNull()
+    override fun all(): List<com.example.sleeptrackersimulator.cloud.CloudOutboxEntity> = records.toList()
+    override fun activeSession(): com.example.sleeptrackersimulator.cloud.CloudSessionEntity? = null
+    override fun insert(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity) { records.add(entity) }
+    override fun insertForMigration(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity): Long { records.add(entity); return records.size.toLong() }
+    override fun saveSession(entity: com.example.sleeptrackersimulator.cloud.CloudSessionEntity) {}
+    override fun clearSession() {}
+    override fun deleteSequence(sequence: Long): Int {
+        val removed = records.removeIf { it.sequence == sequence }
+        return if (removed) 1 else 0
+    }
+    override fun deleteSession(sessionId: String): Int = deleteForSession(sessionId)
+    override fun deleteForSession(sessionId: String): Int {
+        val before = records.size
+        records.removeAll { it.sessionId == sessionId }
+        return before - records.size
+    }
+    override fun updateFailure(sequence: Long, message: String, state: String): Int = 0
 }
 
 // In-Memory Fakes for Unit Testing DAOs
@@ -267,6 +379,12 @@ class FakeSensorSampleDao : SensorSampleDao {
     override suspend fun countSamplesForSession(sessionId: String): Int =
         samples.count { it.sessionId == sessionId }
 
+    override suspend fun deleteForSession(sessionId: String): Int {
+        val before = samples.size
+        samples.removeAll { it.sessionId == sessionId }
+        return before - samples.size
+    }
+
     override suspend fun deleteOldSamples(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = samples.size
         samples.removeAll { it.utcTimestampMillis < olderThanUtcMillis && (activeSessionId == null || it.sessionId != activeSessionId) }
@@ -283,6 +401,12 @@ class FakeHeartRateSampleDao : HeartRateSampleDao {
 
     override suspend fun getSamplesForSession(sessionId: String): List<HeartRateSampleEntity> =
         samples.filter { it.sessionId == sessionId }
+
+    override suspend fun deleteForSession(sessionId: String): Int {
+        val before = samples.size
+        samples.removeAll { it.sessionId == sessionId }
+        return before - samples.size
+    }
 
     override suspend fun deleteOldSamples(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = samples.size
@@ -301,6 +425,12 @@ class FakeFeatureWindowDao : FeatureWindowDao {
     override suspend fun getWindowsForSession(sessionId: String): List<FeatureWindowEntity> =
         windows.filter { it.sessionId == sessionId }
 
+    override suspend fun deleteForSession(sessionId: String): Int {
+        val before = windows.size
+        windows.removeAll { it.sessionId == sessionId }
+        return before - windows.size
+    }
+
     override suspend fun deleteOldWindows(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = windows.size
         windows.removeAll { it.startUtcMillis < olderThanUtcMillis && (activeSessionId == null || it.sessionId != activeSessionId) }
@@ -317,6 +447,12 @@ class FakePredictionDao : PredictionDao {
 
     override suspend fun getPredictionsForSession(sessionId: String): List<PredictionEntity> =
         predictions.filter { it.sessionId == sessionId }
+
+    override suspend fun deleteForSession(sessionId: String): Int {
+        val before = predictions.size
+        predictions.removeAll { it.sessionId == sessionId }
+        return before - predictions.size
+    }
 
     override suspend fun deleteOldPredictions(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = predictions.size

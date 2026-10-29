@@ -6,8 +6,8 @@
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
-[![Android Tests](https://img.shields.io/badge/Android%20Tests-241%20PASSED-brightgreen.svg?style=flat)]()
-[![Python Tests](https://img.shields.io/badge/Python%20Tests-11%20PASSED-brightgreen.svg?style=flat)]()
+[![Android Tests](https://img.shields.io/badge/Android%20Tests-242%20PASSED-brightgreen.svg?style=flat)]()
+[![Python Tests](https://img.shields.io/badge/Python%20Tests-19%20PASSED-brightgreen.svg?style=flat)]()
 [![Release Status](https://img.shields.io/badge/Status-READY__FOR__CONTROLLED__BETA-success.svg?style=flat)]()
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
@@ -101,7 +101,7 @@ flowchart TD
    - Cloud deletion atomically removes both `users/{uid}/sessions/{id}` and `users/{uid}/sessionSummaries/{id}`, cascading to clear pending outbox records from Room SQLite.
 5. **First-Run Onboarding & Nightstand UX**:
    - Automated onboarding guide triggered on first app launch, persisted via `SharedPreferences`, and accessible anytime from Settings.
-   - Uncalibrated nightstand placement features an explicit physical decoupling warning: placing the phone on a nightstand mechanically isolates it from bed motion, requiring wearable BLE HR for reliable rest tracking.
+   - Uncalibrated nightstand placement features an explicit physical decoupling notice: placing the phone on a nightstand mechanically isolates it from bed motion; while wearable BLE HR provides resting cardiovascular data, it cannot detect mattress movement or replace direct actigraphy.
 6. **Strict Data Provenance**: Every sensor sample, feature window, and baseline records its origin (`PHONE_REAL`, `BLE_REAL`, `SIMULATED`, `DEMO`, `IMPORTED`). Synthetic demo data is strictly isolated from genuine personal baselines.
 
 ---
@@ -255,7 +255,7 @@ All educational requirements from University Labs 1–7 remain fully functional 
 - Android SDK 35 (Android 15)
 - Python 3.11+ (in `ml/.venv`)
 
-### 1. Execute Complete Android Unit Test Suite (241 Tests)
+### 1. Execute Complete Android Unit Test Suite (242 Tests)
 ```powershell
 .\gradlew :app:testDebugUnitTest :virtualsleepband:testDebugUnitTest
 ```
@@ -266,9 +266,9 @@ All educational requirements from University Labs 1–7 remain fully functional 
 # Generated Debug APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 3. Execute Complete Python Test Suite (11 Tests)
+### 3. Execute Complete Python Test Suite (19 Tests)
 ```powershell
-.\ml\.venv\Scripts\pytest.exe -v tests
+.\ml\.venv\Scripts\pytest.exe -v
 ```
 
 ### 4. Run Python Linter (Ruff)
