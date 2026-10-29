@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-29",
+  "branch": "feature/sleepsense-2.0-overhaul",
+  "head": "2d6e566",
+  "device": {"serial": "emulator-5554", "avd": "Pixel_10_Pro", "api": 36, "abi": "x86_64"},
+  "sessionId": "2c0d27de-8bc7-4b3e-9ede-3d842571fad4",
+  "room": {"schemaVersion": 7, "sessions": 1, "sensorSamples": 1326, "featureWindows": 66, "predictions": 66, "summaries": 1, "heartRateSamples": 0, "cloudOutbox": 23},
+  "tests": {"androidUnit": 250, "androidInstrumentation": 35, "python": 19, "pythonSubtests": 12, "failures": 0},
+  "apks": [
+    {"path": "app/build/outputs/apk/debug/app-debug.apk", "bytes": 90067717, "sha256": "C4E6D455D295274D84798C415ED21549C087986FC67F90AB513DEAC333B7205A"},
+    {"path": "virtualsleepband/build/outputs/apk/debug/virtualsleepband-debug.apk", "bytes": 18537811, "sha256": "A72501B865EC960834A272B27CF55A45F536139C5A6C476BD267CD10FB9A279B"},
+    {"path": "app/build/outputs/apk/release/app-release-unsigned.apk", "bytes": 70154120, "sha256": "8B32C84360382CDA0CDAB7ED84A64EE0D6A0B4967A320616621D18F4152EA25F"},
+    {"path": "virtualsleepband/build/outputs/apk/release/virtualsleepband-release-unsigned.apk", "bytes": 12545677, "sha256": "762FDBA4B49965C69ABF184BBF42838376919DFE9EBAB99EF949E0510CE78538"}
+  ],
+  "verdict": "DEMO_READY"
+}

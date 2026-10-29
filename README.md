@@ -6,9 +6,9 @@
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
-[![Android Tests](https://img.shields.io/badge/Android%20Tests-242%20PASSED-brightgreen.svg?style=flat)]()
+[![Android Tests](https://img.shields.io/badge/Android%20Tests-250%20unit%20%2B%2035%20instrumentation%20PASSED-brightgreen.svg?style=flat)]()
 [![Python Tests](https://img.shields.io/badge/Python%20Tests-19%20PASSED-brightgreen.svg?style=flat)]()
-[![Release Status](https://img.shields.io/badge/Status-READY__FOR__CONTROLLED__BETA-success.svg?style=flat)]()
+[![Release Status](https://img.shields.io/badge/Status-DEMO__READY-yellow.svg?style=flat)]()
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
 
