@@ -34,9 +34,10 @@ class FeatureExtractor:
         var_y = float(np.var(dyn_y))
         var_z = float(np.var(dyn_z))
 
-        # Heuristic ground truth assignment if unlabelled
-        label = window.get("label")
+        # Prioritize explicit ground-truth label from latent simulation intervals
+        label = window.get("ground_truth_label") or window.get("label")
         if not label or label == "UNCERTAIN":
+            # Fallback heuristic assignment only for unlabelled real-device recordings
             if rms < 0.10 and variance < 0.015:
                 label = "REST"
             elif rms < 0.85:
