@@ -80,6 +80,9 @@ abstract class CloudOutboxDao {
     @Query("DELETE FROM cloud_outbox WHERE sessionId = :sessionId")
     abstract fun deleteForSession(sessionId: String): Int
 
+    @Query("DELETE FROM cloud_outbox WHERE type != 'DELETE_SESSION'")
+    abstract fun purgeUnconsentedUploads(): Int
+
     @Query("UPDATE cloud_outbox SET retryCount = retryCount + 1, lastError = :message, deliveryState = :state WHERE sequence = :sequence")
     protected abstract fun updateFailure(sequence: Long, message: String, state: String): Int
 
@@ -176,6 +179,10 @@ class RoomCloudStateStore(
         ensureLegacyImported()
         return dao.deleteForSession(sessionId)
     }
+    override fun purgeUnconsentedUploads(): Int {
+        ensureLegacyImported()
+        return dao.purgeUnconsentedUploads()
+    }
     override fun recordFirstFailure(message: String, permanent: Boolean) =
         dao.recordFirstFailure(message, permanent)
 
@@ -217,7 +224,8 @@ fun PendingCloudOperation.toEntity(gson: Gson = Gson()): CloudOutboxEntity = Clo
         PendingOperationType.UPLOAD_MEASUREMENT -> payload?.let(gson::toJson)
         PendingOperationType.UPLOAD_RULE_EVENT -> ruleEvent?.let(gson::toJson)
         PendingOperationType.UPLOAD_SESSION_SUMMARY -> summary?.let(gson::toJson)
-        PendingOperationType.END_SESSION -> null
+        PendingOperationType.END_SESSION,
+        PendingOperationType.DELETE_SESSION -> null
     },
     endedAt = endedAt,
     createdAt = createdAt,

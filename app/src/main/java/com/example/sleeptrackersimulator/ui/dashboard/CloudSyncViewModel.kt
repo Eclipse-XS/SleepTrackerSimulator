@@ -41,6 +41,7 @@ class CloudSyncViewModel(
     private val intervalMillis: Long = CLOUD_SYNC_INTERVAL_MS,
     private val recoveryScheduler: CloudRecoveryScheduler = NoOpCloudRecoveryScheduler,
     private val ruleEventStatusUpdater: SmartRuleCloudStatusUpdater = NoOpSmartRuleCloudStatusUpdater,
+    private val consentRepository: CloudSyncConsentRepository? = null,
     private val storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val log: (String, String, Throwable?) -> Unit = { level, message, error ->
         DiagnosticLog.event(
@@ -70,6 +71,29 @@ class CloudSyncViewModel(
 
     init {
         viewModelScope.launch { combine(sensorState, bleState, heartRate, restState, ::Snapshot).collect { latest.value = it } }
+        consentRepository?.let { consent ->
+            viewModelScope.launch {
+                consent.isCloudSyncEnabled.collect { enabled ->
+                    if (!enabled) {
+                        stopSync()
+                        recoveryJob?.cancel()
+                        recoveryJob = null
+                        runCatching {
+                            operationMutex.withLock {
+                                stateStore.purgeUnconsentedUploads()
+                            }
+                        }
+                        _state.update {
+                            it.copy(
+                                status = CloudSyncStatus.IDLE,
+                                monitoringActive = false,
+                                pendingCount = stateStore.pendingCount,
+                            )
+                        }
+                    }
+                }
+            }
+        }
         viewModelScope.launch(storageDispatcher) {
             try {
                 initializeFromStore()
@@ -91,6 +115,15 @@ class CloudSyncViewModel(
                 storageErrorMessage = loadError,
                 status = if (loadError == null) CloudSyncStatus.IDLE else CloudSyncStatus.ERROR,
             )
+        }
+        if (consentRepository?.isCloudSyncEnabled?.value == false) {
+            _state.update {
+                it.copy(
+                    status = CloudSyncStatus.IDLE,
+                    monitoringActive = false,
+                )
+            }
+            return
         }
         val stored = stateStore.activeSession()
         when {
@@ -118,6 +151,11 @@ class CloudSyncViewModel(
 
     fun startSync() {
         explicitlyStopped = false
+        if (consentRepository?.isCloudSyncEnabled?.value == false) {
+            DiagnosticLog.event(DiagnosticTags.CLOUD, "startMonitoring", DiagnosticResult.SKIPPED, details = mapOf("reason" to "consent_denied"))
+            _state.update { it.copy(status = CloudSyncStatus.IDLE, monitoringActive = false) }
+            return
+        }
         if (syncJob?.isActive == true) {
             DiagnosticLog.event(DiagnosticTags.CLOUD, "startMonitoring", DiagnosticResult.SKIPPED, details = mapOf("reason" to "already_active"))
             return
@@ -172,6 +210,7 @@ class CloudSyncViewModel(
 
     fun endMonitoring() {
         stopSync()
+        if (consentRepository?.isCloudSyncEnabled?.value == false) return
         viewModelScope.launch(storageDispatcher) {
             try {
                 operationMutex.withLock {
@@ -212,6 +251,7 @@ class CloudSyncViewModel(
     }
 
     private suspend fun enqueueMeasurement(snapshot: Snapshot) {
+        if (consentRepository?.isCloudSyncEnabled?.value == false) return
         val analysis = (snapshot.sensor as? SensorUiState.Active)?.analysis ?: return
         if (analysis.sample.timestampNanos == lastEnqueuedSensorTimestampNanos) {
             if (networkMonitor.isOnline() && stateStore.pendingCount > 0) {
@@ -271,6 +311,48 @@ class CloudSyncViewModel(
 
     private suspend fun flushLocked() = CloudDrainCoordinator.mutex.withLock {
         if (stateStore.pendingCount == 0) return@withLock
+        val isConsentEnabled = consentRepository?.isCloudSyncEnabled?.value ?: true
+
+        // 1. Process pending data erasure operations (Right to be Forgotten is independent of upload consent)
+        while (true) {
+            val head = stateStore.peek() ?: break
+            if (head.type == PendingOperationType.DELETE_SESSION) {
+                val uid = try {
+                    authenticate()
+                } catch (_: CloudOperationException) {
+                    return@withLock
+                }
+                try {
+                    retryPolicy.execute { repository.deleteSession(uid, head.sessionId) }
+                    stateStore.removeFirst()
+                    recordSuccess()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: CloudOperationException) {
+                    runCatching { stateStore.recordFirstFailure(failure.message ?: failure.type.name, !failure.retriable) }
+                    error(failure.type, failure.message ?: "Cloud deletion failed")
+                    return@withLock
+                } catch (failure: Exception) {
+                    error(CloudErrorType.UNKNOWN, failure.message ?: failure.javaClass.simpleName)
+                    return@withLock
+                }
+            } else {
+                break
+            }
+        }
+
+        if (stateStore.pendingCount == 0) {
+            _state.update { it.copy(pendingCount = 0) }
+            return@withLock
+        }
+
+        // 2. If upload consent is disabled, purge remaining unconsented uploads and exit
+        if (!isConsentEnabled) {
+            stateStore.purgeUnconsentedUploads()
+            _state.update { it.copy(pendingCount = stateStore.pendingCount) }
+            return@withLock
+        }
+
         DiagnosticLog.event(DiagnosticTags.CLOUD, "flushQueue", DiagnosticResult.STARTED, details = mapOf("pendingCount" to stateStore.pendingCount))
         var session = stateStore.activeSession() ?: return@withLock
         val authenticatedUid = try {
@@ -325,6 +407,7 @@ class CloudSyncViewModel(
                             repository.uploadSessionSummary(uid, summary)
                         }
                         PendingOperationType.END_SESSION -> repository.endSession(uid, operation.sessionId, requireNotNull(operation.endedAt))
+                        PendingOperationType.DELETE_SESSION -> repository.deleteSession(uid, operation.sessionId)
                     }
                 }
                 if (operation.type == PendingOperationType.END_SESSION) {
@@ -333,7 +416,7 @@ class CloudSyncViewModel(
                     runCatching { repository.applyRetention(uid, null, now()) }
                     log("I", "Cloud monitoring session ended", null)
                 }
-                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT || operation.type == PendingOperationType.UPLOAD_SESSION_SUMMARY) {
+                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT || operation.type == PendingOperationType.UPLOAD_SESSION_SUMMARY || operation.type == PendingOperationType.DELETE_SESSION) {
                     stateStore.removeFirst()
                     DiagnosticLog.event(DiagnosticTags.CLOUD, if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) "uploadMeasurement" else "uploadSessionSummary", DiagnosticResult.SUCCESS, correlationId = correlationId, details = mapOf("pendingCount" to stateStore.pendingCount))
                     recordSuccess()
@@ -411,6 +494,7 @@ class CloudSyncViewModel(
             heartRate: StateFlow<HeartRateMeasurement?>, restState: StateFlow<RestStateResult>,
             recoveryScheduler: CloudRecoveryScheduler = NoOpCloudRecoveryScheduler,
             ruleEventStatusUpdater: SmartRuleCloudStatusUpdater = NoOpSmartRuleCloudStatusUpdater,
+            consentRepository: CloudSyncConsentRepository? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(CloudSyncViewModel::class.java))
@@ -418,6 +502,7 @@ class CloudSyncViewModel(
                     repository, authRepository, networkMonitor, sensorState, bleState, heartRate,
                     restState, stateStore, recoveryScheduler = recoveryScheduler,
                     ruleEventStatusUpdater = ruleEventStatusUpdater,
+                    consentRepository = consentRepository,
                 ) as T
             }
         }

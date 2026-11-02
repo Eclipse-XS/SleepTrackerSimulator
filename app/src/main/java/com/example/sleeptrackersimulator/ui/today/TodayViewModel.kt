@@ -3,11 +3,14 @@ package com.example.sleeptrackersimulator.ui.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.sleeptrackersimulator.core.model.DeviceConnectionState
+import com.example.sleeptrackersimulator.core.model.DeviceInfo
 import com.example.sleeptrackersimulator.core.model.DevicePlacement
 import com.example.sleeptrackersimulator.core.model.RecordingSession
 import com.example.sleeptrackersimulator.core.model.SessionStatus
 import com.example.sleeptrackersimulator.core.model.SessionSummary
 import com.example.sleeptrackersimulator.core.model.SourceMode
+import com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport
 import com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
 import com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
 import kotlinx.coroutines.delay
@@ -25,6 +28,9 @@ data class TodayUiState(
     val activeDurationSeconds: Long = 0,
     val selectedSourceMode: SourceMode = SourceMode.PHONE_ONLY,
     val selectedPlacement: DevicePlacement = DevicePlacement.MATTRESS,
+    val connectedDevice: DeviceInfo? = null,
+    val deviceConnectionState: DeviceConnectionState = DeviceConnectionState.DISCONNECTED,
+    val connectedHeartRate: Int? = null,
     val errorMessage: String? = null,
     val showOnboarding: Boolean = false,
 )
@@ -34,6 +40,7 @@ class TodayViewModel(
     private val analyticsRepository: AnalyticsRepository,
     private val isFirstRun: () -> Boolean = { false },
     private val markOnboardingCompleted: () -> Unit = {},
+    private val deviceTransport: SwitchingDeviceTransport? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TodayUiState())
@@ -42,6 +49,30 @@ class TodayViewModel(
     init {
         if (isFirstRun()) {
             _uiState.value = _uiState.value.copy(showOnboarding = true)
+        }
+
+        // Observe BLE wearable transport if available
+        if (deviceTransport != null) {
+            viewModelScope.launch {
+                deviceTransport.connectionState.collect { state ->
+                    _uiState.value = _uiState.value.copy(deviceConnectionState = state)
+                }
+            }
+            viewModelScope.launch {
+                deviceTransport.connectedDevice.collect { device ->
+                    _uiState.value = _uiState.value.copy(
+                        connectedDevice = device,
+                        selectedSourceMode = if (device != null && _uiState.value.selectedSourceMode == SourceMode.PHONE_ONLY) {
+                            SourceMode.COMBINED
+                        } else _uiState.value.selectedSourceMode,
+                    )
+                }
+            }
+            viewModelScope.launch {
+                deviceTransport.heartRateStream.collect { hrSample ->
+                    _uiState.value = _uiState.value.copy(connectedHeartRate = hrSample.bpm)
+                }
+            }
         }
         // Observe active session from coordinator
         viewModelScope.launch {
@@ -141,6 +172,7 @@ class TodayViewModel(
             sessionCoordinator: SessionCoordinator,
             analyticsRepository: AnalyticsRepository,
             context: android.content.Context? = null,
+            deviceTransport: SwitchingDeviceTransport? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -150,6 +182,7 @@ class TodayViewModel(
                     analyticsRepository = analyticsRepository,
                     isFirstRun = { prefs?.getBoolean("has_completed_onboarding", false)?.not() ?: false },
                     markOnboardingCompleted = { prefs?.edit()?.putBoolean("has_completed_onboarding", true)?.apply() },
+                    deviceTransport = deviceTransport,
                 ) as T
             }
         }

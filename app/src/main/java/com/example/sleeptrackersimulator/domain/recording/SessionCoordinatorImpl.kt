@@ -46,6 +46,7 @@ class SessionCoordinatorImpl(
         com.example.sleeptrackersimulator.ml.DefaultModelSelectionEngine(activityClassifier),
     private val automationCoordinator: com.example.sleeptrackersimulator.smart.BackgroundAutomationCoordinator? = null,
     private val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy? = null,
+    private val cloudSyncConsentRepository: com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SessionCoordinator {
 
@@ -72,6 +73,8 @@ class SessionCoordinatorImpl(
     private var movementEpisodeCount = 0
     private var lastWasMovement = false
     private var droppedSamplesCount = 0L
+    private var totalPausedDurationMs = 0L
+    private var lastPauseTimestampMs: Long? = null
 
     init {
         // Check for existing active or interrupted session on initialization
@@ -134,6 +137,7 @@ class SessionCoordinatorImpl(
 
             windowSegmenter.clear()
             pendingSamples.clear()
+            latestHeartRateSample = null
             totalPredictionsCount = 0
             restPredictionsCount = 0
             restlessPredictionsCount = 0
@@ -141,6 +145,8 @@ class SessionCoordinatorImpl(
             movementEpisodeCount = 0
             lastWasMovement = false
             droppedSamplesCount = 0L
+            totalPausedDurationMs = 0L
+            lastPauseTimestampMs = null
             automationCoordinator?.resetSessionState()
 
             sessionRepository.saveSession(session)
@@ -305,6 +311,7 @@ class SessionCoordinatorImpl(
             }
 
             val paused = session.withStatus(SessionStatus.PAUSED)
+            lastPauseTimestampMs = System.currentTimeMillis()
             sessionRepository.updateSession(paused)
             _activeSession.value = paused
             _sessionStatus.value = SessionStatus.PAUSED
@@ -318,6 +325,12 @@ class SessionCoordinatorImpl(
                 ?: return@withContext Result.failure(IllegalStateException("No active session"))
             if (session.status != SessionStatus.PAUSED) {
                 return@withContext Result.failure(IllegalStateException("Cannot resume from status ${session.status}"))
+            }
+
+            val pauseStart = lastPauseTimestampMs
+            if (pauseStart != null) {
+                totalPausedDurationMs += (System.currentTimeMillis() - pauseStart).coerceAtLeast(0L)
+                lastPauseTimestampMs = null
             }
 
             val resumed = session.withStatus(SessionStatus.RECORDING)
@@ -340,7 +353,13 @@ class SessionCoordinatorImpl(
             }
 
             val endUtc = System.currentTimeMillis()
-            val observationDurationMs = maxOf(1000L, endUtc - session.startUtcMillis)
+            val pauseStart = lastPauseTimestampMs
+            if (pauseStart != null) {
+                totalPausedDurationMs += (endUtc - pauseStart).coerceAtLeast(0L)
+                lastPauseTimestampMs = null
+            }
+            val activeDurationMs = maxOf(1000L, endUtc - session.startUtcMillis - totalPausedDurationMs)
+            val observationDurationMs = activeDurationMs
 
             // If counters are 0, reconstruct from Room to handle recovery from process death
             if (totalPredictionsCount == 0) {
@@ -356,7 +375,7 @@ class SessionCoordinatorImpl(
 
             val lowMotionFraction = if (total > 0) {
                 lowMotionCount.toFloat() / total
-            } else 1.0f
+            } else 0.0f
 
             val hours = maxOf(0.016f, observationDurationMs / 3_600_000.0f)
             val movementRatePerHour = movementEpisodes / hours
@@ -364,13 +383,19 @@ class SessionCoordinatorImpl(
             val validWindowsCount = windows.count { it.qualityScore >= 0.5f }
             val windowCoverage = if (windows.isNotEmpty()) {
                 validWindowsCount.toFloat() / windows.size
-            } else 1.0f
+            } else 0.0f
             val persistedSamples = windows.sumOf { it.sampleCount }.toLong() + pendingSamples.size
-            val ingestionCoverage = if (persistedSamples + droppedSamplesCount > 0L) {
-                persistedSamples.toFloat() / (persistedSamples + droppedSamplesCount).toFloat()
-            } else 1.0f
-            val coverageFraction = (windowCoverage * ingestionCoverage).coerceIn(0f, 1f)
+            val totalSampleDenominator = persistedSamples + droppedSamplesCount
+            val ingestionCoverage = if (totalSampleDenominator > 0L && persistedSamples > 0L) {
+                persistedSamples.toFloat() / totalSampleDenominator.toFloat()
+            } else 0.0f
+            val coverageFraction = if (windows.isEmpty() || persistedSamples == 0L) {
+                0.0f
+            } else {
+                (windowCoverage * ingestionCoverage).coerceIn(0f, 1f)
+            }
             val hrSamples = sessionRepository.getHeartRateForSession(session.sessionId)
+            val meanHr = if (hrSamples.isNotEmpty()) hrSamples.map { it.bpm }.average().toInt() else null
             val containsSyntheticHeartRate = hrSamples.any { it.sourceKind.isSimulated || it.sourceKind.isReplay }
             val summarySource = when {
                 session.sourceMode.isSynthetic || containsSyntheticHeartRate -> SourceKind.SIMULATED
@@ -388,6 +413,7 @@ class SessionCoordinatorImpl(
                 lowMotionFraction = lowMotionFraction,
                 movementEpisodeCount = movementEpisodes,
                 movementRatePerHour = movementRatePerHour,
+                averageHeartRateBpm = meanHr,
                 sourceKind = summarySource,
                 devicePlacement = session.devicePlacement,
                 modelVersion = session.modelVersion ?: "heuristic-baseline",
@@ -399,7 +425,6 @@ class SessionCoordinatorImpl(
             // Offline-first cloud synchronization
             val uid = authRepository?.currentUid
             val totalPreds = maxOf(1, total)
-            val meanHr = if (hrSamples.isNotEmpty()) hrSamples.map { it.bpm }.average().toInt() else null
 
             val payload = SessionSummaryPayload(
                 sessionId = summary.sessionId,
@@ -416,7 +441,8 @@ class SessionCoordinatorImpl(
                 schemaVersion = 2,
             )
 
-            val outboxOp = if (cloudStateStore != null && !summary.sourceKind.isSimulated && !summary.sourceKind.isReplay) {
+            val isSyncConsented = cloudSyncConsentRepository?.isCloudSyncEnabled?.value ?: true
+            val outboxOp = if (isSyncConsented && cloudStateStore != null && !summary.sourceKind.isSimulated && !summary.sourceKind.isReplay) {
                 com.example.sleeptrackersimulator.cloud.PendingCloudOperation(
                     operationId = "summary-${summary.sessionId}",
                     type = com.example.sleeptrackersimulator.cloud.PendingOperationType.UPLOAD_SESSION_SUMMARY,
@@ -435,7 +461,7 @@ class SessionCoordinatorImpl(
                     runCatching { store.enqueue(outboxOp) }
                 }
                 cloudRecoveryScheduler?.schedule()
-            } else if (uid != null && cloudRepository != null && !summary.sourceKind.isSimulated && !summary.sourceKind.isReplay) {
+            } else if (isSyncConsented && uid != null && cloudRepository != null && !summary.sourceKind.isSimulated && !summary.sourceKind.isReplay) {
                 runCatching {
                     cloudRepository.uploadSessionSummary(uid, payload)
                 }

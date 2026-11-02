@@ -147,4 +147,45 @@ class SessionCoordinatorTest {
         coordinator.stopSession().getOrThrow()
         assertEquals(SourceKind.BLE_UNVERIFIED, repository.getSessionSummary(session.sessionId)?.sourceKind)
     }
+
+    @Test
+    fun `empty session with zero data receives zero coverage and insufficient quality`() = runTest(testDispatcher) {
+        val session = coordinator.startSession().getOrThrow()
+        val completed = coordinator.stopSession().getOrThrow()
+        assertEquals(0f, completed.dataCoverageFraction)
+        assertEquals(com.example.sleeptrackersimulator.core.model.SessionQualityStatus.INSUFFICIENT, completed.qualityStatus)
+        val summary = repository.getSessionSummary(session.sessionId)
+        assertNotNull(summary)
+        assertEquals(0f, summary!!.dataCoverageFraction)
+    }
+
+    @Test
+    fun `average heart rate is persisted in local session summary`() = runTest(testDispatcher) {
+        val session = coordinator.startSession(sourceMode = SourceMode.COMBINED).getOrThrow()
+        coordinator.ingestHeartRateSample("band", 60, sourceKind = SourceKind.BLE_REAL)
+        coordinator.ingestHeartRateSample("band", 80, sourceKind = SourceKind.BLE_REAL)
+        coordinator.stopSession().getOrThrow()
+        val summary = repository.getSessionSummary(session.sessionId)
+        assertNotNull(summary)
+        assertEquals(70, summary!!.averageHeartRateBpm)
+    }
+
+    @Test
+    fun `cloud outbox is not enqueued when cloud sync consent is disabled`() = runTest(testDispatcher) {
+        val cloudStore = com.example.sleeptrackersimulator.cloud.InMemoryCloudStateStore()
+        val consentRepo = object : com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository {
+            override val isCloudSyncEnabled = kotlinx.coroutines.flow.MutableStateFlow(false)
+            override fun setCloudSyncEnabled(enabled: Boolean) { isCloudSyncEnabled.value = enabled }
+        }
+        val consentCoordinator = SessionCoordinatorImpl(
+            sessionRepository = repository,
+            activityClassifier = null,
+            cloudStateStore = cloudStore,
+            cloudSyncConsentRepository = consentRepo,
+            dispatcher = testDispatcher,
+        )
+        consentCoordinator.startSession(sourceMode = SourceMode.PHONE_ONLY).getOrThrow()
+        consentCoordinator.stopSession().getOrThrow()
+        assertEquals(0, cloudStore.pendingCount)
+    }
 }

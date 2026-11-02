@@ -135,11 +135,19 @@ class MainActivity : ComponentActivity() {
             sessionCoordinator = container.sessionCoordinator,
             analyticsRepository = container.analyticsRepository,
             context = this@MainActivity,
+            deviceTransport = container.deviceTransport,
         )
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
-        HistoryViewModel.factory(container.sessionRepository)
+        HistoryViewModel.factory(
+            sessionRepository = container.sessionRepository,
+            cloudRepository = container.cloudRepository,
+            authRepository = container.authRepository,
+            cloudSyncConsentRepository = container.cloudSyncConsentRepository,
+            cloudStateStore = container.cloudStateStore,
+            cloudRecoveryScheduler = container.cloudRecoveryScheduler,
+        )
     }
 
     private val insightsViewModel: InsightsViewModel by viewModels {
@@ -188,6 +196,7 @@ class MainActivity : ComponentActivity() {
             restState = restStateViewModel.state,
             recoveryScheduler = container.cloudRecoveryScheduler,
             ruleEventStatusUpdater = { eventId -> container.smartRuleRepository.updateCloudStatus(eventId, "SYNCED") },
+            consentRepository = container.cloudSyncConsentRepository,
         )
     }
 
@@ -277,6 +286,7 @@ class MainActivity : ComponentActivity() {
                 val recordingState = historyRecorderViewModel.state.collectAsStateWithLifecycle().value
                 val legacyAnalyticsState = legacyAnalyticsViewModel.state.collectAsStateWithLifecycle().value
                 val smartState = smartScenariosViewModel.state.collectAsStateWithLifecycle().value
+                val isCloudSyncEnabled by container.cloudSyncConsentRepository.isCloudSyncEnabled.collectAsStateWithLifecycle()
 
                 when (activeOverlay) {
                     AppOverlay.SETTINGS -> {
@@ -294,6 +304,14 @@ class MainActivity : ComponentActivity() {
                             onDeleteAllData = {
                                 lifecycleScope.launch {
                                     container.sessionRepository.clearAllLocalData()
+                                    if (container.cloudSyncConsentRepository.isCloudSyncEnabled.value) {
+                                        val uid = container.authRepository.currentUid
+                                        if (uid != null) {
+                                            runCatching {
+                                                container.cloudRepository.applyRetention(uid, activeSessionId = null, now = Long.MAX_VALUE)
+                                            }
+                                        }
+                                    }
                                 }
                             },
                             deleteAllEnabled = !todayState.sessionStatus.isActive,
@@ -301,6 +319,8 @@ class MainActivity : ComponentActivity() {
                                 activeOverlay = AppOverlay.NONE
                                 todayViewModel.openOnboarding()
                             },
+                            isCloudSyncEnabled = isCloudSyncEnabled,
+                            onToggleCloudSync = container.cloudSyncConsentRepository::setCloudSyncEnabled,
                         )
                     }
                     AppOverlay.AUTOMATIONS -> {
@@ -499,6 +519,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenAutomations = { activeOverlay = AppOverlay.AUTOMATIONS },
                                         onDismissError = todayViewModel::dismissError,
                                         onSelectPlacement = todayViewModel::setPlacement,
+                                        onSelectSourceMode = todayViewModel::setSourceMode,
                                         onDismissOnboarding = todayViewModel::dismissOnboarding,
                                     )
                                     AppTab.HISTORY -> HistoryScreen(

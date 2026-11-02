@@ -4,6 +4,7 @@ import com.example.sleeptrackersimulator.ble.BleConnectionState
 import com.example.sleeptrackersimulator.ble.BleDevice
 import com.example.sleeptrackersimulator.ble.HeartRateMeasurement
 import com.example.sleeptrackersimulator.cloud.CloudRepository
+import com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository
 import com.example.sleeptrackersimulator.cloud.CloudErrorType
 import com.example.sleeptrackersimulator.cloud.CloudSyncStatus
 import com.example.sleeptrackersimulator.cloud.NetworkMonitor
@@ -522,6 +523,89 @@ class CloudSyncViewModelTest {
         assertNull(fixture.viewModel.state.value.lastErrorMessage)
     }
 
+    @Test
+    fun `when consent is disabled initializeFromStore does not start sync or recovery`() = runTest(dispatcher) {
+        val consent = FakeConsentRepository(initial = false)
+        val fixture = Fixture(consent = consent)
+        runCurrent()
+
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+        assertEquals(CloudSyncStatus.IDLE, fixture.viewModel.state.value.status)
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fixture.repository.uploads.isEmpty())
+        fixture.viewModel.stopSync()
+    }
+
+    @Test
+    fun `when consent is disabled startSync does nothing and no measurements are uploaded`() = runTest(dispatcher) {
+        val consent = FakeConsentRepository(initial = false)
+        val fixture = Fixture(consent = consent)
+        runCurrent()
+
+        fixture.viewModel.startSync()
+        runCurrent()
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+
+        fixture.setSensor(1f, 2f, 3f, 0.8f, MovementState.MOVEMENT)
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fixture.repository.uploads.isEmpty())
+        assertEquals(0, fixture.store.pendingCount)
+        fixture.viewModel.stopSync()
+    }
+
+    @Test
+    fun `when consent is withdrawn active sync stops and unconsented outbox operations are purged`() = runTest(dispatcher) {
+        val consent = FakeConsentRepository(initial = true)
+        val fixture = Fixture(online = false, consent = consent)
+        runCurrent()
+
+        // With consent enabled and offline, sensor events accumulate in outbox
+        fixture.setSensor(1f, 2f, 3f, 0.8f, MovementState.MOVEMENT)
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(1, fixture.store.pendingCount)
+
+        // User withdraws consent (toggles switch off)
+        consent.setCloudSyncEnabled(false)
+        runCurrent()
+
+        assertFalse(fixture.viewModel.state.value.monitoringActive)
+        assertEquals(0, fixture.store.pendingCount)
+
+        // Reconnect network: zero uploads occur because outbox was purged on withdrawal
+        fixture.network.online = true
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fixture.repository.uploads.isEmpty())
+        fixture.viewModel.stopSync()
+    }
+
+    @Test
+    fun `DELETE_SESSION operation removes session from cloud and outbox`() = runTest(dispatcher) {
+        val fixture = Fixture(online = true)
+        runCurrent()
+
+        fixture.store.enqueue(
+            PendingCloudOperation(
+                operationId = "del-1",
+                type = PendingOperationType.DELETE_SESSION,
+                sessionId = "session-to-delete",
+                createdAt = 100L,
+            ),
+        )
+        assertEquals(1, fixture.store.pendingCount)
+
+        fixture.viewModel.startSync()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertEquals(listOf("session-to-delete"), fixture.repository.deletedSessions)
+        assertEquals(0, fixture.store.pendingCount)
+        fixture.viewModel.stopSync()
+    }
+
     private fun cloudTest(
         online: Boolean = true,
         store: CloudStateStore = InMemoryCloudStateStore(),
@@ -541,6 +625,7 @@ class CloudSyncViewModelTest {
         online: Boolean = true,
         store: CloudStateStore = InMemoryCloudStateStore(),
         authUid: String = "uid-1",
+        val consent: FakeConsentRepository? = null,
     ) {
         val repository = FakeCloudRepository()
         val store = store
@@ -568,6 +653,7 @@ class CloudSyncViewModelTest {
             newId = { "id-${now}" },
             storageDispatcher = Dispatchers.Main,
             recoveryScheduler = scheduler,
+            consentRepository = consent,
             log = { _, _, _ -> },
         )
 
@@ -590,6 +676,7 @@ class CloudSyncViewModelTest {
     private class FakeCloudRepository : CloudRepository {
         val uploads = mutableListOf<SensorPayload>()
         val endTimes = mutableListOf<Long>()
+        val deletedSessions = mutableListOf<String>()
         var failure: Exception? = null
         var uploadGate: CompletableDeferred<Unit>? = null
 
@@ -606,7 +693,19 @@ class CloudSyncViewModelTest {
             endTimes += endedAt
         }
 
+        override suspend fun deleteSession(ownerUid: String, sessionId: String) {
+            failure?.let { throw it }
+            deletedSessions += sessionId
+        }
+
         override suspend fun applyRetention(ownerUid: String, activeSessionId: String?, now: Long) = Unit
+    }
+
+    private class FakeConsentRepository(initial: Boolean = true) : CloudSyncConsentRepository {
+        override val isCloudSyncEnabled = MutableStateFlow(initial)
+        override fun setCloudSyncEnabled(enabled: Boolean) {
+            isCloudSyncEnabled.value = enabled
+        }
     }
 
     private class FakeAuthRepository(private val uid: String) : AuthRepository {

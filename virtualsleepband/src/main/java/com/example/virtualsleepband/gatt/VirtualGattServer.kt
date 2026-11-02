@@ -18,6 +18,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelUuid
+import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,11 +58,12 @@ data class BandPeripheralState(
 )
 
 class VirtualGattServer(
-    private val context: Context,
+    private val context: Context? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val monotonicClockNanos: () -> Long = { runCatching { SystemClock.elapsedRealtimeNanos() }.getOrDefault(System.nanoTime()) },
 ) {
 
-    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    private val bluetoothManager = context?.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     private val _state = MutableStateFlow(BandPeripheralState())
@@ -67,9 +72,11 @@ class VirtualGattServer(
     private var gattServer: BluetoothGattServer? = null
     private val connectedDevices = ConcurrentHashMap.newKeySet<BluetoothDevice>()
     private val heartRateSubscribers = ConcurrentHashMap.newKeySet<BluetoothDevice>()
+    private val lastAlertNanosByDevice = ConcurrentHashMap<String, Long>()
     private var streamJob: Job? = null
     private var syntheticHeartRate = SimulatedHeartRate()
     private var simulationSeconds = 0L
+    private var simulationStartNanos = 0L
 
     private var pendingBatteryService: BluetoothGattService? = null
     @Volatile private var isStarting = false
@@ -151,20 +158,92 @@ class VirtualGattServer(
             offset: Int,
             value: ByteArray?,
         ) {
-            val target = device ?: return
-            val commandText = value?.let { String(it, Charsets.UTF_8) } ?: "<empty>"
+            val targetAddress = device?.address ?: "Central"
+            val charUuid = characteristic?.uuid ?: UUID_COMMAND_CHARACTERISTIC
+            if (characteristic != null && characteristic.uuid != null && characteristic.uuid != UUID_COMMAND_CHARACTERISTIC) {
+                if (responseNeeded && device != null) {
+                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+                }
+                return
+            }
+            if (offset > 0) {
+                if (responseNeeded && device != null) {
+                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null)
+                }
+                return
+            }
+
+            if (value != null && value.size > MAX_COMMAND_LENGTH_BYTES) {
+                val logEntry = CommandLogEntry(
+                    timestamp = Instant.now().toString(),
+                    sourceDevice = targetAddress,
+                    characteristicUuid = charUuid.toString().take(8),
+                    command = "[REJECTED_LENGTH_${value.size}_BYTES]",
+                )
+                val updatedLogs = (listOf(logEntry) + _state.value.commandLogs).take(50)
+                _state.value = _state.value.copy(commandLogs = updatedLogs)
+                if (responseNeeded && device != null) {
+                    gattServer?.sendResponse(device, requestId, 0x0D /* GATT_INVALID_ATTRIBUTE_LENGTH */, offset, null)
+                }
+                return
+            }
+
+            val commandText = value?.let { String(it, Charsets.UTF_8).trim() } ?: ""
+            val isSupported = commandText == "ALERT" || commandText == "ALERT_PULSE" || commandText == "PING"
+
+            if (!isSupported) {
+                val logEntry = CommandLogEntry(
+                    timestamp = Instant.now().toString(),
+                    sourceDevice = targetAddress,
+                    characteristicUuid = charUuid.toString().take(8),
+                    command = "$commandText [REJECTED_UNSUPPORTED]",
+                )
+                val updatedLogs = (listOf(logEntry) + _state.value.commandLogs).take(50)
+                _state.value = _state.value.copy(commandLogs = updatedLogs)
+                if (responseNeeded && device != null) {
+                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+                }
+                return
+            }
+
+            if (commandText == "ALERT" || commandText == "ALERT_PULSE") {
+                val nowNanos = monotonicClockNanos()
+                val lastNanos = lastAlertNanosByDevice[targetAddress] ?: 0L
+                val elapsedMs = (nowNanos - lastNanos) / 1_000_000L
+                if (lastNanos != 0L && elapsedMs < MIN_ALERT_INTERVAL_MILLIS) {
+                    val logEntry = CommandLogEntry(
+                        timestamp = Instant.now().toString(),
+                        sourceDevice = targetAddress,
+                        characteristicUuid = charUuid.toString().take(8),
+                        command = "$commandText [THROTTLED_RATE_LIMITED_${elapsedMs}MS]",
+                    )
+                    val updatedLogs = (listOf(logEntry) + _state.value.commandLogs).take(50)
+                    _state.value = _state.value.copy(commandLogs = updatedLogs)
+                    if (responseNeeded && device != null) {
+                        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+                    }
+                    return
+                }
+                lastAlertNanosByDevice[targetAddress] = nowNanos
+            }
+
+            var executionOutcome = "ACK"
+            if (commandText == "ALERT" || commandText == "ALERT_PULSE") {
+                executionOutcome = triggerPeripheralVibration(300L)
+            }
+
             val logEntry = CommandLogEntry(
                 timestamp = Instant.now().toString(),
-                sourceDevice = target.address ?: "Central",
-                characteristicUuid = characteristic?.uuid?.toString()?.take(8) ?: "Unknown",
-                command = commandText,
+                sourceDevice = targetAddress,
+                characteristicUuid = charUuid.toString().take(8),
+                command = "$commandText [$executionOutcome]",
             )
 
             val updatedLogs = (listOf(logEntry) + _state.value.commandLogs).take(50)
             _state.value = _state.value.copy(commandLogs = updatedLogs)
 
-            if (responseNeeded) {
-                gattServer?.sendResponse(target, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+            if (responseNeeded && device != null) {
+                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
             }
         }
 
@@ -192,13 +271,18 @@ class VirtualGattServer(
         }
     }
 
+    @androidx.annotation.VisibleForTesting
+    internal var testForcePermissionsGranted: Boolean = false
+
     fun hasPermissions(): Boolean {
+        if (testForcePermissionsGranted) return true
+        val ctx = context ?: return false
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
         } else {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -214,8 +298,9 @@ class VirtualGattServer(
         bluetoothAdapter?.bluetoothLeAdvertiser
             ?: return Result.failure(IllegalStateException("BLE Advertising is not supported on this hardware"))
 
+        val ctx = context ?: return Result.failure(IllegalStateException("Context not available"))
         // Set up GATT Server
-        gattServer = bluetoothManager?.openGattServer(context, gattServerCallback)
+        gattServer = bluetoothManager?.openGattServer(ctx, gattServerCallback)
             ?: return Result.failure(IllegalStateException("Unable to open GATT server"))
         val (heartRateService, batteryService) = createServices()
         pendingBatteryService = batteryService
@@ -226,6 +311,7 @@ class VirtualGattServer(
             return Result.failure(IllegalStateException("Heart-rate service registration could not start"))
         }
         simulationSeconds = 0L
+        simulationStartNanos = monotonicClockNanos()
 
         return Result.success(Unit)
     }
@@ -259,6 +345,7 @@ class VirtualGattServer(
     fun setScenario(scenario: SimulationScenario) {
         syntheticHeartRate = SimulatedHeartRate(scenario = scenario)
         simulationSeconds = 0L
+        simulationStartNanos = monotonicClockNanos()
         _state.value = _state.value.copy(scenario = scenario, elapsedSeconds = 0L, transmittedPacketCount = 0L)
     }
 
@@ -368,10 +455,14 @@ class VirtualGattServer(
     @SuppressLint("MissingPermission")
     private fun startTransmissionLoop() {
         streamJob?.cancel()
+        if (simulationStartNanos == 0L) {
+            simulationStartNanos = monotonicClockNanos()
+        }
         streamJob = scope.launch {
             while (isActive) {
                 delay(_state.value.packetIntervalMs)
-                simulationSeconds += (_state.value.packetIntervalMs / 1000L).coerceAtLeast(1L)
+                val nowNanos = monotonicClockNanos()
+                simulationSeconds = maxOf(0L, (nowNanos - simulationStartNanos) / 1_000_000_000L)
                 val emittedBpm = syntheticHeartRate.bpm(simulationSeconds)
                 val battery = syntheticHeartRate.batteryPercent(simulationSeconds)
                 _state.value = _state.value.copy(currentBpm = emittedBpm, batteryLevel = battery, elapsedSeconds = simulationSeconds)
@@ -393,6 +484,58 @@ class VirtualGattServer(
         }
     }
 
+    private fun triggerPeripheralVibration(durationMs: Long): String {
+        return try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val manager = context?.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                manager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(durationMs)
+                }
+                "EXECUTED_VIBRATION_${durationMs}MS"
+            } else {
+                "EXECUTED_NO_VIBRATOR_HARDWARE"
+            }
+        } catch (e: Exception) {
+            "EXECUTED_VIBRATOR_ERROR_${e.javaClass.simpleName}"
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal val testGattServerCallback get() = gattServerCallback
+
+    @androidx.annotation.VisibleForTesting
+    internal fun testTriggerPeripheralVibration(durationMs: Long) = triggerPeripheralVibration(durationMs)
+
+    @androidx.annotation.VisibleForTesting
+    internal fun testHandleCharacteristicWrite(
+        device: BluetoothDevice?,
+        characteristic: BluetoothGattCharacteristic?,
+        value: ByteArray?,
+        responseNeeded: Boolean = true,
+    ) {
+        gattServerCallback.onCharacteristicWriteRequest(device, 1, characteristic, false, responseNeeded, 0, value)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun testStartTransmissionLoop() {
+        startTransmissionLoop()
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun testStopTransmissionLoop() {
+        streamJob?.cancel()
+        streamJob = null
+    }
+
     companion object {
         val UUID_HEART_RATE_SERVICE: UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
         val UUID_HEART_RATE_MEASUREMENT: UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
@@ -401,6 +544,8 @@ class VirtualGattServer(
         val UUID_BATTERY_LEVEL: UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
         val UUID_CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val UUID_COMMAND_CHARACTERISTIC: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
+        const val MAX_COMMAND_LENGTH_BYTES = 32
+        const val MIN_ALERT_INTERVAL_MILLIS = 2_000L
         const val SIMULATOR_MANUFACTURER_ID = 0xFFFF
         val SIMULATOR_MARKER = byteArrayOf(0x53, 0x53, 0x56, 0x31)
     }

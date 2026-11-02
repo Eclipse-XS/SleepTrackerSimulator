@@ -144,4 +144,18 @@ class TodayViewModelTest {
 
         assertEquals(DevicePlacement.NIGHTSTAND, vm.uiState.value.selectedPlacement)
     }
+
+    @Test
+    fun testSetSourceModeUpdatesState() = runTest {
+        val vm = TodayViewModel(
+            sessionCoordinator = FakeSessionCoordinator(),
+            analyticsRepository = FakeAnalyticsRepository(),
+        )
+
+        assertEquals(SourceMode.PHONE_ONLY, vm.uiState.value.selectedSourceMode)
+
+        vm.setSourceMode(SourceMode.COMBINED)
+
+        assertEquals(SourceMode.COMBINED, vm.uiState.value.selectedSourceMode)
+    }
 }

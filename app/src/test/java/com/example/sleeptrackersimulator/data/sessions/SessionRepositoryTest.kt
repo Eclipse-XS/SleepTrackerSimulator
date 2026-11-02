@@ -309,6 +309,11 @@ class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDa
         records.removeAll { it.sessionId == sessionId }
         return before - records.size
     }
+    override fun purgeUnconsentedUploads(): Int {
+        val before = records.size
+        records.removeAll { it.type != "DELETE_SESSION" }
+        return before - records.size
+    }
     override fun updateFailure(sequence: Long, message: String, state: String): Int = 0
 }
 

@@ -54,6 +54,7 @@ interface AppContainer {
     val analyticsRepository: com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
     val sessionCoordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
     val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
+    val cloudSyncConsentRepository: com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository
     val deviceTransport: com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport
     val virtualSleepBandAdvertiser: com.example.sleeptrackersimulator.data.ble.VirtualSleepBandAdvertiser
 }
@@ -80,7 +81,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     }
 
     override val cloudRepository: CloudRepository by lazy {
-        FirebaseCloudRepository()
+        FirebaseCloudRepository(consentRepository = cloudSyncConsentRepository)
     }
 
     override val authRepository: AuthRepository by lazy {
@@ -190,6 +191,10 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val analyticsRepository: com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
         get() = sessionRepository
 
+    override val cloudSyncConsentRepository: com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository by lazy {
+        com.example.sleeptrackersimulator.cloud.SharedPreferencesCloudSyncConsentRepository(context)
+    }
+
     override val sessionCoordinator: com.example.sleeptrackersimulator.domain.recording.SessionCoordinator by lazy {
         com.example.sleeptrackersimulator.domain.recording.SessionCoordinatorImpl(
             sessionRepository = sessionRepository,
@@ -201,6 +206,7 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
             modelSelectionEngine = modelSelectionEngine,
             automationCoordinator = backgroundAutomationCoordinator,
             dataRetentionPolicy = dataRetentionPolicy,
+            cloudSyncConsentRepository = cloudSyncConsentRepository,
         )
     }
 

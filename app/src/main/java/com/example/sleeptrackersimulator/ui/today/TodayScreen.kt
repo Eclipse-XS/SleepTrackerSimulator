@@ -56,8 +56,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sleeptrackersimulator.core.model.DeviceConnectionState
 import com.example.sleeptrackersimulator.core.model.DevicePlacement
 import com.example.sleeptrackersimulator.core.model.SessionStatus
+import com.example.sleeptrackersimulator.core.model.SourceMode
 import com.example.sleeptrackersimulator.ui.components.MetricCard
 import com.example.sleeptrackersimulator.ui.components.ProvenanceChip
 import com.example.sleeptrackersimulator.ui.components.StatusBadge
@@ -80,6 +82,7 @@ fun TodayScreen(
     onDismissError: () -> Unit,
     modifier: Modifier = Modifier,
     onSelectPlacement: (DevicePlacement) -> Unit = {},
+    onSelectSourceMode: (SourceMode) -> Unit = {},
     onDismissOnboarding: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -169,6 +172,7 @@ fun TodayScreen(
                 onResume = onResumeRecording,
                 onStop = onStopRecording,
                 onSelectPlacement = onSelectPlacement,
+                onSelectSourceMode = onSelectSourceMode,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -296,6 +300,7 @@ private fun SessionHeroCard(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
     onSelectPlacement: (DevicePlacement) -> Unit = {},
+    onSelectSourceMode: (SourceMode) -> Unit = {},
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -331,6 +336,54 @@ private fun SessionHeroCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Recording Source",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilterChip(
+                            selected = state.selectedSourceMode == SourceMode.PHONE_ONLY,
+                            onClick = { onSelectSourceMode(SourceMode.PHONE_ONLY) },
+                            label = { Text("Phone Only") },
+                        )
+                        FilterChip(
+                            selected = state.selectedSourceMode == SourceMode.COMBINED,
+                            onClick = { onSelectSourceMode(SourceMode.COMBINED) },
+                            label = { Text("Combined (Phone + Band)") },
+                        )
+                        FilterChip(
+                            selected = state.selectedSourceMode == SourceMode.WEARABLE_ONLY,
+                            onClick = { onSelectSourceMode(SourceMode.WEARABLE_ONLY) },
+                            label = { Text("Band Only") },
+                        )
+                    }
+
+                    if (state.connectedDevice != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusBadge(
+                                text = "${state.connectedDevice.displayName} (Connected${state.connectedHeartRate?.let { " • $it BPM" } ?: ""})",
+                                color = CalmGreen,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            ProvenanceChip(sourceKind = state.connectedDevice.sourceKind)
+                        }
+                    } else if (state.selectedSourceMode.requiresBleConnection) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Wearable disconnected. Connect via Devices tab, or fallback to phone-only sensor will be used.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MotionAmber,
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -455,8 +508,17 @@ private fun SessionHeroCard(
 
                     Spacer(modifier = Modifier.height(6.dp))
 
+                    val activeMode = state.activeSession?.sourceMode ?: state.selectedSourceMode
+                    val modeDesc = when (activeMode) {
+                        SourceMode.PHONE_ONLY -> "Phone accelerometer · 20 Hz · On-device TFLite"
+                        SourceMode.COMBINED -> "Phone + Wearable · Accel + HR${state.connectedHeartRate?.let { " ($it BPM)" } ?: ""} · Multimodal TFLite"
+                        SourceMode.WEARABLE_ONLY -> "Wearable HR only${state.connectedHeartRate?.let { " ($it BPM)" } ?: ""}"
+                        SourceMode.DEMO -> "Synthetic In-Memory Demo"
+                        SourceMode.REPLAY -> "Replay Stream"
+                    }
+
                     Text(
-                        text = "Phone sensor active · 20 Hz · On-device TFLite model",
+                        text = modeDesc,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -145,7 +145,8 @@ abstract class SmartRuleEventCoordinatorDao {
             PendingOperationType.UPLOAD_MEASUREMENT -> maximumOperations - RoomCloudStateStore.RESERVED_CRITICAL_SLOTS
             PendingOperationType.UPLOAD_RULE_EVENT -> maximumOperations - RoomCloudStateStore.RESERVED_END_SESSION_SLOTS
             PendingOperationType.UPLOAD_SESSION_SUMMARY -> maximumOperations
-            PendingOperationType.END_SESSION -> maximumOperations
+            PendingOperationType.END_SESSION,
+            PendingOperationType.DELETE_SESSION -> maximumOperations
         }
         if (current >= limit) throw CloudOutboxFullException(
             "Cloud outbox capacity policy rejected ${type.name} at $current/$maximumOperations",

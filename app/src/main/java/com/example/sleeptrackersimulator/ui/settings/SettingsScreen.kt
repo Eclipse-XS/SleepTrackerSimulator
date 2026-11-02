@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,6 +60,8 @@ fun SettingsScreen(
     onDeleteAllData: () -> Unit,
     deleteAllEnabled: Boolean = true,
     onOpenPlacementGuide: () -> Unit = {},
+    isCloudSyncEnabled: Boolean = false,
+    onToggleCloudSync: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -152,16 +155,15 @@ fun SettingsScreen(
                                 color = MistBlue,
                             )
                             Text(
-                                text = "Availability is determined by this APK's Firebase configuration. Runtime status and outbox diagnostics are shown in Lab View.",
+                                text = "When enabled, anonymized sleep summaries synchronize to Firebase. Disabled by default to protect your privacy.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MistBlue.copy(alpha = 0.65f),
                             )
                         }
-                        Text(
-                            text = "BUILD CONFIG",
-                            color = CalmGreen,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Switch(
+                            checked = isCloudSyncEnabled,
+                            onCheckedChange = onToggleCloudSync,
                         )
                     }
                 }

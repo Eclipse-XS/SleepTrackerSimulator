@@ -4,6 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.sleeptrackersimulator.core.model.ActivityClass
+import com.example.sleeptrackersimulator.cloud.AuthRepository
+import com.example.sleeptrackersimulator.cloud.CloudRecoveryScheduler
+import com.example.sleeptrackersimulator.cloud.CloudRepository
+import com.example.sleeptrackersimulator.cloud.CloudStateStore
+import com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository
+import com.example.sleeptrackersimulator.cloud.PendingCloudOperation
+import com.example.sleeptrackersimulator.cloud.PendingOperationType
 import com.example.sleeptrackersimulator.core.model.FeatureWindow
 import com.example.sleeptrackersimulator.core.model.Prediction
 import com.example.sleeptrackersimulator.core.model.RecordingSession
@@ -41,6 +48,11 @@ data class HistoryUiState(
 
 class HistoryViewModel(
     private val sessionRepository: SessionRepository,
+    private val cloudRepository: CloudRepository? = null,
+    private val authRepository: AuthRepository? = null,
+    private val cloudSyncConsentRepository: CloudSyncConsentRepository? = null,
+    private val cloudStateStore: CloudStateStore? = null,
+    private val cloudRecoveryScheduler: CloudRecoveryScheduler? = null,
 ) : ViewModel() {
 
     private val _filter = MutableStateFlow(HistoryFilter.ALL)
@@ -106,15 +118,56 @@ class HistoryViewModel(
             if (_selectedDetails.value?.session?.sessionId == sessionId) {
                 _selectedDetails.value = null
             }
+            if (cloudRepository != null) {
+                val uid = authRepository?.currentUid
+                if (uid != null) {
+                    val result = runCatching { cloudRepository.deleteSession(uid, sessionId) }
+                    if (result.isFailure && cloudStateStore != null) {
+                        cloudStateStore.enqueue(
+                            PendingCloudOperation(
+                                operationId = "delete-$sessionId",
+                                type = PendingOperationType.DELETE_SESSION,
+                                sessionId = sessionId,
+                                createdAt = System.currentTimeMillis(),
+                            ),
+                        )
+                        cloudRecoveryScheduler?.schedule()
+                    }
+                } else if (cloudStateStore != null) {
+                    cloudStateStore.enqueue(
+                        PendingCloudOperation(
+                            operationId = "delete-$sessionId",
+                            type = PendingOperationType.DELETE_SESSION,
+                            sessionId = sessionId,
+                            createdAt = System.currentTimeMillis(),
+                        ),
+                    )
+                    cloudRecoveryScheduler?.schedule()
+                }
+            }
         }
     }
 
     companion object {
-        fun factory(sessionRepository: SessionRepository): ViewModelProvider.Factory =
+        fun factory(
+            sessionRepository: SessionRepository,
+            cloudRepository: CloudRepository? = null,
+            authRepository: AuthRepository? = null,
+            cloudSyncConsentRepository: CloudSyncConsentRepository? = null,
+            cloudStateStore: CloudStateStore? = null,
+            cloudRecoveryScheduler: CloudRecoveryScheduler? = null,
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return HistoryViewModel(sessionRepository) as T
+                    return HistoryViewModel(
+                        sessionRepository = sessionRepository,
+                        cloudRepository = cloudRepository,
+                        authRepository = authRepository,
+                        cloudSyncConsentRepository = cloudSyncConsentRepository,
+                        cloudStateStore = cloudStateStore,
+                        cloudRecoveryScheduler = cloudRecoveryScheduler,
+                    ) as T
                 }
             }
     }

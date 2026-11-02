@@ -344,6 +344,8 @@ class RecordingService : Service(), SensorEventListener {
         sensorManager?.unregisterListener(this)
         transportJob?.cancel()
         transportJob = null
+        val app = application as? SleepTrackerApplication
+        app?.container?.smartActuator?.stopAll()
     }
 
     private fun releaseWakeLock() {

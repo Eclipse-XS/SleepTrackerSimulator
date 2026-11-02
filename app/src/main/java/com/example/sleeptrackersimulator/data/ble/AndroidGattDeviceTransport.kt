@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -26,6 +27,7 @@ import com.example.sleeptrackersimulator.core.model.DeviceConnectionState
 import com.example.sleeptrackersimulator.core.model.DeviceInfo
 import com.example.sleeptrackersimulator.core.model.HeartRateSample
 import com.example.sleeptrackersimulator.core.model.SourceKind
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +41,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -49,11 +54,14 @@ import java.util.concurrent.ConcurrentHashMap
  * remain BLE_UNVERIFIED; the companion marker identifies synthetic data but is not authenticated.
  */
 class AndroidGattDeviceTransport(
-    private val context: Context,
+    private val context: Context? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    injectedBluetoothManager: BluetoothManager? = null,
 ) : DeviceTransport {
 
-    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    private val bluetoothManager = injectedBluetoothManager ?: runCatching {
+        context?.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    }.getOrNull()
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     private val _connectionState = MutableStateFlow(DeviceConnectionState.DISCONNECTED)
@@ -69,7 +77,15 @@ class AndroidGattDeviceTransport(
     private var activeGatt: BluetoothGatt? = null
     private var scanTimeoutJob: Job? = null
     private var connectionTimeoutJob: Job? = null
+    private var reconnectJob: Job? = null
     private val discoveredSourceKinds = ConcurrentHashMap<String, SourceKind>()
+
+    private var userRequestedDisconnect = false
+    private var lastConnectedDeviceId: String? = null
+    private var reconnectAttempts = 0
+
+    private val commandMutex = Mutex()
+    private var pendingCommandDeferred: CompletableDeferred<Boolean>? = null
 
     private val scanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
@@ -88,7 +104,7 @@ class AndroidGattDeviceTransport(
                     deviceId = address,
                     displayName = name,
                     sourceKind = sourceKind,
-                    capabilities = setOf(DeviceCapability.HEART_RATE),
+                    capabilities = setOf(DeviceCapability.HEART_RATE, DeviceCapability.REMOTE_COMMANDS),
                     rssi = rssi,
                 )
 
@@ -118,21 +134,36 @@ class AndroidGattDeviceTransport(
             }
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    reconnectAttempts = 0
                     _connectionState.value = DeviceConnectionState.DISCOVERING_SERVICES
-                    if (gatt?.discoverServices() != true) _connectionState.value = DeviceConnectionState.ERROR
+                    if (gatt?.discoverServices() != true) {
+                        handleUnexpectedDisconnect(gatt)
+                    }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     connectionTimeoutJob?.cancel()
-                    _connectionState.value = DeviceConnectionState.DISCONNECTED
+                    pendingCommandDeferred?.complete(false)
+                    pendingCommandDeferred = null
+                    if (!userRequestedDisconnect && lastConnectedDeviceId != null) {
+                        handleUnexpectedDisconnect(gatt)
+                    } else {
+                        _connectionState.value = DeviceConnectionState.DISCONNECTED
+                        _connectedDevice.value = null
+                        activeGatt?.close()
+                        activeGatt = null
+                    }
+                }
+            } else {
+                connectionTimeoutJob?.cancel()
+                pendingCommandDeferred?.complete(false)
+                pendingCommandDeferred = null
+                if (!userRequestedDisconnect && lastConnectedDeviceId != null) {
+                    handleUnexpectedDisconnect(gatt)
+                } else {
+                    _connectionState.value = DeviceConnectionState.ERROR
                     _connectedDevice.value = null
                     activeGatt?.close()
                     activeGatt = null
                 }
-            } else {
-                connectionTimeoutJob?.cancel()
-                _connectionState.value = DeviceConnectionState.ERROR
-                _connectedDevice.value = null
-                activeGatt?.close()
-                activeGatt = null
             }
         }
 
@@ -145,33 +176,39 @@ class AndroidGattDeviceTransport(
 
                 if (hrChar != null) {
                     _connectionState.value = DeviceConnectionState.SUBSCRIBING
-                    // Enable local notification
                     if (!gatt.setCharacteristicNotification(hrChar, true)) {
-                        _connectionState.value = DeviceConnectionState.ERROR
+                        handleUnexpectedDisconnect(gatt)
                         return
                     }
 
-                    // Write CCCD descriptor to subscribe to notifications on peripheral
                     val descriptor = hrChar.getDescriptor(UUID_CCCD)
                     if (descriptor != null) {
                         descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        if (!gatt.writeDescriptor(descriptor)) _connectionState.value = DeviceConnectionState.ERROR
-                    } else _connectionState.value = DeviceConnectionState.ERROR
+                        if (!gatt.writeDescriptor(descriptor)) {
+                            handleUnexpectedDisconnect(gatt)
+                        }
+                    } else {
+                        handleUnexpectedDisconnect(gatt)
+                    }
                 } else {
-                    _connectionState.value = DeviceConnectionState.ERROR
+                    handleUnexpectedDisconnect(gatt)
                 }
             } else {
-                _connectionState.value = DeviceConnectionState.ERROR
+                handleUnexpectedDisconnect(gatt)
             }
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
-            if (gatt !== activeGatt) return
-            if (descriptor?.uuid == UUID_CCCD) {
-                _connectionState.value = if (status == BluetoothGatt.GATT_SUCCESS) {
+            if (activeGatt != null && gatt !== activeGatt) return
+            val descUuid = descriptor?.uuid ?: UUID_CCCD
+            if (descUuid == UUID_CCCD) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
                     connectionTimeoutJob?.cancel()
-                    DeviceConnectionState.CONNECTED
-                } else DeviceConnectionState.ERROR
+                    reconnectAttempts = 0
+                    _connectionState.value = DeviceConnectionState.CONNECTED
+                } else {
+                    handleUnexpectedDisconnect(gatt)
+                }
             }
         }
 
@@ -180,11 +217,49 @@ class AndroidGattDeviceTransport(
             gatt: BluetoothGatt?,
             characteristic: BluetoothGattCharacteristic?,
         ) {
-            if (gatt !== activeGatt) return
-            if (characteristic?.uuid == UUID_HEART_RATE_MEASUREMENT) {
-                val value = characteristic.value ?: return
+            if (activeGatt != null && gatt !== activeGatt) return
+            if (_connectionState.value != DeviceConnectionState.CONNECTED) return
+            val charUuid = characteristic?.uuid ?: UUID_HEART_RATE_MEASUREMENT
+            if (charUuid == UUID_HEART_RATE_MEASUREMENT) {
+                val value = characteristic?.value ?: return
                 parseHeartRateMeasurement(value, gatt?.device?.address ?: "unknown")
             }
+        }
+
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt?,
+            characteristic: BluetoothGattCharacteristic?,
+            status: Int,
+        ) {
+            if (activeGatt != null && gatt !== activeGatt) return
+            val charUuid = characteristic?.uuid ?: UUID_COMMAND_CHARACTERISTIC
+            if (charUuid == UUID_COMMAND_CHARACTERISTIC) {
+                pendingCommandDeferred?.complete(status == BluetoothGatt.GATT_SUCCESS)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun handleUnexpectedDisconnect(gatt: BluetoothGatt?) {
+        gatt?.close()
+        if (activeGatt === gatt) {
+            activeGatt = null
+        }
+        val targetDeviceId = lastConnectedDeviceId
+        if (targetDeviceId != null && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            val attempt = ++reconnectAttempts
+            val backoffDelayMs = (1000L * (1L shl (attempt - 1))).coerceAtMost(8000L)
+            _connectionState.value = DeviceConnectionState.RECONNECTING
+            reconnectJob?.cancel()
+            reconnectJob = scope.launch {
+                delay(backoffDelayMs)
+                if (!userRequestedDisconnect && lastConnectedDeviceId == targetDeviceId) {
+                    connect(targetDeviceId)
+                }
+            }
+        } else {
+            _connectionState.value = DeviceConnectionState.ERROR
+            _connectedDevice.value = null
         }
     }
 
@@ -254,6 +329,10 @@ class AndroidGattDeviceTransport(
             return Result.failure(SecurityException("Missing Bluetooth permissions"))
         }
 
+        reconnectJob?.cancel()
+        userRequestedDisconnect = false
+        lastConnectedDeviceId = deviceId
+
         stopScan()
         activeGatt?.disconnect()
         activeGatt?.close()
@@ -262,7 +341,8 @@ class AndroidGattDeviceTransport(
             ?: return Result.failure(IllegalArgumentException("Invalid Bluetooth device address: $deviceId"))
 
         _connectionState.value = DeviceConnectionState.CONNECTING
-        activeGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        val ctx = context ?: return Result.failure(IllegalStateException("Context not available"))
+        activeGatt = device.connectGatt(ctx, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         connectionTimeoutJob?.cancel()
         connectionTimeoutJob = scope.launch {
             delay(CONNECTION_TIMEOUT_MILLIS)
@@ -284,7 +364,7 @@ class AndroidGattDeviceTransport(
             deviceId = device.address,
             displayName = device.name ?: "BLE Heart Rate Sensor",
             sourceKind = discoveredSourceKinds[device.address] ?: SourceKind.BLE_UNVERIFIED,
-            capabilities = setOf(DeviceCapability.HEART_RATE),
+            capabilities = setOf(DeviceCapability.HEART_RATE, DeviceCapability.REMOTE_COMMANDS),
         )
 
         return Result.success(Unit)
@@ -292,7 +372,15 @@ class AndroidGattDeviceTransport(
 
     @SuppressLint("MissingPermission")
     override suspend fun disconnect(): Result<Unit> {
+        userRequestedDisconnect = true
+        reconnectJob?.cancel()
         connectionTimeoutJob?.cancel()
+        reconnectAttempts = 0
+        lastConnectedDeviceId = null
+
+        pendingCommandDeferred?.complete(false)
+        pendingCommandDeferred = null
+
         if (hasBlePermissions()) {
             activeGatt?.disconnect()
             activeGatt?.close()
@@ -312,27 +400,114 @@ class AndroidGattDeviceTransport(
         val commandChar = hrService?.getCharacteristic(UUID_COMMAND_CHARACTERISTIC)
             ?: return Result.failure(UnsupportedOperationException("Command characteristic not found on peripheral"))
 
-        commandChar.value = command.action.toByteArray(Charsets.UTF_8)
-        val success = gatt.writeCharacteristic(commandChar)
+        return commandMutex.withLock {
+            val startTime = System.nanoTime()
+            val deferred = CompletableDeferred<Boolean>()
+            pendingCommandDeferred = deferred
 
-        return Result.success(
-            CommandResult(
-                commandId = command.commandId,
-                success = success,
-                statusMessage = if (success) "Sent command to peripheral" else "Failed to write characteristic",
-            ),
-        )
-    }
+            try {
+                val payload = command.payload ?: command.action.toByteArray(Charsets.UTF_8)
+                val writeSuccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeCharacteristic(
+                        commandChar,
+                        payload,
+                        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                    ) == BluetoothStatusCodes.SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    commandChar.value = payload
+                    @Suppress("DEPRECATION")
+                    gatt.writeCharacteristic(commandChar)
+                }
 
-    private fun hasBlePermissions(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        } else {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (!writeSuccess) {
+                    return@withLock Result.success(
+                        CommandResult(
+                            commandId = command.commandId,
+                            success = false,
+                            statusMessage = "Failed to initiate GATT write",
+                            executionDurationNs = System.nanoTime() - startTime,
+                        ),
+                    )
+                }
+
+                val acknowledged = withTimeoutOrNull(COMMAND_TIMEOUT_MILLIS) {
+                    deferred.await()
+                } ?: false
+
+                Result.success(
+                    CommandResult(
+                        commandId = command.commandId,
+                        success = acknowledged,
+                        statusMessage = if (acknowledged) {
+                            "Sent command to peripheral"
+                        } else {
+                            "Peripheral command timed out awaiting acknowledgement"
+                        },
+                        executionDurationNs = System.nanoTime() - startTime,
+                    ),
+                )
+            } finally {
+                pendingCommandDeferred = null
+            }
         }
     }
+
+    @androidx.annotation.VisibleForTesting
+    internal var testForceBlePermissionGranted: Boolean = false
+
+    private fun hasBlePermissions(): Boolean {
+        if (testForceBlePermissionGranted) return true
+        val ctx = context ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal val testGattCallback: BluetoothGattCallback get() = gattCallback
+
+    @androidx.annotation.VisibleForTesting
+    internal var testActiveGatt: BluetoothGatt?
+        get() = activeGatt
+        set(value) { activeGatt = value }
+
+    @androidx.annotation.VisibleForTesting
+    internal var testPendingCommandDeferred: CompletableDeferred<Boolean>?
+        get() = pendingCommandDeferred
+        set(value) { pendingCommandDeferred = value }
+
+    @androidx.annotation.VisibleForTesting
+    internal var testReconnectAttempts: Int
+        get() = reconnectAttempts
+        set(value) { reconnectAttempts = value }
+
+    @androidx.annotation.VisibleForTesting
+    internal var testUserRequestedDisconnect: Boolean
+        get() = userRequestedDisconnect
+        set(value) { userRequestedDisconnect = value }
+
+    @androidx.annotation.VisibleForTesting
+    internal var testLastConnectedDeviceId: String?
+        get() = lastConnectedDeviceId
+        set(value) { lastConnectedDeviceId = value }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun testSetConnectionState(state: DeviceConnectionState) {
+        _connectionState.value = state
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun testHandleUnexpectedDisconnect(gatt: BluetoothGatt?) {
+        handleUnexpectedDisconnect(gatt)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal val testDiscoveredSourceKinds get() = discoveredSourceKinds
 
     companion object {
         val UUID_HEART_RATE_SERVICE: UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
@@ -343,6 +518,8 @@ class AndroidGattDeviceTransport(
         const val SIMULATOR_MANUFACTURER_ID = 0xFFFF
         const val SCAN_TIMEOUT_MILLIS = 15_000L
         const val CONNECTION_TIMEOUT_MILLIS = 15_000L
+        const val COMMAND_TIMEOUT_MILLIS = 5_000L
+        const val MAX_RECONNECT_ATTEMPTS = 3
         val SIMULATOR_MARKER = byteArrayOf(0x53, 0x53, 0x56, 0x31)
     }
 }

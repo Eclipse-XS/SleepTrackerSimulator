@@ -25,6 +25,10 @@ __pycache__/
 mlruns/
 mlflow.db
 data/processed/
+data/synthetic/*.sqlite
+data/synthetic/parquet/
+*.sqlite
+*.sqlite3
 
 # Secrets, Service Accounts & Keystores
 tools/*service-account*.json

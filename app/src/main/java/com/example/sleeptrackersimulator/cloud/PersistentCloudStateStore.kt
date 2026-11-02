@@ -18,6 +18,7 @@ interface CloudStateStore {
     fun completeSessionEnd(sessionId: String)
     fun recordFirstFailure(message: String, permanent: Boolean) = Unit
     fun removeOperationsForSession(sessionId: String): Int = 0
+    fun purgeUnconsentedUploads(): Int = 0
 }
 
 data class PersistedCloudState(
@@ -86,6 +87,14 @@ class AtomicJsonCloudStateStore(
         return removed
     }
 
+    @Synchronized override fun purgeUnconsentedUploads(): Int {
+        val (erasureOps, uploadOps) = state.operations.partition { it.type == PendingOperationType.DELETE_SESSION }
+        if (uploadOps.isNotEmpty()) {
+            persist(state.copy(operations = erasureOps))
+        }
+        return uploadOps.size
+    }
+
     private fun readSafely(): PersistedCloudState = try {
         if (!file.exists()) PersistedCloudState()
         else gson.fromJson(file.readText(), PersistedCloudState::class.java) ?: PersistedCloudState()
@@ -142,5 +151,12 @@ class InMemoryCloudStateStore(
         val first = state.operations.firstOrNull()
         require(first?.type == PendingOperationType.END_SESSION && first.sessionId == sessionId)
         state = state.copy(operations = state.operations.drop(1), activeSession = null)
+    }
+    override fun purgeUnconsentedUploads(): Int {
+        val (erasureOps, uploadOps) = state.operations.partition { it.type == PendingOperationType.DELETE_SESSION }
+        if (uploadOps.isNotEmpty()) {
+            state = state.copy(operations = erasureOps)
+        }
+        return uploadOps.size
     }
 }
