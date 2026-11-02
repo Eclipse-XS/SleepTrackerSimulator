@@ -72,7 +72,7 @@ class CloudSyncViewModel(
     init {
         viewModelScope.launch { combine(sensorState, bleState, heartRate, restState, ::Snapshot).collect { latest.value = it } }
         consentRepository?.let { consent ->
-            viewModelScope.launch {
+            viewModelScope.launch(storageDispatcher) {
                 consent.isCloudSyncEnabled.collect { enabled ->
                     if (!enabled) {
                         stopSync()

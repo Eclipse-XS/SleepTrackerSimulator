@@ -109,7 +109,7 @@ dependencies {
     implementation(libs.vico.compose.m3)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.tensorflow.lite)
+    implementation(libs.litert)
     ksp(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
