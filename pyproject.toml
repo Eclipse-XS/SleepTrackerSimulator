@@ -36,6 +36,10 @@ sleepsense-pipeline = "pipelines.cli.main:main"
 line-length = 120
 target-version = "py311"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ml*", "pipelines*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "ml"]
 python_files = ["test_*.py"]

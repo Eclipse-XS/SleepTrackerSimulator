@@ -40,6 +40,78 @@ class WindowBuildResult:
     accepted_count: int = 0
 
 
+def construct_window_tensor(
+    w_start_utc: int,
+    w_end_utc: int,
+    sample_ts: Sequence[int] | np.ndarray,
+    sample_xyz: Sequence[Sequence[float]] | np.ndarray,
+    target_sampling_rate_hz: int = 20,
+    max_gap_tolerance_ms: int = 80,
+    training_eligible: bool = True,
+) -> tuple[np.ndarray, int]:
+    """Deterministically constructs a [target_sampling_rate_hz, 3] float32 tensor from raw observations.
+
+    Guarantees strict numerical parity and byte-identical outputs between WindowBuilder and WindowDataset.
+
+    Args:
+        w_start_utc: Start timestamp in epoch milliseconds (inclusive).
+        w_end_utc: End timestamp in epoch milliseconds (exclusive).
+        sample_ts: Array or sequence of raw timestamps.
+        sample_xyz: Array or sequence of 3D raw acceleration samples (x, y, z).
+        target_sampling_rate_hz: Number of samples per window (default: 20).
+        max_gap_tolerance_ms: Maximum gap allowed before falling back to linear interpolation (default: 80).
+        training_eligible: Whether the window meets quality standards.
+
+    Returns:
+        (tensor, was_resampled):
+            - tensor: np.ndarray of shape [target_sampling_rate_hz, 3] and dtype np.float32.
+            - was_resampled: 1 if linear interpolation was applied, 0 otherwise.
+    """
+    ts_arr = np.asarray(sample_ts, dtype=np.int64) if len(sample_ts) > 0 else np.array([], dtype=np.int64)
+    xyz_arr = np.asarray(sample_xyz, dtype=np.float32) if len(sample_xyz) > 0 else np.empty((0, 3), dtype=np.float32)
+
+    if len(ts_arr) == 0 or len(xyz_arr) == 0:
+        return np.zeros((target_sampling_rate_hz, 3), dtype=np.float32), 0
+
+    # Deduplicate consecutive identical timestamps (keep first occurrence)
+    if len(ts_arr) > 1:
+        mask = np.empty(len(ts_arr), dtype=bool)
+        mask[0] = True
+        mask[1:] = ts_arr[1:] != ts_arr[:-1]
+        ts_clean = ts_arr[mask]
+        xyz_clean = xyz_arr[mask]
+    else:
+        ts_clean = ts_arr
+        xyz_clean = xyz_arr
+
+    # Compute inter-sample and boundary gaps
+    inner_gaps = np.diff(ts_clean) if len(ts_clean) > 1 else np.array([], dtype=np.int64)
+    edge_gap_start = int(ts_clean[0] - w_start_utc)
+    edge_gap_end = int(w_end_utc - ts_clean[-1])
+    all_gaps = [edge_gap_start, edge_gap_end] + inner_gaps.tolist()
+    max_gap_ms = int(max(all_gaps))
+
+    nominal_interval_ms = (w_end_utc - w_start_utc) / target_sampling_rate_hz
+    target_grid = w_start_utc + (np.arange(target_sampling_rate_hz, dtype=np.float64) + 0.5) * nominal_interval_ms
+
+    if training_eligible and len(ts_clean) >= 2:
+        if len(ts_clean) == target_sampling_rate_hz and max_gap_ms <= max_gap_tolerance_ms:
+            # Direct placement: exactly target_sampling_rate_hz samples with uniform spacing
+            return xyz_clean.astype(np.float32), 0
+        else:
+            # Controlled linear time-interpolation
+            interp_x = np.interp(target_grid, ts_clean, xyz_clean[:, 0]).astype(np.float32)
+            interp_y = np.interp(target_grid, ts_clean, xyz_clean[:, 1]).astype(np.float32)
+            interp_z = np.interp(target_grid, ts_clean, xyz_clean[:, 2]).astype(np.float32)
+            return np.column_stack([interp_x, interp_y, interp_z]).astype(np.float32), 1
+    elif len(ts_clean) > 0:
+        pad_len = max(0, target_sampling_rate_hz - len(xyz_clean))
+        tensor = np.pad(xyz_clean[:target_sampling_rate_hz], ((0, pad_len), (0, 0)), mode="edge").astype(np.float32)
+        return tensor, 0
+    else:
+        return np.zeros((target_sampling_rate_hz, 3), dtype=np.float32), 0
+
+
 def build_session_windows(
     session_id: str,
     session_start_ms: int,
@@ -169,6 +241,8 @@ def build_session_windows(
         # MUST satisfy: hr_utc_millis <= w_end_utc
         mean_hr: float | None = None
         hr_available = 0
+        hr_utc_millis: int | None = None
+        hr_sample_id: str | None = None
         norm_bpm = 0.0
         hr_mask = 0.0
 
@@ -183,6 +257,8 @@ def build_session_windows(
                 if 0 <= hr_age_ms <= policy.max_hr_staleness_ms:
                     mean_hr = round(latest_bpm, 1)
                     hr_available = 1
+                    hr_utc_millis = latest_hr_time
+                    hr_sample_id = clean_hr[hr_idx].get("sample_id", f"{session_id}-hr-{hr_idx}")
                     norm_bpm = round(float((latest_bpm - 60.0) / 40.0), 4)
                     hr_mask = 1.0
                 else:
@@ -207,38 +283,24 @@ def build_session_windows(
         critical_flags = {"EMPTY_WINDOW", "LOW_COVERAGE", "LARGE_GAP"}
         training_eligible = 0 if any(f in critical_flags for f in quality_flags) else 1
 
-        # Resampling to model-ready [20, 3] tensor
-        target_grid = w_start_utc + (np.arange(policy.target_sampling_rate_hz) + 0.5) * policy.nominal_interval_ms
-        was_resampled = 0
-
-        if training_eligible and len(unique_samples) >= 2:
+        # Resampling to model-ready [20, 3] tensor via unified tensor constructor
+        if unique_samples:
             xs_raw = np.array([s["x"] for s in unique_samples], dtype=np.float32)
             ys_raw = np.array([s["y"] for s in unique_samples], dtype=np.float32)
             zs_raw = np.array([s["z"] for s in unique_samples], dtype=np.float32)
-
-            if len(unique_samples) == policy.target_sampling_rate_hz and max_gap_ms <= 80:
-                # Direct placement
-                resampled_tensor = np.column_stack([xs_raw, ys_raw, zs_raw]).astype(np.float32)
-            else:
-                # Controlled linear time-interpolation
-                was_resampled = 1
-                interp_x = np.interp(target_grid, sample_ts, xs_raw).astype(np.float32)
-                interp_y = np.interp(target_grid, sample_ts, ys_raw).astype(np.float32)
-                interp_z = np.interp(target_grid, sample_ts, zs_raw).astype(np.float32)
-                resampled_tensor = np.column_stack([interp_x, interp_y, interp_z]).astype(np.float32)
-        elif len(unique_samples) > 0:
-            # Fallback zero-padded/edge tensor for rejected windows (not training eligible)
-            xs_raw = np.array([s["x"] for s in unique_samples], dtype=np.float32)
-            ys_raw = np.array([s["y"] for s in unique_samples], dtype=np.float32)
-            zs_raw = np.array([s["z"] for s in unique_samples], dtype=np.float32)
-            pad_len = max(0, policy.target_sampling_rate_hz - len(xs_raw))
-            resampled_tensor = np.column_stack([
-                np.pad(xs_raw[:policy.target_sampling_rate_hz], (0, pad_len), mode="edge"),
-                np.pad(ys_raw[:policy.target_sampling_rate_hz], (0, pad_len), mode="edge"),
-                np.pad(zs_raw[:policy.target_sampling_rate_hz], (0, pad_len), mode="edge"),
-            ]).astype(np.float32)
+            xyz_raw = np.column_stack([xs_raw, ys_raw, zs_raw])
         else:
-            resampled_tensor = np.zeros((policy.target_sampling_rate_hz, 3), dtype=np.float32)
+            xyz_raw = np.empty((0, 3), dtype=np.float32)
+
+        resampled_tensor, was_resampled = construct_window_tensor(
+            w_start_utc=w_start_utc,
+            w_end_utc=w_end_utc,
+            sample_ts=sample_ts,
+            sample_xyz=xyz_raw,
+            target_sampling_rate_hz=policy.target_sampling_rate_hz,
+            max_gap_tolerance_ms=80,
+            training_eligible=bool(training_eligible),
+        )
 
         # Physical feature extraction on resampled tensor
         dyn_x = resampled_tensor[:, 0] - np.mean(resampled_tensor[:, 0])
@@ -267,6 +329,8 @@ def build_session_windows(
             "peak_to_peak": round(peak_to_peak, 6),
             "mean_hr": mean_hr,
             "hr_available": hr_available,
+            "hr_utc_millis": hr_utc_millis,
+            "hr_sample_id": hr_sample_id,
             "ground_truth_label": gt_label,
             "provenance": "SIMULATED",
             "max_gap_ms": max_gap_ms,

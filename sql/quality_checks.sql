@@ -89,11 +89,20 @@ WHERE training_eligible = 1
   AND (coverage_fraction < 0.85 OR has_large_gap = 1 OR sample_count < 2);
 
 -- Gate 11: Causal Heart Rate Integrity
--- Available heart rate must be within physiological range [30, 240] - unavailable must be null
+-- Available HR must be causally at or before window end, staleness between 0 and 10000ms, and within [30, 240] BPM.
+-- Unavailable HR must have null mean_hr and null hr_utc_millis.
 SELECT 'GATE_11_CAUSAL_HR_INTEGRITY' AS gate_name, COUNT(*) AS violations
 FROM feature_windows
-WHERE (hr_available = 1 AND (mean_hr IS NULL OR mean_hr < 30 OR mean_hr > 240))
-   OR (hr_available = 0 AND mean_hr IS NOT NULL);
+WHERE (hr_available = 1 AND (
+       mean_hr IS NULL 
+       OR mean_hr < 30 
+       OR mean_hr > 240
+       OR hr_utc_millis IS NULL
+       OR hr_utc_millis > end_utc_millis
+       OR (end_utc_millis - hr_utc_millis) < 0
+       OR (end_utc_millis - hr_utc_millis) > 10000
+))
+OR (hr_available = 0 AND (mean_hr IS NOT NULL OR hr_utc_millis IS NOT NULL));
 
 -- Gate 12: Prediction Referential Integrity & Probability Normalization
 SELECT 'GATE_12_PREDICTION_INTEGRITY' AS gate_name, COUNT(*) AS violations

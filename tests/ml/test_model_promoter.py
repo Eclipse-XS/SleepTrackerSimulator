@@ -71,13 +71,17 @@ def test_verify_candidate_success(dummy_tflite_setup):
 
 def test_verify_candidate_rejects_missing_file(dummy_tflite_setup):
     setup = dummy_tflite_setup
+    cand_path = setup["candidates_dir"] / "activity_classifier_candidate.tflite"
+    if cand_path.exists():
+        cand_path.unlink()
+
     promoter = ModelPromoter(
         candidate_dir=setup["candidates_dir"],
         assets_dir=setup["assets_dir"],
         backup_dir=setup["backups_dir"],
     )
     with pytest.raises(FileNotFoundError):
-        promoter.verify_candidate("nonexistent_candidate.tflite")
+        promoter.verify_candidate("activity_classifier_candidate.tflite")
 
 
 def test_verify_candidate_rejects_tampered_sha(dummy_tflite_setup):
@@ -119,3 +123,110 @@ def test_promote_creates_backup_and_copies_asset(dummy_tflite_setup):
     backups = promoter.list_backups()
     assert len(backups) == 1
     assert "activity_classifier.tflite" in backups[0]["backed_up_files"]
+
+
+def test_verify_candidate_rejects_missing_manifest(dummy_tflite_setup):
+    """Missing candidate_manifest.json must raise FileNotFoundError."""
+    setup = dummy_tflite_setup
+    manifest_path = setup["candidates_dir"] / "candidate_manifest.json"
+    manifest_path.unlink()
+
+    promoter = ModelPromoter(
+        candidate_dir=setup["candidates_dir"],
+        assets_dir=setup["assets_dir"],
+        backup_dir=setup["backups_dir"],
+    )
+    with pytest.raises(FileNotFoundError, match="Mandatory candidate manifest not found"):
+        promoter.verify_candidate("activity_classifier_candidate.tflite")
+
+
+def test_verify_candidate_rejects_disallowed_names(dummy_tflite_setup):
+    """Candidate filename not on allowlist must be rejected."""
+    setup = dummy_tflite_setup
+    promoter = ModelPromoter(
+        candidate_dir=setup["candidates_dir"],
+        assets_dir=setup["assets_dir"],
+        backup_dir=setup["backups_dir"],
+    )
+    with pytest.raises(ValueError, match="not in allowed candidates"):
+        promoter.verify_candidate("malicious_model.tflite")
+
+
+def test_promote_rejects_disallowed_target_name(dummy_tflite_setup):
+    """Target filename not on allowlist must be rejected."""
+    setup = dummy_tflite_setup
+    promoter = ModelPromoter(
+        candidate_dir=setup["candidates_dir"],
+        assets_dir=setup["assets_dir"],
+        backup_dir=setup["backups_dir"],
+    )
+    with pytest.raises(ValueError, match="not permitted"):
+        promoter.promote(
+            candidate_filename="activity_classifier_candidate.tflite",
+            target_filename="malicious_target.tflite",
+        )
+
+
+def test_promote_rollback_method_restores_asset(dummy_tflite_setup):
+    """Explicit rollback restores previous asset and validates it."""
+    setup = dummy_tflite_setup
+    promoter = ModelPromoter(
+        candidate_dir=setup["candidates_dir"],
+        assets_dir=setup["assets_dir"],
+        backup_dir=setup["backups_dir"],
+        promotions_log=setup["backups_dir"] / "test_promotions.jsonl",
+    )
+
+    # Initial asset content
+    prod_model_path = setup["assets_dir"] / "activity_classifier.tflite"
+    original_sha = compute_sha256(prod_model_path)
+
+    # Execute promotion
+    promo_receipt = promoter.promote(
+        candidate_filename="activity_classifier_candidate.tflite",
+        target_filename="activity_classifier.tflite",
+    )
+    backup_dir = promo_receipt["backup_directory"]
+
+    # Deliberately mutate production asset
+    prod_model_path.write_bytes(b"MUTATED_GARBAGE_BYTES")
+    assert compute_sha256(prod_model_path) != original_sha
+
+    # Rollback from backup
+    rollback_receipt = promoter.rollback(backup_dir=backup_dir, target_filename="activity_classifier.tflite")
+    assert rollback_receipt["status"] == "ROLLED_BACK"
+    assert compute_sha256(prod_model_path) == original_sha
+
+
+def test_promote_auto_rollback_on_post_validation_failure(dummy_tflite_setup, monkeypatch):
+    """If post-promotion validation fails, promoter automatically rolls back destination to previous state."""
+    setup = dummy_tflite_setup
+    promoter = ModelPromoter(
+        candidate_dir=setup["candidates_dir"],
+        assets_dir=setup["assets_dir"],
+        backup_dir=setup["backups_dir"],
+        promotions_log=setup["backups_dir"] / "test_promotions.jsonl",
+    )
+
+    prod_model_path = setup["assets_dir"] / "activity_classifier.tflite"
+    original_sha = compute_sha256(prod_model_path)
+
+    # Inject failure during post-promotion verification
+    orig_interpreter = tf.lite.Interpreter
+    def failing_interpreter(*args, **kwargs):
+        interp = orig_interpreter(*args, **kwargs)
+        # Fail when loading from assets_dir (post-promotion)
+        if "assets" in str(kwargs.get("model_path", "")):
+            raise RuntimeError("Post-promotion hardware parity check failure!")
+        return interp
+
+    monkeypatch.setattr(tf.lite, "Interpreter", failing_interpreter)
+
+    with pytest.raises(RuntimeError, match="Promotion failed and was rolled back"):
+        promoter.promote(
+            candidate_filename="activity_classifier_candidate.tflite",
+            target_filename="activity_classifier.tflite",
+        )
+
+    # Production asset was restored to original_sha
+    assert compute_sha256(prod_model_path) == original_sha

@@ -115,10 +115,18 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlflow.db'}")
     mlflow.set_experiment("sleepsense_2.0_benchmarks")
 
-    # 1. Load data grouped by subject
-    data_by_subject = load_dataset_from_sqlite(db_path)
-    subject_ids = sorted(list(data_by_subject.keys()))
+    # 1. Load data grouped by subject via authoritative WindowDataset
+    dataset = load_canonical_window_dataset(db_path)
+    data_by_subject = dataset.data_by_subject
+    subject_ids = dataset.get_subject_ids()
     print(f"Loaded dataset across {len(subject_ids)} subjects: {subject_ids}")
+
+    # Authoritative window exclusion telemetry
+    exclusion_audit = dataset.get_exclusion_audit()
+    print(f"Exclusion Breakdown: Total={exclusion_audit['total_windows']}, "
+          f"Eligible={exclusion_audit['training_eligible_count']}, Ineligible={exclusion_audit['ineligible_count']}")
+    print(f"Ineligible by Class: {exclusion_audit['by_class']}")
+    print(f"Ineligible by Reason: {exclusion_audit['by_reason']}")
 
     # 2. Group-Aware Split (Subject-Independent)
     # Train: first 8 subjects; Val: next 2 subjects; Test: last 2 subjects
@@ -134,29 +142,14 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     assert len(set(train_subs).intersection(test_subs)) == 0, "Subject leakage detected between train and test!"
     assert len(set(train_subs).intersection(val_subs)) == 0, "Subject leakage detected between train and val!"
 
-    def collate_split(subs: list[str], source_dict=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str]]:
-        d = source_dict if source_dict is not None else data_by_subject
-        accel_list, hr_list, tab_list, y_list, w_ids, s_ids = [], [], [], [], [], []
-        for s in subs:
-            entry = d[s]
-            accel_list.extend(entry["accel_windows"])
-            hr_list.extend(entry["hr_features"])
-            tab_list.extend(entry["tabular_features"])
-            y_list.extend(entry["labels"])
-            w_ids.extend(entry["window_ids"])
-            s_ids.extend(entry["sessions"])
-        return (
-            np.array(accel_list, dtype=np.float32),
-            np.array(hr_list, dtype=np.float32),
-            np.array(tab_list, dtype=np.float32),
-            np.array(y_list, dtype=np.int32),
-            w_ids,
-            s_ids,
-        )
+    def collate_split(subs: list[str], policy: str = "TRAINING_STRICT") -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str]]:
+        X_acc, X_hr, X_tab, y, w_ids, s_ids, _ = dataset.collate_subjects(subs, policy=policy, return_metadata=True)
+        return X_acc, X_hr, X_tab, y, w_ids, s_ids
 
-    X_train_accel, X_train_hr, X_train_tab, y_train, train_wids, train_sids = collate_split(train_subs)
-    X_val_accel, X_val_hr, X_val_tab, y_val, val_wids, val_sids = collate_split(val_subs)
-    X_test_accel, X_test_hr, X_test_tab, y_test, test_wids, test_sids = collate_split(test_subs)
+    X_train_accel, X_train_hr, X_train_tab, y_train, train_wids, train_sids = collate_split(train_subs, policy="TRAINING_STRICT")
+    X_val_accel, X_val_hr, X_val_tab, y_val, val_wids, val_sids = collate_split(val_subs, policy="TRAINING_STRICT")
+    X_test_accel, X_test_hr, X_test_tab, y_test, test_wids, test_sids = collate_split(test_subs, policy="TEST_ACCEPTED_ONLY")
+    X_test_full_accel, X_test_full_hr, X_test_full_tab, y_test_full, test_full_wids, test_full_sids = collate_split(test_subs, policy="TEST_FULL_POPULATION")
 
     # Verify recording session leakage
     assert_no_recording_leakage(train_sids, test_sids)
@@ -459,6 +452,9 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     multi_preds = np.argmax(multi_probs, axis=1)
     multi_lat_us = benchmark_model_latency(lambda x: multi_model(x, training=False), [X_test_accel[:1], X_test_hr[:1]])
 
+    multi_val_probs = multi_model.predict([X_val_accel, X_val_hr], verbose=0)
+    val_metrics = compute_metrics(y_val, np.argmax(multi_val_probs, axis=1), multi_val_probs)
+
     conv_multi = tf.lite.TFLiteConverter.from_keras_model(multi_model)
     multi_tflite_bytes = conv_multi.convert()
 
@@ -532,27 +528,37 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     ablation_results["F_accel_stale_hr"] = compute_metrics(y_test, np.argmax(f_probs, axis=1), f_probs)
 
     # G. Accelerometer + Shifted Generator Configuration
-    print("Generating Held-Out SHIFTED Cohort for Domain Shift Evaluation...")
+    print("Loading Held-Out SHIFTED Cohort for Domain Shift Evaluation...")
     shifted_db_path = ROOT / "data" / "synthetic" / "sleepsense_shifted.sqlite"
-    sm_shifted = SqliteStorageManager(shifted_db_path)
-    shifted_gen = SyntheticDatasetGenerator(storage_manager=sm_shifted)
-    shifted_manifest = shifted_gen.generate_dataset(PROFILES["SHIFTED"])
-    data_shifted = load_dataset_from_sqlite(shifted_db_path)
+    if not shifted_db_path.exists():
+        sm_shifted = SqliteStorageManager(shifted_db_path, output_policy=OutputPolicy.REPLACE_GENERATED_DATA)
+        shifted_gen = SyntheticDatasetGenerator(storage_manager=sm_shifted)
+        shifted_manifest = shifted_gen.generate_dataset(PROFILES["SHIFTED"], output_policy=OutputPolicy.REPLACE_GENERATED_DATA)
+    dataset_shifted = load_canonical_window_dataset(shifted_db_path)
 
-    # Collate shifted test data
-    shifted_subs = sorted(list(data_shifted.keys()))
-    X_shift_accel, X_shift_hr, X_shift_tab, y_shift, _, _ = collate_split(shifted_subs, source_dict=data_shifted)
+    # Collate shifted test data strictly via authoritative CollatePolicy
+    shifted_subs = dataset_shifted.get_subject_ids()
+    X_shift_accel, X_shift_hr, X_shift_tab, y_shift, _, _, _ = dataset_shifted.collate_subjects(
+        shifted_subs, policy="TEST_ACCEPTED_ONLY", return_metadata=True
+    )
+    X_shift_full_accel, X_shift_full_hr, X_shift_full_tab, y_shift_full, _, _, shift_full_mask = dataset_shifted.collate_subjects(
+        shifted_subs, policy="TEST_FULL_POPULATION", return_metadata=True
+    )
 
     g_probs = multi_model.predict([X_shift_accel, X_shift_hr], verbose=0)
     ablation_results["G_domain_shift_evaluation"] = compute_metrics(y_shift, np.argmax(g_probs, axis=1), g_probs)
+
+    g_full_probs = multi_model.predict([X_shift_full_accel, X_shift_full_hr], verbose=0)
+    ablation_results["G_domain_shift_full_population"] = compute_metrics(y_shift_full, np.argmax(g_full_probs, axis=1), g_full_probs)
 
     dense_shift_probs = dense_model.predict(X_shift_accel, verbose=0)
     results["Domain Shift (Dense Accel DNN)"] = compute_metrics(y_shift, np.argmax(dense_shift_probs, axis=1), dense_shift_probs)
     results["Domain Shift (Multimodal Late-Fusion)"] = ablation_results["G_domain_shift_evaluation"]
 
-    print(f"Domain Shift Evaluation (Standard -> Shifted Cohort N={len(y_shift):,}):")
+    print(f"Domain Shift Evaluation (Standard -> Shifted Cohort N={len(y_shift):,} accepted, N={len(y_shift_full):,} full):")
     print(f"  Dense Accel Macro F1: {results['Domain Shift (Dense Accel DNN)']['macro_f1']:.4f} (Accuracy: {results['Domain Shift (Dense Accel DNN)']['accuracy']:.4f})")
     print(f"  Multimodal Macro F1:  {results['Domain Shift (Multimodal Late-Fusion)']['macro_f1']:.4f} (Accuracy: {results['Domain Shift (Multimodal Late-Fusion)']['accuracy']:.4f})")
+    print(f"  Multimodal Full Population Macro F1: {ablation_results['G_domain_shift_full_population']['macro_f1']:.4f}")
 
     # -------------------------------------------------------------------------
     # Stage Candidate Models (Controlled Staging - ML-003)
@@ -566,11 +572,37 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
 
     import hashlib
     multi_sha256 = hashlib.sha256(multi_tflite_bytes).hexdigest()
+    dense_sha256 = hashlib.sha256(dense_tflite_bytes).hexdigest()
+
+    split_fingerprint = hashlib.sha256(
+        json.dumps({"train": train_subs, "val": val_subs, "test": test_subs}, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    # Provenance-complete Candidate Manifest
     candidate_manifest = {
         "model_id": "multimodal-tflite-v2.1",
         "model_version": "2.1.0",
+        "dataset_fingerprint": exclusion_audit.get("manifest_id", "MANIFEST-SMALL-d059bf819ad7fda6"),
+        "generator_version": "2.1.0",
+        "feature_schema": ["dyn_x", "dyn_y", "dyn_z", "norm_bpm", "hr_mask"],
+        "tabular_feature_schema": ["motion_rms", "variance", "jerk", "peak_to_peak", "norm_bpm", "hr_mask"],
+        "split_fingerprint": split_fingerprint,
+        "split_definition": {
+            "train_subjects": train_subs,
+            "val_subjects": val_subs,
+            "test_subjects": test_subs,
+        },
+        "training_eligibility_policy": "TRAINING_STRICT",
+        "training_config": {
+            "epochs": 15,
+            "batch_size": 128,
+            "optimizer": "adam",
+            "learning_rate": 0.002,
+            "loss": "sparse_categorical_crossentropy",
+            "class_weights": class_weight_dict,
+        },
         "tflite_sha256": multi_sha256,
-        "dense_tflite_sha256": hashlib.sha256(dense_tflite_bytes).hexdigest(),
+        "dense_tflite_sha256": dense_sha256,
         "input_tensors": [
             {"name": "accelerometer_input", "shape": [1, 20, 3], "dtype": "float32"},
             {"name": "heart_rate_input", "shape": [1, 2], "dtype": "float32"},
@@ -581,10 +613,16 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
         "classes": CLASSES,
         "hr_normalization": "norm_bpm = (bpm - 60.0) / 40.0",
         "hr_staleness_contract": "0 <= age_ms <= 10000",
+        "validation_results": val_metrics,
+        "independent_test_results": {
+            "accepted_only": multi_metrics,
+            "full_population": ablation_results.get("G_domain_shift_full_population", {}),
+        },
         "macro_f1_test": multi_metrics["macro_f1"],
         "accuracy_test": multi_metrics["accuracy"],
         "balanced_accuracy_test": multi_metrics["balanced_accuracy"],
         "domain_shift_macro_f1": ablation_results["G_domain_shift_evaluation"]["macro_f1"],
+        "domain_shift_results": ablation_results["G_domain_shift_evaluation"],
         "created_at_utc": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     (candidate_dir / "candidate_manifest.json").write_text(json.dumps(candidate_manifest, indent=2), encoding="utf-8")

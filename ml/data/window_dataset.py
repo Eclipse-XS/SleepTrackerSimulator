@@ -16,6 +16,8 @@ from typing import Any
 
 import numpy as np
 
+from ml.data.window_builder import construct_window_tensor
+
 CLASSES = ["REST", "RESTLESS", "ACTIVE"]
 LABEL_TO_INT = {c: i for i, c in enumerate(CLASSES)}
 INT_TO_LABEL = {i: c for i, c in enumerate(CLASSES)}
@@ -34,50 +36,126 @@ class WindowDataset:
     def get_subject_ids(self) -> list[str]:
         return sorted(self.data_by_subject.keys())
 
+    def keys(self):
+        return self.data_by_subject.keys()
+
+    def __getitem__(self, key: str) -> dict[str, Any]:
+        return self.data_by_subject[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.data_by_subject
+
     def collate_subjects(
         self,
         subjects: list[str],
         training_only: bool = True,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
-        """Collates data strictly from the specified subjects.
+        policy: str | None = None,
+        return_metadata: bool = False,
+    ):
+        """Collates data strictly from the specified subjects according to eligibility policy.
+
+        Policies:
+            - 'TRAINING_STRICT': Filters out training-ineligible windows (only training_eligible == True).
+            - 'TEST_ACCEPTED_ONLY': Filters out training-ineligible windows (only training_eligible == True).
+            - 'TEST_FULL_POPULATION': Includes all windows (both eligible and ineligible).
 
         Args:
             subjects: List of subject IDs to include.
-            training_only: If True, filters out training-ineligible windows (e.g. dropouts/large gaps).
+            training_only: Legacy boolean flag; if True, equivalent to policy='TRAINING_STRICT'.
+            policy: Explicit policy name. Overrides training_only if provided.
+            return_metadata: If True, returns (X_accel, X_hr, X_tabular, y, window_ids, session_ids, eligible_mask).
+                             If False, returns (X_accel, X_hr, X_tabular, y, window_ids).
 
         Returns:
-            (X_accel, X_hr, X_tabular, y, window_ids)
+            Tuple as specified by return_metadata.
         """
-        accel_list, hr_list, tab_list, y_list, wid_list = [], [], [], [], []
+        if policy is not None:
+            pol = policy.upper()
+            if pol in ("TRAINING_STRICT", "TEST_ACCEPTED_ONLY"):
+                filter_ineligible = True
+            elif pol == "TEST_FULL_POPULATION":
+                filter_ineligible = False
+            else:
+                raise ValueError(f"Unknown collate policy: '{policy}'. Expected 'TRAINING_STRICT', 'TEST_ACCEPTED_ONLY', or 'TEST_FULL_POPULATION'.")
+        else:
+            filter_ineligible = training_only
+
+        accel_list, hr_list, tab_list, y_list, wid_list, sess_list, mask_list = [], [], [], [], [], [], []
         for s in subjects:
             if s not in self.data_by_subject:
                 continue
             entry = self.data_by_subject[s]
             for i, eligible in enumerate(entry["training_eligible"]):
-                if training_only and not eligible:
+                if filter_ineligible and not eligible:
                     continue
                 accel_list.append(entry["accel_windows"][i])
                 hr_list.append(entry["hr_features"][i])
                 tab_list.append(entry["tabular_features"][i])
                 y_list.append(entry["labels"][i])
                 wid_list.append(entry["window_ids"][i])
+                sess_list.append(entry["sessions"][i])
+                mask_list.append(eligible)
 
         if not accel_list:
-            return (
+            empty_tup = (
                 np.empty((0, 20, 3), dtype=np.float32),
                 np.empty((0, 2), dtype=np.float32),
                 np.empty((0, 6), dtype=np.float32),
                 np.empty((0,), dtype=np.int32),
                 [],
             )
+            if return_metadata:
+                return (*empty_tup, [], np.empty((0,), dtype=bool))
+            return empty_tup
 
-        return (
+        base_tup = (
             np.array(accel_list, dtype=np.float32),
             np.array(hr_list, dtype=np.float32),
             np.array(tab_list, dtype=np.float32),
             np.array(y_list, dtype=np.int32),
             wid_list,
         )
+        if return_metadata:
+            return (*base_tup, sess_list, np.array(mask_list, dtype=bool))
+        return base_tup
+
+    def get_exclusion_audit(self) -> dict[str, Any]:
+        """Provides an authoritative breakdown of excluded/ineligible windows by class, subject, and reason."""
+        by_subject: dict[str, int] = {}
+        by_class: dict[str, int] = {c: 0 for c in CLASSES}
+        by_reason: dict[str, int] = {}
+        total_ineligible = 0
+        total_eligible = 0
+
+        for subj_id, entry in self.data_by_subject.items():
+            s_ineligible = 0
+            for i, eligible in enumerate(entry["training_eligible"]):
+                if not eligible:
+                    total_ineligible += 1
+                    s_ineligible += 1
+                    lbl = INT_TO_LABEL.get(entry["labels"][i], "UNKNOWN")
+                    by_class[lbl] = by_class.get(lbl, 0) + 1
+                    flags_str = entry["quality_flags"][i]
+                    if flags_str:
+                        for flag in flags_str.split(","):
+                            flag = flag.strip()
+                            if flag:
+                                by_reason[flag] = by_reason.get(flag, 0) + 1
+                    else:
+                        by_reason["UNSPECIFIED_INELIGIBLE"] = by_reason.get("UNSPECIFIED_INELIGIBLE", 0) + 1
+                else:
+                    total_eligible += 1
+            if s_ineligible > 0:
+                by_subject[subj_id] = s_ineligible
+
+        return {
+            "total_windows": total_eligible + total_ineligible,
+            "training_eligible_count": total_eligible,
+            "ineligible_count": total_ineligible,
+            "by_subject": dict(sorted(by_subject.items())),
+            "by_class": by_class,
+            "by_reason": dict(sorted(by_reason.items(), key=lambda kv: kv[1], reverse=True)),
+        }
 
 
 def load_dataset_from_sqlite(
@@ -191,21 +269,16 @@ def load_dataset_from_sqlite(
                 w_samples = np.empty((0, 3), dtype=np.float32)
                 w_times = np.array([], dtype=np.int64)
 
-            # Produce [20, 3] model-ready tensor
-            if len(w_samples) == target_sampling_rate_hz:
-                accel_tensor = w_samples
-            elif len(w_samples) >= 2:
-                # Resample onto uniform 20-point grid
-                target_grid = w_start + (np.arange(target_sampling_rate_hz) + 0.5) * (1000.0 / target_sampling_rate_hz)
-                interp_x = np.interp(target_grid, w_times, w_samples[:, 0]).astype(np.float32)
-                interp_y = np.interp(target_grid, w_times, w_samples[:, 1]).astype(np.float32)
-                interp_z = np.interp(target_grid, w_times, w_samples[:, 2]).astype(np.float32)
-                accel_tensor = np.column_stack([interp_x, interp_y, interp_z])
-            elif len(w_samples) > 0:
-                pad_len = target_sampling_rate_hz - len(w_samples)
-                accel_tensor = np.pad(w_samples, ((0, pad_len), (0, 0)), mode="edge")
-            else:
-                accel_tensor = np.zeros((target_sampling_rate_hz, 3), dtype=np.float32)
+            # Produce [20, 3] model-ready tensor using authoritative unified builder
+            accel_tensor, _ = construct_window_tensor(
+                w_start_utc=w_start,
+                w_end_utc=w_end,
+                sample_ts=w_times,
+                sample_xyz=w_samples,
+                target_sampling_rate_hz=target_sampling_rate_hz,
+                max_gap_tolerance_ms=80,
+                training_eligible=eligible,
+            )
 
             # HR normalization: causal contract
             norm_bpm = (float(mean_hr) - 60.0) / 40.0 if (hr_avail and mean_hr is not None) else 0.0

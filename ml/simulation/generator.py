@@ -8,8 +8,10 @@ Utilizes the authoritative Event-Time WindowBuilder (ml.data.window_builder).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -87,12 +89,13 @@ class SyntheticDatasetGenerator:
         config: GeneratorConfig,
         parquet_output_dir: Path | str | None = None,
         progress_callback: Callable[[str], None] | None = None,
-        output_policy: OutputPolicy = OutputPolicy.REPLACE_GENERATED_DATA,
+        output_policy: OutputPolicy | None = None,
     ) -> dict[str, Any]:
         """Executes full reproducible dataset generation.
 
         Streams session-by-session into SQLite and Parquet to maintain bounded RAM (<100MB).
         Uses authoritative event-time windowing with causal heart-rate alignment.
+        Stages database writes to a temporary file before atomically replacing destination.
         """
         def log(msg: str) -> None:
             if progress_callback:
@@ -100,185 +103,246 @@ class SyntheticDatasetGenerator:
             else:
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
+        # Resolve effective output policy
+        if output_policy is None:
+            env_overwrite = os.environ.get("ALLOW_SIMULATION_OVERWRITE") == "1"
+            effective_policy = OutputPolicy.REPLACE_GENERATED_DATA if env_overwrite else getattr(
+                self.storage, "output_policy", OutputPolicy.FAIL_IF_EXISTS
+            )
+        else:
+            effective_policy = output_policy
+
+        target_db_path = self.storage.db_path.resolve()
+        if target_db_path.exists() and effective_policy == OutputPolicy.FAIL_IF_EXISTS:
+            raise FileExistsError(
+                f"Target database already exists at: {target_db_path}. "
+                "Overwriting requires explicit authorization via output_policy=OutputPolicy.REPLACE_GENERATED_DATA, "
+                "--replace-generated-data CLI flag, or ALLOW_SIMULATION_OVERWRITE=1 environment variable."
+            )
+
+        if not self.storage._is_safe_path():
+            raise PermissionError(
+                f"Safety check failed: Destination path outside approved synthetic directory: {target_db_path}"
+            )
+
         log(f"Starting synthetic generation for profile '{config.profile_name}' (seed={config.master_seed})...")
 
-        # 1. Initialize SQLite schema safely according to output policy
-        self.storage.output_policy = output_policy
-        self.storage.init_schema(recreate=True, force_replace=True)
+        # Staging SQLite setup (<target>.staging.<pid>)
+        pid = os.getpid()
+        staging_db_path = target_db_path.with_name(f"{target_db_path.name}.staging.{pid}")
+        for p in (staging_db_path, staging_db_path.with_name(f"{staging_db_path.name}-wal"), staging_db_path.with_name(f"{staging_db_path.name}-shm")):
+            if p.exists():
+                with contextlib.suppress(Exception):
+                    p.unlink()
 
-        # 2. Generate Virtual Subjects
-        subjects = SubjectPopulationGenerator.generate_population(
-            count=config.subject_count,
-            seed=config.master_seed,
-            domain_shift=config.domain_shift,
+        staging_storage = SqliteStorageManager(
+            db_path=staging_db_path,
+            schema_path=self.storage.schema_path,
+            output_policy=OutputPolicy.REPLACE_GENERATED_DATA,
         )
-        self.storage.insert_subjects(subjects)
-        log(f"Generated and persisted {len(subjects)} virtual subjects.")
 
-        # Configuration fingerprint (deterministic identity)
-        config_dict = {
-            "profile": config.profile_name,
-            "subjects": config.subject_count,
-            "sessions_per_subject": config.sessions_per_subject,
-            "duration_min": config.session_duration_min,
-            "seed": config.master_seed,
-            "domain_shift": config.domain_shift,
-            "fault_scenario": config.fault_scenario,
-            "sampling_rate_hz": config.sampling_rate_hz,
-            "schema_version": "2.1.0",
-        }
-        config_hash = hashlib.sha256(json.dumps(config_dict, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        try:
+            # 1. Initialize SQLite schema in staging database
+            staging_storage.init_schema(recreate=True, force_replace=True)
 
-        total_sessions = 0
-        total_accel_samples = 0
-        total_hr_samples = 0
-        total_gt_intervals = 0
-        total_windows = 0
-        total_quality_events = 0
-        total_training_eligible = 0
+            # 2. Generate Virtual Subjects
+            subjects = SubjectPopulationGenerator.generate_population(
+                count=config.subject_count,
+                seed=config.master_seed,
+                domain_shift=config.domain_shift,
+            )
+            staging_storage.insert_subjects(subjects)
+            log(f"Generated and persisted {len(subjects)} virtual subjects into staging database.")
 
-        parquet_path = Path(parquet_output_dir) if parquet_output_dir is not None else None
-        if parquet_path is not None:
-            parquet_path.mkdir(parents=True, exist_ok=True)
+            # Configuration fingerprint (deterministic identity)
+            config_dict = {
+                "profile": config.profile_name,
+                "subjects": config.subject_count,
+                "sessions_per_subject": config.sessions_per_subject,
+                "duration_min": config.session_duration_min,
+                "seed": config.master_seed,
+                "domain_shift": config.domain_shift,
+                "fault_scenario": config.fault_scenario,
+                "sampling_rate_hz": config.sampling_rate_hz,
+                "schema_version": "2.1.0",
+            }
+            config_hash = hashlib.sha256(json.dumps(config_dict, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
-        base_start_utc = 1730000000000  # Epoch millis reference
-        failure_sim = FailureSimulator(seed=config.master_seed + 77)
-        quality_policy = WindowQualityPolicy(target_sampling_rate_hz=config.sampling_rate_hz)
+            total_sessions = 0
+            total_accel_samples = 0
+            total_hr_samples = 0
+            total_gt_intervals = 0
+            total_windows = 0
+            total_quality_events = 0
+            total_training_eligible = 0
 
-        # 3. Generate Sessions per Subject in Bounded Chunks
-        for sub_idx, subject in enumerate(subjects):
-            for sess_idx in range(config.sessions_per_subject):
-                session_num = total_sessions + 1
-                session_id = f"SESS-{config.profile_name[:3]}-{session_num:04d}"
-                session_seed = config.master_seed + session_num * 100 + sub_idx * 10 + sess_idx
+            parquet_path = Path(parquet_output_dir) if parquet_output_dir is not None else None
+            if parquet_path is not None:
+                parquet_path.mkdir(parents=True, exist_ok=True)
 
-                # Session start time spaced across successive nights
-                start_utc_ms = base_start_utc + (sub_idx * 7 + sess_idx) * 86_400_000 + sess_idx * 3_600_000
-                duration_sec = config.session_duration_min * 60.0
-                end_utc_ms = start_utc_ms + int(duration_sec * 1000.0)
+            base_start_utc = 1730000000000  # Epoch millis reference
+            failure_sim = FailureSimulator(seed=config.master_seed + 77)
+            quality_policy = WindowQualityPolicy(target_sampling_rate_hz=config.sampling_rate_hz)
 
-                # A. Simulate Latent States
-                state_sim = SemiMarkovStateSimulator(subject, seed=session_seed)
-                intervals = state_sim.simulate_timeline(session_id, total_duration_sec=duration_sec)
-                total_gt_intervals += len(intervals)
+            # 3. Generate Sessions per Subject in Bounded Chunks
+            for sub_idx, subject in enumerate(subjects):
+                for sess_idx in range(config.sessions_per_subject):
+                    session_num = total_sessions + 1
+                    session_id = f"SESS-{config.profile_name[:3]}-{session_num:04d}"
+                    session_seed = config.master_seed + session_num * 100 + sub_idx * 10 + sess_idx
 
-                # B. Simulate Accelerometer
-                accel_sim = AccelerometerSimulator(subject, seed=session_seed + 1)
-                raw_accel_samples: list[dict[str, Any]] = []
-                for interval in intervals:
-                    int_start_utc = start_utc_ms + int(round(interval.start_sec * 1000))
-                    int_start_elapsed = int(round(interval.start_sec * 1e9))
-                    int_samples = accel_sim.generate_interval_signal(interval, int_start_utc, int_start_elapsed)
-                    raw_accel_samples.extend(int_samples)
+                    # Session start time spaced across successive nights
+                    start_utc_ms = base_start_utc + (sub_idx * 7 + sess_idx) * 86_400_000 + sess_idx * 3_600_000
+                    duration_sec = config.session_duration_min * 60.0
+                    end_utc_ms = start_utc_ms + int(duration_sec * 1000.0)
 
-                # C. Simulate BLE Heart Rate
-                hr_sim = HeartRateSimulator(subject, seed=session_seed + 2)
-                raw_hr_samples = hr_sim.simulate_session_hr(intervals, start_utc_ms)
+                    # A. Simulate Latent States
+                    state_sim = SemiMarkovStateSimulator(subject, seed=session_seed)
+                    intervals = state_sim.simulate_timeline(session_id, total_duration_sec=duration_sec)
+                    total_gt_intervals += len(intervals)
 
-                # D. Inject Faults and Log Quality Events
-                mod_accel, mod_hr, q_events = failure_sim.inject_faults(
-                    session_id=session_id,
-                    accel_samples=raw_accel_samples,
-                    hr_samples=raw_hr_samples,
-                    scenario=config.fault_scenario,
-                )
-                total_quality_events += len(q_events)
+                    # B. Simulate Accelerometer
+                    accel_sim = AccelerometerSimulator(subject, seed=session_seed + 1)
+                    raw_accel_samples: list[dict[str, Any]] = []
+                    for interval in intervals:
+                        int_start_utc = start_utc_ms + int(round(interval.start_sec * 1000))
+                        int_start_elapsed = int(round(interval.start_sec * 1e9))
+                        int_samples = accel_sim.generate_interval_signal(interval, int_start_utc, int_start_elapsed)
+                        raw_accel_samples.extend(int_samples)
 
-                # E. Persist Session Metadata FIRST to satisfy Foreign Key constraints
-                quality_status = "DEGRADED" if q_events else "EXCELLENT"
-                self.storage.insert_session({
-                    "session_id": session_id,
-                    "subject_id": subject.subject_id,
-                    "start_utc_millis": start_utc_ms,
-                    "end_utc_millis": end_utc_ms,
-                    "duration_sec": duration_sec,
-                    "device_placement": subject.preferred_placement,
-                    "sampling_rate_hz": config.sampling_rate_hz,
-                    "simulation_seed": session_seed,
-                    "source_kind": "SIMULATED",
-                    "generator_version": subject.generator_version,
-                    "quality_status": quality_status,
-                })
+                    # C. Simulate BLE Heart Rate
+                    hr_sim = HeartRateSimulator(subject, seed=session_seed + 2)
+                    raw_hr_samples = hr_sim.simulate_session_hr(intervals, start_utc_ms)
 
-                # Persist ground truth intervals and quality events
-                self.storage.insert_ground_truth_batch(intervals, start_utc_ms)
-                self.storage.insert_quality_events_batch(q_events)
-
-                inserted_accel = self.storage.insert_accelerometer_samples_batch(mod_accel)
-                inserted_hr = self.storage.insert_heart_rate_samples_batch(mod_hr)
-
-                total_accel_samples += inserted_accel
-                total_hr_samples += inserted_hr
-
-                # F. Authoritative Event-Time Feature Window Building
-                build_res = build_session_windows(
-                    session_id=session_id,
-                    session_start_ms=start_utc_ms,
-                    session_end_ms=end_utc_ms,
-                    raw_accelerometer_samples=mod_accel,
-                    raw_heart_rate_samples=mod_hr,
-                    ground_truth_intervals=intervals,
-                    policy=quality_policy,
-                )
-                windows = build_res.windows
-                self.storage.insert_feature_windows_batch(windows)
-                total_windows += len(windows)
-                total_training_eligible += build_res.accepted_count
-
-                # Bounded-memory streaming Parquet persistence (session-by-session)
-                if parquet_path is not None and windows:
-                    df_sess = pl.DataFrame(windows)
-                    pq.write_to_dataset(
-                        df_sess.to_arrow(),
-                        root_path=str(parquet_path),
-                        partition_cols=["ground_truth_label"],
-                        existing_data_behavior="overwrite_or_ignore",
-                        compression="SNAPPY",
+                    # D. Inject Faults and Log Quality Events
+                    mod_accel, mod_hr, q_events = failure_sim.inject_faults(
+                        session_id=session_id,
+                        accel_samples=raw_accel_samples,
+                        hr_samples=raw_hr_samples,
+                        scenario=config.fault_scenario,
                     )
+                    total_quality_events += len(q_events)
 
-                total_sessions += 1
+                    # E. Persist Session Metadata FIRST to satisfy Foreign Key constraints
+                    quality_status = "DEGRADED" if q_events else "EXCELLENT"
+                    staging_storage.insert_session({
+                        "session_id": session_id,
+                        "subject_id": subject.subject_id,
+                        "start_utc_millis": start_utc_ms,
+                        "end_utc_millis": end_utc_ms,
+                        "duration_sec": duration_sec,
+                        "device_placement": subject.preferred_placement,
+                        "sampling_rate_hz": config.sampling_rate_hz,
+                        "simulation_seed": session_seed,
+                        "source_kind": "SIMULATED",
+                        "generator_version": subject.generator_version,
+                        "quality_status": quality_status,
+                    })
 
-            log(f"Processed subject {sub_idx + 1}/{len(subjects)} ({subject.subject_id}): {config.sessions_per_subject} sessions.")
+                    # Persist ground truth intervals and quality events into staging
+                    staging_storage.insert_ground_truth_batch(intervals, start_utc_ms)
+                    staging_storage.insert_quality_events_batch(q_events)
 
-        if parquet_path is not None:
-            log(f"Streamed feature windows to partitioned Parquet at: {parquet_path}")
+                    inserted_accel = staging_storage.insert_accelerometer_samples_batch(mod_accel)
+                    inserted_hr = staging_storage.insert_heart_rate_samples_batch(mod_hr)
 
-        # 4. Record Deterministic Dataset Manifest
-        total_duration_hours = (total_sessions * config.session_duration_min) / 60.0
-        manifest_id = f"MANIFEST-{config.profile_name}-{config_hash}"
-        manifest = {
-            "manifest_id": manifest_id,
-            "dataset_version": f"2.1.0-{config.profile_name.lower()}",
-            "dataset_profile": config.profile_name,
-            "generator_config_hash": config_hash,
-            "master_seed": config.master_seed,
-            "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "subject_count": len(subjects),
-            "session_count": total_sessions,
-            "total_duration_hours": round(total_duration_hours, 2),
-            "accel_sample_count": total_accel_samples,
-            "hr_sample_count": total_hr_samples,
-            "window_count": total_windows,
-            "ground_truth_count": total_gt_intervals,
-            "quality_event_count": total_quality_events,
-            "training_eligible_count": total_training_eligible,
-            "schema_version": "2.1.0",
-        }
-        self.storage.record_manifest(manifest)
+                    total_accel_samples += inserted_accel
+                    total_hr_samples += inserted_hr
 
-        # 5. Verify Referential Integrity
-        fk_violations = self.storage.verify_referential_integrity()
-        if fk_violations:
-            raise RuntimeError(f"Database referential integrity violations: {fk_violations}")
+                    # F. Authoritative Event-Time Feature Window Building
+                    build_res = build_session_windows(
+                        session_id=session_id,
+                        session_start_ms=start_utc_ms,
+                        session_end_ms=end_utc_ms,
+                        raw_accelerometer_samples=mod_accel,
+                        raw_heart_rate_samples=mod_hr,
+                        ground_truth_intervals=intervals,
+                        policy=quality_policy,
+                    )
+                    windows = build_res.windows
+                    staging_storage.insert_feature_windows_batch(windows)
+                    total_windows += len(windows)
+                    total_training_eligible += build_res.accepted_count
 
-        log(f"Referential integrity verified: 0 foreign key violations.")
-        log(
-            f"Generation complete! Total sessions={total_sessions}, "
-            f"Accel samples={total_accel_samples:,}, HR samples={total_hr_samples:,}, "
-            f"Windows={total_windows:,} (eligible={total_training_eligible:,})."
-        )
+                    # Bounded-memory streaming Parquet persistence (session-by-session)
+                    if parquet_path is not None and windows:
+                        df_sess = pl.DataFrame(windows)
+                        pq.write_to_dataset(
+                            df_sess.to_arrow(),
+                            root_path=str(parquet_path),
+                            partition_cols=["ground_truth_label"],
+                            existing_data_behavior="overwrite_or_ignore",
+                            compression="SNAPPY",
+                        )
 
-        return manifest
+                    total_sessions += 1
+
+                log(f"Processed subject {sub_idx + 1}/{len(subjects)} ({subject.subject_id}): {config.sessions_per_subject} sessions.")
+
+            if parquet_path is not None:
+                log(f"Streamed feature windows to partitioned Parquet at: {parquet_path}")
+
+            # 4. Record Deterministic Dataset Manifest in Staging
+            total_duration_hours = (total_sessions * config.session_duration_min) / 60.0
+            manifest_id = f"MANIFEST-{config.profile_name}-{config_hash}"
+            manifest = {
+                "manifest_id": manifest_id,
+                "dataset_version": f"2.1.0-{config.profile_name.lower()}",
+                "dataset_profile": config.profile_name,
+                "generator_config_hash": config_hash,
+                "master_seed": config.master_seed,
+                "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                "subject_count": len(subjects),
+                "session_count": total_sessions,
+                "total_duration_hours": round(total_duration_hours, 2),
+                "accel_sample_count": total_accel_samples,
+                "hr_sample_count": total_hr_samples,
+                "window_count": total_windows,
+                "ground_truth_count": total_gt_intervals,
+                "quality_event_count": total_quality_events,
+                "training_eligible_count": total_training_eligible,
+                "schema_version": "2.1.0",
+            }
+            staging_storage.record_manifest(manifest)
+
+            # 5. Verify Referential Integrity on Staging Database
+            fk_violations = staging_storage.verify_referential_integrity()
+            if fk_violations:
+                raise RuntimeError(f"Database referential integrity violations: {fk_violations}")
+
+            # Checkpoint WAL so database file contains all committed pages
+            with staging_storage.session_scope() as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+
+            # 6. Atomic Replace: swap staging into destination database
+            target_db_path.parent.mkdir(parents=True, exist_ok=True)
+            for p in (target_db_path.with_name(f"{target_db_path.name}-wal"), target_db_path.with_name(f"{target_db_path.name}-shm")):
+                if p.exists():
+                    with contextlib.suppress(Exception):
+                        p.unlink()
+
+            os.replace(staging_db_path, target_db_path)
+
+            for p in (staging_db_path.with_name(f"{staging_db_path.name}-wal"), staging_db_path.with_name(f"{staging_db_path.name}-shm")):
+                if p.exists():
+                    with contextlib.suppress(Exception):
+                        p.unlink()
+
+            log(f"Referential integrity verified: 0 foreign key violations.")
+            log(
+                f"Generation complete! Total sessions={total_sessions}, "
+                f"Accel samples={total_accel_samples:,}, HR samples={total_hr_samples:,}, "
+                f"Windows={total_windows:,} (eligible={total_training_eligible:,}). "
+                f"Atomically installed at: {target_db_path}"
+            )
+            return manifest
+
+        except Exception as e:
+            for p in (staging_db_path, staging_db_path.with_name(f"{staging_db_path.name}-wal"), staging_db_path.with_name(f"{staging_db_path.name}-shm")):
+                if p.exists():
+                    with contextlib.suppress(Exception):
+                        p.unlink()
+            raise e
 
     def _extract_session_windows(
         self,

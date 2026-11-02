@@ -38,7 +38,7 @@ class SqliteStorageManager:
         self,
         db_path: Path | str = DEFAULT_DB_PATH,
         schema_path: Path | str = DEFAULT_SCHEMA_PATH,
-        output_policy: OutputPolicy = OutputPolicy.REPLACE_GENERATED_DATA,
+        output_policy: OutputPolicy = OutputPolicy.FAIL_IF_EXISTS,
     ):
         self.db_path = Path(db_path)
         self.schema_path = Path(schema_path)
@@ -46,20 +46,16 @@ class SqliteStorageManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _is_safe_path(self) -> bool:
-        """Verifies target is inside approved synthetic directory or a test temp directory."""
+        """Verifies target is strictly inside approved synthetic directory or system temp directory."""
         try:
             resolved = self.db_path.resolve()
             # Allowed if under APPROVED_SYNTHETIC_DIR
             if APPROVED_SYNTHETIC_DIR in resolved.parents or resolved.parent == APPROVED_SYNTHETIC_DIR:
                 return True
-            # Allowed if inside system temp directory (for pytest tmp_path)
-            temp_dir = Path(sqlite3.connect.__module__).resolve()  # dummy
+            # Allowed if inside system temp directory (for tests and temporary scratch DBs)
             import tempfile
             resolved_tmp = Path(tempfile.gettempdir()).resolve()
-            if resolved_tmp in resolved.parents:
-                return True
-            # Also allow pytest tmp_path (which might be under AppData/Local/Temp or repo root)
-            if "tmp" in resolved.parts or "pytest" in str(resolved).lower():
+            if resolved_tmp in resolved.parents or resolved.parent == resolved_tmp:
                 return True
             return False
         except Exception:
@@ -269,6 +265,8 @@ class SqliteStorageManager:
                 w["peak_to_peak"],
                 w.get("mean_hr"),
                 1 if w.get("hr_available") else 0,
+                w.get("hr_utc_millis"),
+                w.get("hr_sample_id"),
                 w["ground_truth_label"],
                 w.get("provenance", "SIMULATED"),
                 w.get("max_gap_ms", 50),
@@ -283,9 +281,10 @@ class SqliteStorageManager:
             INSERT OR REPLACE INTO feature_windows (
                 window_id, session_id, start_utc_millis, end_utc_millis,
                 sample_count, coverage_fraction, motion_rms, variance, jerk,
-                peak_to_peak, mean_hr, hr_available, ground_truth_label, provenance,
-                max_gap_ms, has_large_gap, was_resampled, training_eligible, quality_flags
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                peak_to_peak, mean_hr, hr_available, hr_utc_millis, hr_sample_id,
+                ground_truth_label, provenance, max_gap_ms, has_large_gap,
+                was_resampled, training_eligible, quality_flags
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         with self.session_scope() as conn:
             conn.executemany(sql, rows)

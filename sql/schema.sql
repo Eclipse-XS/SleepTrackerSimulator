@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS feature_windows (
     peak_to_peak REAL NOT NULL,
     mean_hr REAL,
     hr_available INTEGER NOT NULL CHECK(hr_available IN (0, 1)),
+    hr_utc_millis INTEGER DEFAULT NULL,
+    hr_sample_id TEXT DEFAULT NULL,
     ground_truth_label TEXT NOT NULL CHECK(ground_truth_label IN ('REST', 'RESTLESS', 'ACTIVE')),
     provenance TEXT NOT NULL DEFAULT 'SIMULATED',
     max_gap_ms INTEGER NOT NULL DEFAULT 50,

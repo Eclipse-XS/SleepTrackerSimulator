@@ -47,21 +47,49 @@ DOCS_DS = ROOT / "docs" / "datascience"
 CLASSES = ["REST", "RESTLESS", "ACTIVE"]
 
 
-def load_dataset_by_subject(db_path: Path | str) -> dict[str, dict[str, Any]]:
+def load_dataset_by_subject(db_path: Path | str) -> Any:
     """Loads all session windows and corresponding raw tensors organized by subject via canonical loader."""
-    dataset = load_canonical_window_dataset(db_path)
-    return dataset.data_by_subject
+    return load_canonical_window_dataset(db_path)
 
 
-def collate_subjects(data_dict: dict[str, Any], subs: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Collates data strictly from the specified dictionary and subjects."""
+def collate_subjects(
+    data_source: Any,
+    subs: list[str],
+    policy: str = "TRAINING_STRICT",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Collates data strictly from the specified subjects according to eligibility policy.
+
+    By default (policy='TRAINING_STRICT'), filters out all training-ineligible windows.
+    """
+    if hasattr(data_source, "collate_subjects"):
+        X_acc, X_hr, X_tab, y, _ = data_source.collate_subjects(subs, policy=policy)
+        return X_acc, X_hr, X_tab, y
+
+    pol = policy.upper() if policy else "TRAINING_STRICT"
+    filter_ineligible = pol in ("TRAINING_STRICT", "TEST_ACCEPTED_ONLY")
+
     accel_list, hr_list, tab_list, y_list = [], [], [], []
     for s in subs:
-        entry = data_dict[s]
-        accel_list.extend(entry["accel_windows"])
-        hr_list.extend(entry["hr_features"])
-        tab_list.extend(entry["tabular_features"])
-        y_list.extend(entry["labels"])
+        if s not in data_source:
+            continue
+        entry = data_source[s]
+        has_elig = "training_eligible" in entry
+        for i in range(len(entry["labels"])):
+            if filter_ineligible and has_elig and not entry["training_eligible"][i]:
+                continue
+            accel_list.append(entry["accel_windows"][i])
+            hr_list.append(entry["hr_features"][i])
+            tab_list.append(entry["tabular_features"][i])
+            y_list.append(entry["labels"][i])
+
+    if not accel_list:
+        return (
+            np.empty((0, 20, 3), dtype=np.float32),
+            np.empty((0, 2), dtype=np.float32),
+            np.empty((0, 6), dtype=np.float32),
+            np.empty((0,), dtype=np.int32),
+        )
+
     return (
         np.array(accel_list, dtype=np.float32),
         np.array(hr_list, dtype=np.float32),

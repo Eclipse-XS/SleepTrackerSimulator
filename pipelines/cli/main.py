@@ -43,13 +43,19 @@ def cmd_generate(args: argparse.Namespace) -> None:
         config = replace(config, master_seed=args.seed)
 
     db_path = Path(args.db_output)
-    sm = SqliteStorageManager(db_path=db_path)
+    import os
+    from ml.data.sqlite_storage import OutputPolicy
+
+    allow_overwrite = getattr(args, "replace_generated_data", False) or (os.environ.get("ALLOW_SIMULATION_OVERWRITE") == "1")
+    policy = OutputPolicy.REPLACE_GENERATED_DATA if allow_overwrite else OutputPolicy.FAIL_IF_EXISTS
+
+    sm = SqliteStorageManager(db_path=db_path, output_policy=policy)
     generator = SyntheticDatasetGenerator(storage_manager=sm)
 
     parquet_dir = Path(args.parquet_output) if args.parquet_output else None
 
     print(f"Executing generation for profile: {config.profile_name} (seed={config.master_seed})...")
-    manifest = generator.generate_dataset(config=config, parquet_output_dir=parquet_dir)
+    manifest = generator.generate_dataset(config=config, parquet_output_dir=parquet_dir, output_policy=policy)
     print("\nDataset Generation Manifest:")
     print(json.dumps(manifest, indent=2))
 
@@ -222,6 +228,7 @@ def main() -> None:
     p_gen.add_argument("--seed", type=int, default=42, help="Master random seed")
     p_gen.add_argument("--db-output", default=str(ROOT / "data" / "synthetic" / "sleepsense_synthetic.sqlite"), help="Target SQLite database path")
     p_gen.add_argument("--parquet-output", default=str(ROOT / "data" / "synthetic" / "parquet"), help="Optional Parquet output directory")
+    p_gen.add_argument("--replace-generated-data", action="store_true", help="Explicitly authorize overwriting an existing synthetic SQLite database")
 
     # 3. Validate
     p_val = subparsers.add_parser("validate", help="Execute relational SQL data quality gates")

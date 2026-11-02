@@ -39,6 +39,7 @@ credentials*.json
 
 # Distribution & Local testing packages
 dist/
+*.egg-info/
 
 # Emulator & test logs
 database-debug.log

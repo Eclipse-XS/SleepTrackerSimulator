@@ -78,8 +78,8 @@ def base_valid_db(tmp_path):
         conn.execute("""
             INSERT INTO feature_windows (window_id, session_id, start_utc_millis, end_utc_millis,
                 sample_count, coverage_fraction, motion_rms, variance, jerk, peak_to_peak,
-                mean_hr, hr_available, ground_truth_label, provenance, max_gap_ms, has_large_gap, was_resampled, training_eligible, quality_flags)
-            VALUES ('SESS-001-w00000', 'SESS-001', 1000, 2000, 20, 1.0, 0.05, 0.001, 0.1, 0.1, 65.0, 1, 'REST', 'SIMULATED', 50, 0, 0, 1, '');
+                mean_hr, hr_available, hr_utc_millis, hr_sample_id, ground_truth_label, provenance, max_gap_ms, has_large_gap, was_resampled, training_eligible, quality_flags)
+            VALUES ('SESS-001-w00000', 'SESS-001', 1000, 2000, 20, 1.0, 0.05, 0.001, 0.1, 0.1, 65.0, 1, 1500, 'HR-001', 'REST', 'SIMULATED', 50, 0, 0, 1, '');
         """)
         conn.execute("""
             INSERT INTO model_predictions (prediction_id, window_id, session_id, model_name,
@@ -178,6 +178,38 @@ def test_gate_11_mutated_causal_hr_violation(base_valid_db):
     """HR available = 1 but mean_hr is NULL -> Gate 11 must trigger."""
     conn = sqlite3.connect(str(base_valid_db))
     conn.execute("UPDATE feature_windows SET hr_available = 1, mean_hr = NULL WHERE window_id = 'SESS-001-w00000';")
+    conn.commit()
+    results = run_gate_checks(conn)
+    conn.close()
+    assert results["GATE_11_CAUSAL_HR_INTEGRITY"] > 0
+
+
+def test_gate_11_future_heart_rate_leakage_detected(base_valid_db):
+    """Heart rate sample timestamp > window end timestamp (future lookahead leakage) -> Gate 11 must trigger."""
+    conn = sqlite3.connect(str(base_valid_db))
+    # Window end is 2000, set hr_utc_millis to 2500 (future leakage)
+    conn.execute("UPDATE feature_windows SET hr_available = 1, hr_utc_millis = 2500 WHERE window_id = 'SESS-001-w00000';")
+    conn.commit()
+    results = run_gate_checks(conn)
+    conn.close()
+    assert results["GATE_11_CAUSAL_HR_INTEGRITY"] > 0
+
+
+def test_gate_11_stale_heart_rate_exceeding_10s_detected(base_valid_db):
+    """Heart rate sample staleness > 10,000ms -> Gate 11 must trigger."""
+    conn = sqlite3.connect(str(base_valid_db))
+    # Window end is 2000, set hr_utc_millis to 2000 - 15000 = -13000 (15s stale)
+    conn.execute("UPDATE feature_windows SET hr_available = 1, hr_utc_millis = -13000 WHERE window_id = 'SESS-001-w00000';")
+    conn.commit()
+    results = run_gate_checks(conn)
+    conn.close()
+    assert results["GATE_11_CAUSAL_HR_INTEGRITY"] > 0
+
+
+def test_gate_11_unavailable_hr_with_timestamp_detected(base_valid_db):
+    """hr_available = 0 but hr_utc_millis is non-null -> Gate 11 must trigger."""
+    conn = sqlite3.connect(str(base_valid_db))
+    conn.execute("UPDATE feature_windows SET hr_available = 0, mean_hr = NULL, hr_utc_millis = 1500 WHERE window_id = 'SESS-001-w00000';")
     conn.commit()
     results = run_gate_checks(conn)
     conn.close()
