@@ -7,6 +7,11 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.sqrt
 
+object DeployedModelIds {
+    const val ACCELEROMETER = "activity-tflite-sha256-1cf844f774355e54"
+    const val MULTIMODAL = "multimodal-tflite-sha256-39e882dcc35aa1b0"
+}
+
 enum class InferenceMode {
     ACCELEROMETER_TFLITE,
     MULTIMODAL_TFLITE,
@@ -131,8 +136,8 @@ class DefaultModelSelectionEngine(
                             probabilities = domainProbs,
                             confidence = pred.confidence,
                             inferenceMode = InferenceMode.MULTIMODAL_TFLITE,
-                            modelId = "multimodal-tflite-v1.0",
-                            modelVersion = "multimodal-v1.0",
+                            modelId = DeployedModelIds.MULTIMODAL,
+                            modelVersion = DeployedModelIds.MULTIMODAL,
                             fallbackReason = null,
                             qualityFlags = qualityFlags.toSet(),
                             inferenceDurationNs = pred.inferenceNanos,
@@ -173,8 +178,8 @@ class DefaultModelSelectionEngine(
                         probabilities = domainProbs,
                         confidence = pred.confidence,
                         inferenceMode = InferenceMode.ACCELEROMETER_TFLITE,
-                        modelId = "activity-v2.1",
-                        modelVersion = "activity-v2.1",
+                        modelId = DeployedModelIds.ACCELEROMETER,
+                        modelVersion = DeployedModelIds.ACCELEROMETER,
                         fallbackReason = fallbackReason,
                         qualityFlags = qualityFlags,
                         inferenceDurationNs = pred.inferenceNanos,

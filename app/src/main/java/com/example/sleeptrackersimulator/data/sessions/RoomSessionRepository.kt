@@ -159,7 +159,15 @@ class RoomSessionRepository(
     suspend fun countDemoNights(): Int = withContext(dispatcher) { sessionDao.countDemoSessions() }
 
     suspend fun clearAllLocalData() = withContext(dispatcher) {
-        requireNotNull(database) { "Database is required to clear all local data" }.clearAllTables()
+        val db = requireNotNull(database) { "Database is required to clear all local data" }
+        val cloudStore = RoomCloudStateStore(db.cloudOutboxDao())
+        // Local deletion must cancel stale uploads while preserving the only durable copy of
+        // previously requested cloud erasure tombstones across offline periods and restarts.
+        val deletionTombstones = cloudStore.pendingOperations().filter {
+            it.type == com.example.sleeptrackersimulator.cloud.PendingOperationType.DELETE_SESSION
+        }
+        db.clearAllTables()
+        deletionTombstones.forEach(cloudStore::enqueue)
     }
 
     suspend fun verifyDemoNights(expectedCount: Int = 90, nowUtcMillis: Long = System.currentTimeMillis()): List<String> = withContext(dispatcher) {

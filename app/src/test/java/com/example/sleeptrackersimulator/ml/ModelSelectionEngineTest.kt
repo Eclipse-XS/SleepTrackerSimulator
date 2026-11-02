@@ -139,7 +139,7 @@ class ModelSelectionEngineTest {
         assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
         assertEquals(ActivityClass.REST, result.activity)
         assertEquals(0.95f, result.confidence, 0.001f)
-        assertEquals("activity-v2.1", result.modelId)
+        assertEquals(DeployedModelIds.ACCELEROMETER, result.modelId)
     }
 
     @Test
@@ -195,7 +195,7 @@ class ModelSelectionEngineTest {
         assertEquals(InferenceMode.MULTIMODAL_TFLITE, result.inferenceMode)
         assertEquals(ActivityClass.REST, result.activity)
         assertEquals(0.98f, result.confidence, 0.001f)
-        assertEquals("multimodal-tflite-v1.0", result.modelId)
+        assertEquals(DeployedModelIds.MULTIMODAL, result.modelId)
     }
 
     @Test
@@ -230,7 +230,7 @@ class ModelSelectionEngineTest {
 
         assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
         assertEquals(ActivityClass.REST, result.activity)
-        assertEquals("activity-v2.1", result.modelId)
+        assertEquals(DeployedModelIds.ACCELEROMETER, result.modelId)
         assertTrue(result.qualityFlags.contains("STALE_HEART_RATE"))
     }
 
@@ -246,7 +246,7 @@ class ModelSelectionEngineTest {
 
         assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
         assertEquals(ActivityClass.REST, result.activity)
-        assertEquals("activity-v2.1", result.modelId)
+        assertEquals(DeployedModelIds.ACCELEROMETER, result.modelId)
         assertTrue(result.qualityFlags.contains("NO_HEART_RATE_AVAILABLE"))
     }
 
@@ -308,6 +308,6 @@ class ModelSelectionEngineTest {
         val result = engine.selectAndClassify(window, recentHeartRate = freshHr)
 
         assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
-        assertEquals("activity-v2.1", result.modelId)
+        assertEquals(DeployedModelIds.ACCELEROMETER, result.modelId)
     }
 }

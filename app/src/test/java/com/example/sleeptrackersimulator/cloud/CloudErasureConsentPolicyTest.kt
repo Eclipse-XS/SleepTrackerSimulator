@@ -21,6 +21,7 @@ class CloudErasureConsentPolicyTest {
         val createdSessions = mutableListOf<String>()
         val uploads = mutableListOf<SensorPayload>()
         val deletedSessions = mutableListOf<String>()
+        val summaries = mutableListOf<SessionSummaryPayload>()
         var throwOnDelete: CloudOperationException? = null
 
         override suspend fun createSession(ownerUid: String, sessionId: String, deviceId: String, startedAt: Long) {
@@ -32,7 +33,7 @@ class CloudErasureConsentPolicyTest {
         }
 
         override suspend fun uploadRuleEvent(ownerUid: String, sessionId: String, payload: SmartRuleEventPayload) = Unit
-        override suspend fun uploadSessionSummary(ownerUid: String, payload: SessionSummaryPayload) = Unit
+        override suspend fun uploadSessionSummary(ownerUid: String, payload: SessionSummaryPayload) { summaries += payload }
         override suspend fun endSession(ownerUid: String, sessionId: String, endedAt: Long) = Unit
 
         override suspend fun deleteSession(ownerUid: String, sessionId: String) {
@@ -216,5 +217,25 @@ class CloudErasureConsentPolicyTest {
         assertTrue("createSession must never be called when draining deletions", repository.createdSessions.isEmpty())
         assertEquals(listOf("session-deleted"), repository.deletedSessions)
         assertEquals(0, repository.uploads.size)
+    }
+
+    @Test
+    fun `session summary drains after monitoring session has ended`() = runTest {
+        val repository = RecordingCloudRepository()
+        val store = InMemoryCloudStateStore()
+        val summary = SessionSummaryPayload(sessionId = "completed-session")
+        store.enqueue(
+            PendingCloudOperation(
+                operationId = "summary-completed-session",
+                type = PendingOperationType.UPLOAD_SESSION_SUMMARY,
+                sessionId = "completed-session",
+                summary = summary,
+            ),
+        )
+
+        assertNull(store.activeSession())
+        assertEquals(Result.success(), CloudOutboxDrainer.drain(store, repository, FakeAuth(), true))
+        assertEquals(listOf(summary), repository.summaries)
+        assertEquals(0, store.pendingCount)
     }
 }

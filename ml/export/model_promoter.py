@@ -155,8 +155,8 @@ class ModelPromoter:
                 if len(input_details) != 1:
                     raise ValueError(f"Activity classifier requires exactly 1 input tensor, found {len(input_details)}")
                 in_shape = list(input_details[0]["shape"])
-                if in_shape != [1, 20, 3] and in_shape != [1, 6]:
-                    raise ValueError(f"Activity classifier requires input [1, 20, 3] or [1, 6], found {in_shape}")
+                if in_shape != [1, 20, 3]:
+                    raise ValueError(f"Activity classifier requires Android input [1, 20, 3], found {in_shape}")
                 if len(output_details) != 1 or list(output_details[0]["shape"]) != [1, 3]:
                     raise ValueError(f"Activity classifier requires output [1, 3], found {[d['shape'].tolist() for d in output_details]}")
 

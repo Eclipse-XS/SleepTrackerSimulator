@@ -17,6 +17,8 @@
 > [!NOTE]
 > **Product Positioning & Medical Disclaimer**: SleepSense is an observational activity tracker and rest diary designed for wellness and behavioral insights. It does **not** diagnose medical conditions (e.g. sleep apnea, narcolepsy, restless leg syndrome) and does not pretend to deliver clinical polysomnography (PSG) sleep staging (NREM/REM) from an uncalibrated smartphone accelerometer. All data is classified transparently as gross body movement intensity with explicit source provenance (`REST`, `RESTLESS`, `ACTIVE`).
 
+Release evidence: [`docs/PORTFOLIO_RELEASE_ACCEPTANCE.md`](docs/PORTFOLIO_RELEASE_ACCEPTANCE.md). Deployed TFLite hashes and tensor contracts: [`ml/artifacts/deployment_manifest.json`](ml/artifacts/deployment_manifest.json).
+
 ### Quick Repository Links & Technical Audits
 - 🏆 **[Final ML & DE Engineering Scorecard](docs/audit/FINAL_ML_DE_SCORECARD.md)** — Audited DE (94/100) and ML (92/100) maturity breakdown.
 - 🛠️ **[Final ML & DE Remediation Report](docs/audit/FINAL_ML_DE_REMEDIATION.md)** — Architectural hardening, root cause fixes, and before/after evidence.

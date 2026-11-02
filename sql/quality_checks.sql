@@ -63,9 +63,15 @@ WHERE sample_count < 0
 
 -- Gate 7: Ground Truth Interval Non-Overlapping Ordering
 SELECT 'GATE_7_INTERVAL_INTEGRITY' AS gate_name, COUNT(*) AS violations
-FROM ground_truth_intervals
+FROM (
+    SELECT *, LAG(end_utc_millis) OVER (
+        PARTITION BY session_id ORDER BY start_utc_millis, end_utc_millis
+    ) AS previous_end_utc_millis
+    FROM ground_truth_intervals
+)
 WHERE end_sec <= start_sec
-   OR end_utc_millis <= start_utc_millis;
+   OR end_utc_millis <= start_utc_millis
+   OR (previous_end_utc_millis IS NOT NULL AND start_utc_millis < previous_end_utc_millis);
 
 -- Gate 8: Data Provenance Authenticity Enforcement
 SELECT 'GATE_8_PROVENANCE' AS gate_name, COUNT(*) AS violations

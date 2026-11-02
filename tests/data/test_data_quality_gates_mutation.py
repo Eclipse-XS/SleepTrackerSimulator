@@ -151,6 +151,20 @@ def test_gate_8_mutated_invalid_provenance(base_valid_db):
     assert results["GATE_8_PROVENANCE"] > 0
 
 
+def test_gate_7_overlapping_ground_truth_intervals_detected(base_valid_db):
+    """Intervals in one session must not overlap even when each interval is valid alone."""
+    conn = sqlite3.connect(str(base_valid_db))
+    conn.execute("""
+        INSERT INTO ground_truth_intervals
+            (interval_id, session_id, start_utc_millis, end_utc_millis, start_sec, end_sec, state_id, state_label)
+        VALUES ('INT-OVERLAP', 'SESS-001', 1500, 2500, 0.5, 1.5, 1, 'RESTLESS');
+    """)
+    conn.commit()
+    results = run_gate_checks(conn)
+    conn.close()
+    assert results["GATE_7_INTERVAL_INTEGRITY"] > 0
+
+
 def test_gate_9_mutated_duplicate_timestamps(base_valid_db):
     """Duplicate accelerometer sample timestamps -> Gate 9 must trigger."""
     conn = sqlite3.connect(str(base_valid_db))

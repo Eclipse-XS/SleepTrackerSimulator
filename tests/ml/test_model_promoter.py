@@ -101,6 +101,30 @@ def test_verify_candidate_rejects_tampered_sha(dummy_tflite_setup):
         promoter.verify_candidate("activity_classifier_candidate.tflite")
 
 
+def test_verify_candidate_rejects_legacy_six_feature_shape(dummy_tflite_setup):
+    """Android consumes temporal windows; the legacy [1, 6] feature model is incompatible."""
+    setup = dummy_tflite_setup
+    legacy_model = tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(6,)),
+        tf.keras.layers.Dense(3, activation="softmax"),
+    ])
+    legacy_bytes = tf.lite.TFLiteConverter.from_keras_model(legacy_model).convert()
+    candidate = setup["candidates_dir"] / "activity_classifier_candidate.tflite"
+    candidate.write_bytes(legacy_bytes)
+    (setup["candidates_dir"] / "candidate_manifest.json").write_text(json.dumps({
+        "model_version": "legacy",
+        "dense_tflite_sha256": compute_sha256(candidate),
+    }))
+
+    promoter = ModelPromoter(
+        candidate_dir=setup["candidates_dir"],
+        assets_dir=setup["assets_dir"],
+        backup_dir=setup["backups_dir"],
+    )
+    with pytest.raises(RuntimeError, match=r"requires Android input \[1, 20, 3\]"):
+        promoter.verify_candidate("activity_classifier_candidate.tflite")
+
+
 def test_promote_creates_backup_and_copies_asset(dummy_tflite_setup):
     setup = dummy_tflite_setup
     promoter = ModelPromoter(

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class TodayUiState(
@@ -48,29 +49,29 @@ class TodayViewModel(
 
     init {
         if (isFirstRun()) {
-            _uiState.value = _uiState.value.copy(showOnboarding = true)
+            _uiState.update { it.copy(showOnboarding = true) }
         }
 
         // Observe BLE wearable transport if available
         if (deviceTransport != null) {
             viewModelScope.launch {
                 deviceTransport.connectionState.collect { state ->
-                    _uiState.value = _uiState.value.copy(deviceConnectionState = state)
+                    _uiState.update { it.copy(deviceConnectionState = state) }
                 }
             }
             viewModelScope.launch {
                 deviceTransport.connectedDevice.collect { device ->
-                    _uiState.value = _uiState.value.copy(
+                    _uiState.update { current -> current.copy(
                         connectedDevice = device,
-                        selectedSourceMode = if (device != null && _uiState.value.selectedSourceMode == SourceMode.PHONE_ONLY) {
+                        selectedSourceMode = if (device != null && current.selectedSourceMode == SourceMode.PHONE_ONLY) {
                             SourceMode.COMBINED
-                        } else _uiState.value.selectedSourceMode,
-                    )
+                        } else current.selectedSourceMode,
+                    ) }
                 }
             }
             viewModelScope.launch {
                 deviceTransport.heartRateStream.collect { hrSample ->
-                    _uiState.value = _uiState.value.copy(connectedHeartRate = hrSample.bpm)
+                    _uiState.update { it.copy(connectedHeartRate = hrSample.bpm) }
                 }
             }
         }
@@ -78,13 +79,13 @@ class TodayViewModel(
         viewModelScope.launch {
             var previousSession: RecordingSession? = null
             sessionCoordinator.activeSession.collect { session ->
-                _uiState.value = _uiState.value.copy(
+                _uiState.update { it.copy(
                     activeSession = session,
                     sessionStatus = session?.status ?: SessionStatus.IDLE,
-                )
+                ) }
                 if (previousSession != null && session == null) {
                     val recent = analyticsRepository.getRecentSummaries(days = 14)
-                    _uiState.value = _uiState.value.copy(lastSummary = recent.firstOrNull())
+                    _uiState.update { it.copy(lastSummary = recent.firstOrNull()) }
                 }
                 previousSession = session
             }
@@ -93,7 +94,7 @@ class TodayViewModel(
         // Load most recent summary
         viewModelScope.launch {
             val recent = analyticsRepository.getRecentSummaries(days = 14)
-            _uiState.value = _uiState.value.copy(lastSummary = recent.firstOrNull())
+            _uiState.update { it.copy(lastSummary = recent.firstOrNull()) }
         }
 
         // Live ticker for active duration
@@ -102,7 +103,7 @@ class TodayViewModel(
                 val active = _uiState.value.activeSession
                 if (active != null && active.status == SessionStatus.RECORDING) {
                     val durationSec = (System.currentTimeMillis() - active.startUtcMillis) / 1000L
-                    _uiState.value = _uiState.value.copy(activeDurationSeconds = durationSec)
+                    _uiState.update { it.copy(activeDurationSeconds = durationSec) }
                 }
                 delay(1000L)
             }
@@ -113,7 +114,7 @@ class TodayViewModel(
         viewModelScope.launch {
             val result = sessionCoordinator.startSession(sourceMode = mode, placement = placement)
             if (result.isFailure) {
-                _uiState.value = _uiState.value.copy(errorMessage = result.exceptionOrNull()?.message)
+                _uiState.update { it.copy(errorMessage = result.exceptionOrNull()?.message) }
             }
         }
     }
@@ -135,36 +136,36 @@ class TodayViewModel(
             val result = sessionCoordinator.stopSession()
             if (result.isSuccess) {
                 val recent = analyticsRepository.getRecentSummaries(days = 14)
-                _uiState.value = _uiState.value.copy(lastSummary = recent.firstOrNull())
+                _uiState.update { it.copy(lastSummary = recent.firstOrNull()) }
             }
         }
     }
 
     fun dismissError() {
-        _uiState.value = _uiState.value.copy(errorMessage = null)
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
     fun setPlacement(placement: DevicePlacement) {
-        _uiState.value = _uiState.value.copy(selectedPlacement = placement)
+        _uiState.update { it.copy(selectedPlacement = placement) }
     }
 
     fun setSourceMode(mode: SourceMode) {
-        _uiState.value = _uiState.value.copy(selectedSourceMode = mode)
+        _uiState.update { it.copy(selectedSourceMode = mode) }
     }
 
     fun reportServiceCommandFailure(operation: String, error: Throwable?) {
-        _uiState.value = _uiState.value.copy(
+        _uiState.update { it.copy(
             errorMessage = "$operation failed: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown error"}",
-        )
+        ) }
     }
 
     fun dismissOnboarding() {
-        _uiState.value = _uiState.value.copy(showOnboarding = false)
+        _uiState.update { it.copy(showOnboarding = false) }
         markOnboardingCompleted()
     }
 
     fun openOnboarding() {
-        _uiState.value = _uiState.value.copy(showOnboarding = true)
+        _uiState.update { it.copy(showOnboarding = true) }
     }
 
     companion object {

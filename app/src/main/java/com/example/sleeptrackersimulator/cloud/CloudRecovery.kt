@@ -137,7 +137,40 @@ object CloudOutboxDrainer {
             store.activeSession()
         } catch (_: Exception) {
             return Result.retry()
-        } ?: return Result.success()
+        }
+
+        // Session summaries are self-contained terminal artifacts. They remain deliverable
+        // after monitoring has ended and therefore must not depend on activeSession().
+        if (session == null) {
+            return try {
+                while (true) {
+                    val operation = store.peek() ?: break
+                    if (operation.deliveryState == DeliveryState.PERMANENT_FAILURE) return Result.failure()
+                    when (operation.type) {
+                        PendingOperationType.UPLOAD_SESSION_SUMMARY -> {
+                            repository.uploadSessionSummary(uid, requireNotNull(operation.summary))
+                            store.removeFirst()
+                        }
+                        PendingOperationType.DELETE_SESSION -> {
+                            repository.deleteSession(uid, operation.sessionId)
+                            store.removeFirst()
+                        }
+                        else -> {
+                            store.recordFirstFailure("Operation ${operation.type} requires active session metadata", true)
+                            return Result.failure()
+                        }
+                    }
+                }
+                Result.success()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: CloudOperationException) {
+                runCatching { store.recordFirstFailure(failure.message ?: failure.type.name, !failure.retriable) }
+                if (failure.retriable) Result.retry() else Result.failure()
+            } catch (_: Exception) {
+                Result.retry()
+            }
+        }
 
         if (session.ownerUid.isNotBlank() && session.ownerUid != uid) {
             runCatching { store.recordFirstFailure("Pending data belongs to another Firebase UID", true) }

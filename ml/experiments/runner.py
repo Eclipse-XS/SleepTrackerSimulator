@@ -459,6 +459,8 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     multi_tflite_bytes = conv_multi.convert()
 
     multi_metrics = compute_metrics(y_test, multi_preds, multi_probs)
+    multi_full_probs = multi_model.predict([X_test_full_accel, X_test_full_hr], verbose=0)
+    multi_full_metrics = compute_metrics(y_test_full, np.argmax(multi_full_probs, axis=1), multi_full_probs)
     multi_metrics["latency_us"] = float(multi_lat_us)
     multi_metrics["model_size_kb"] = float(len(multi_tflite_bytes) / 1024.0)
     results["Multimodal Late-Fusion DNN"] = multi_metrics
@@ -594,7 +596,7 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
         },
         "training_eligibility_policy": "TRAINING_STRICT",
         "training_config": {
-            "epochs": 15,
+            "epochs": 14,
             "batch_size": 128,
             "optimizer": "adam",
             "learning_rate": 0.002,
@@ -616,7 +618,9 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
         "validation_results": val_metrics,
         "independent_test_results": {
             "accepted_only": multi_metrics,
-            "full_population": ablation_results.get("G_domain_shift_full_population", {}),
+            "full_population": multi_full_metrics,
+            "accepted_only_sample_count": len(y_test),
+            "full_population_sample_count": len(y_test_full),
         },
         "macro_f1_test": multi_metrics["macro_f1"],
         "accuracy_test": multi_metrics["accuracy"],

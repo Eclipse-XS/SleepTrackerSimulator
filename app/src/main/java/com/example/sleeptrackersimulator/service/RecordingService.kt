@@ -115,7 +115,10 @@ class RecordingService : Service(), SensorEventListener {
         }
         serviceScope.launch {
             for (reading in sampleChannel) {
-                if (reading.epoch != ingestionEpoch.get()) continue
+                if (reading.epoch != ingestionEpoch.get()) {
+                    droppedSamples.incrementAndGet()
+                    continue
+                }
                 try {
                     coordinator?.ingestSensorEvent(
                         sourceId = "phone_accelerometer",
@@ -213,12 +216,20 @@ class RecordingService : Service(), SensorEventListener {
 
         activeMode = mode
         activeSamplingHz = samplingHz.coerceIn(1, 200)
-        val result = coordinator?.startSession(mode, placement, activeSamplingHz)
-        if (result?.isSuccess == true) {
-            ingestionEpoch.incrementAndGet()
-            droppedSamples.set(0)
+        droppedSamples.set(0)
+        ingestionEpoch.incrementAndGet()
+        try {
             startSourcesForActiveMode()
-        } else {
+        } catch (error: Throwable) {
+            stopSources()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            releaseWakeLock()
+            stopSelf()
+            throw error
+        }
+        val result = coordinator?.startSession(mode, placement, activeSamplingHz)
+        if (result?.isSuccess != true) {
+            stopSources()
             stopForeground(STOP_FOREGROUND_REMOVE)
             releaseWakeLock()
             stopSelf()
@@ -237,10 +248,17 @@ class RecordingService : Service(), SensorEventListener {
 
     private suspend fun resumeRecordingSession() {
         if (coordinator?.sessionStatus?.value != SessionStatus.PAUSED) return
-        val result = coordinator?.resumeSession()
-        if (result?.isSuccess == true) {
-            ingestionEpoch.incrementAndGet()
+        ingestionEpoch.incrementAndGet()
+        try {
             startSourcesForActiveMode()
+        } catch (error: Throwable) {
+            stopSources()
+            throw error
+        }
+        val result = coordinator?.resumeSession()
+        if (result?.isSuccess != true) {
+            stopSources()
+            return
         }
         val notification = buildNotification("Recording in progress", "Monitoring device movement...")
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

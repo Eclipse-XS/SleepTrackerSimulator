@@ -1,0 +1,29 @@
+{
+  "manifest_version": 1,
+  "deployment_scope": "Android embedded assets",
+  "generated_from": "app/src/main/assets",
+  "models": [
+    {
+      "model_id": "activity-tflite-sha256-1cf844f774355e54",
+      "asset": "activity_classifier.tflite",
+      "sha256": "1cf844f774355e54f820c4860304dc43e42a4015f57c7097cee9d16227858311",
+      "size_bytes": 11368,
+      "inputs": [{"shape": [1, 20, 3], "dtype": "float32", "features": ["accel_x", "accel_y", "accel_z"]}],
+      "outputs": [{"shape": [1, 3], "dtype": "float32", "classes": ["REST", "RESTLESS", "ACTIVE"]}]
+    },
+    {
+      "model_id": "multimodal-tflite-sha256-39e882dcc35aa1b0",
+      "asset": "multimodal_classifier.tflite",
+      "sha256": "39e882dcc35aa1b0420ae3d6d59f83631058dc37d13c0fef80ab1e858e62c158",
+      "size_bytes": 12960,
+      "inputs": [
+        {"shape": [1, 20, 3], "dtype": "float32", "features": ["accel_x", "accel_y", "accel_z"]},
+        {"shape": [1, 2], "dtype": "float32", "features": ["normalized_bpm", "hr_available"]}
+      ],
+      "normalization": {"normalized_bpm": "(bpm - 60.0) / 40.0", "maximum_hr_age_ms": 10000},
+      "outputs": [{"shape": [1, 3], "dtype": "float32", "classes": ["REST", "RESTLESS", "ACTIVE"]}]
+    }
+  ],
+  "candidate_policy": "Candidate artifacts are not deployed unless ModelPromoter verifies checksum, exact tensor contract, and inference.",
+  "limitations": "Synthetic-data movement-state classifiers; not clinical sleep-stage models."
+}

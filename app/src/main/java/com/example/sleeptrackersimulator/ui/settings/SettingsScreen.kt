@@ -155,7 +155,7 @@ fun SettingsScreen(
                                 color = MistBlue,
                             )
                             Text(
-                                text = "When enabled, anonymized sleep summaries synchronize to Firebase. Disabled by default to protect your privacy.",
+                                text = "When enabled, pseudonymous sensor measurements, session summaries, metadata, and automation events synchronize to your UID-scoped Firebase account. Disabled by default.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MistBlue.copy(alpha = 0.65f),
                             )

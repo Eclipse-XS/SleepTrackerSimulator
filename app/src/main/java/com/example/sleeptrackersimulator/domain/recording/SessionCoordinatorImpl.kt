@@ -130,7 +130,7 @@ class SessionCoordinatorImpl(
                 sourceMode = sourceMode,
                 devicePlacement = placement,
                 requestedSamplingHz = samplingHz,
-                modelVersion = activityClassifier?.let { "activity-v2.1" },
+                modelVersion = activityClassifier?.let { com.example.sleeptrackersimulator.ml.DeployedModelIds.ACCELEROMETER },
                 dataCoverageFraction = 1.0f,
                 qualityStatus = SessionQualityStatus.EXCELLENT,
             )
@@ -207,7 +207,9 @@ class SessionCoordinatorImpl(
                 automationCoordinator?.evaluateSensorSample(sample, session.sessionId)
             }
             is com.example.sleeptrackersimulator.domain.signalprocessing.SampleValidationResult.Invalid -> {
-                // Drop corrupted sample silently or report to quality metrics
+                // Invalid input is an intentional rejection, but it still reduces observed
+                // coverage and must therefore participate in loss accounting.
+                droppedSamplesCount++
             }
         }
     }
@@ -276,14 +278,14 @@ class SessionCoordinatorImpl(
         sessionRepository.insertPredictions(listOf(prediction))
 
         // Trigger ML-based background automations
-        val predictionForAutomation = com.example.sleeptrackersimulator.ml.ActivityPrediction(
+        val predictionForAutomation = if (selection.activity != ActivityClass.UNCERTAIN) com.example.sleeptrackersimulator.ml.ActivityPrediction(
             predictionId = prediction.predictionId,
             windowEndTimestampNanos = featureWindow.endElapsedNanos,
             activity = when (selection.activity) {
                 ActivityClass.REST -> com.example.sleeptrackersimulator.ml.ActivityClass.REST
                 ActivityClass.RESTLESS -> com.example.sleeptrackersimulator.ml.ActivityClass.RESTLESS
                 ActivityClass.ACTIVE -> com.example.sleeptrackersimulator.ml.ActivityClass.ACTIVE
-                ActivityClass.UNCERTAIN -> com.example.sleeptrackersimulator.ml.ActivityClass.REST
+                ActivityClass.UNCERTAIN -> error("UNCERTAIN predictions must not enter class-based automation")
             },
             confidence = selection.confidence,
             probabilities = mapOf(
@@ -292,8 +294,8 @@ class SessionCoordinatorImpl(
                 com.example.sleeptrackersimulator.ml.ActivityClass.ACTIVE to (selection.probabilities[ActivityClass.ACTIVE] ?: 0f),
             ),
             inferenceNanos = selection.inferenceDurationNs,
-        )
-        automationCoordinator?.evaluatePrediction(predictionForAutomation, session.sessionId)
+        ) else null
+        predictionForAutomation?.let { automationCoordinator?.evaluatePrediction(it, session.sessionId) }
     }
 
     override suspend fun pauseSession(): Result<Unit> = mutex.withLock {

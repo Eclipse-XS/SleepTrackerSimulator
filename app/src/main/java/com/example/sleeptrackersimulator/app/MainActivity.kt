@@ -303,15 +303,10 @@ class MainActivity : ComponentActivity() {
                             },
                             onDeleteAllData = {
                                 lifecycleScope.launch {
+                                    // This control is explicitly local-only. Cloud erasure has a
+                                    // separate durable outbox flow; do not destroy its retry state
+                                    // or imply remote deletion from this action.
                                     container.sessionRepository.clearAllLocalData()
-                                    if (container.cloudSyncConsentRepository.isCloudSyncEnabled.value) {
-                                        val uid = container.authRepository.currentUid
-                                        if (uid != null) {
-                                            runCatching {
-                                                container.cloudRepository.applyRetention(uid, activeSessionId = null, now = Long.MAX_VALUE)
-                                            }
-                                        }
-                                    }
                                 }
                             },
                             deleteAllEnabled = !todayState.sessionStatus.isActive,
