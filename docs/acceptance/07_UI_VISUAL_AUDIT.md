@@ -1,8 +1,8 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 07. Visual Audit & Real Runtime Screen Verification
 
-**Audit Date:** 2026-10-27  
-**Host Environment:** Google Pixel 10 Pro (AVD `Pixel_10_Pro`, API 36 / Android 16)  
+**Audit Date:** 2026-10-27
+**Host Environment:** Google Pixel 10 Pro (AVD `Pixel_10_Pro`, API 36 / Android 16)
 **Total Captured Evidence Screenshots:** 18 PNG files in `docs/acceptance/screenshots/`
 
 ---

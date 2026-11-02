@@ -1,7 +1,7 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 08. Performance, Memory & APK Binary Analysis
 
-**Audit Date:** 2026-10-27  
+**Audit Date:** 2026-10-27
 **Artifacts Analyzed:**
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (Release)
 - `app/build/outputs/apk/debug/app-debug.apk` (Debug)

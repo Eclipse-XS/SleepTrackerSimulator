@@ -1,9 +1,9 @@
 # Pull Request: SleepSense 2.0 — Architectural Overhaul, Local ML 2.0, BLE GATT & Offline-First Hardening
 
-**Target Branch:** `main` (or `develop`)  
-**Source Branch:** `feature/sleepsense-product-overhaul` (Local Branch)  
-**Tracking Status:** `Local-only` (Remote `origin/feature/sleepsense-product-overhaul` is not yet published to GitHub; ready for push upon authorization).  
-**Base Commit:** `b002b87` (Hardened acceptance base)  
+**Target Branch:** `main` (or `develop`)
+**Source Branch:** `feature/sleepsense-product-overhaul` (Local Branch)
+**Tracking Status:** `Local-only` (Remote `origin/feature/sleepsense-product-overhaul` is not yet published to GitHub; ready for push upon authorization).
+**Base Commit:** `b002b87` (Hardened acceptance base)
 
 ---
 

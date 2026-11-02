@@ -5,16 +5,16 @@
 - **Model Date**: October 2026
 - **Model Version**: 2.0.0 (Multimodal TFLite Release Candidate)
 - **Model Types**:
-  1. **Accelerometer Single-Branch Classifier**: On-device Feedforward DNN (`activity_classifier.tflite`, 11.1 KB)
-  2. **Multimodal Late-Fusion Classifier**: Dual-Branch Feedforward DNN (`multimodal_classifier.tflite`, 12.96 KB)
+  1. **Accelerometer Single-Branch Classifier**: On-device Feedforward DNN (`activity_classifier.tflite`, 11.1 KB, SHA-256: `1cf804d7fe4de9d2bf8be480d47c3dc19b031737e993b417a598f537bfbc7f20`)
+  2. **Multimodal Late-Fusion Classifier**: Dual-Branch Feedforward DNN (`multimodal_classifier.tflite`, 12.96 KB, SHA-256: `39e886d49f983a7e3e566eb5a0239634c2af4d8f3976dcfea8dae171af832669`)
 - **Framework**: TensorFlow 2.20.0 / TensorFlow Lite / LiteRT
 - **Input Specifications**:
   - `accelerometer_input`: Tensor `[1, 20, 3]` (Float32, 20 tri-axial accelerometer samples at 20 Hz, normalized dynamic acceleration)
-  - `heart_rate_input`: Tensor `[1, 2]` (Float32, normalized `[bpm / 100.0, hr_available_flag]`)
+  - `heart_rate_input`: Tensor `[1, 2]` (Float32, normalized `[(bpm - 60.0) / 40.0, hr_available_flag]`)
 - **Output Specification**: Tensor `[1, 3]` (Float32, normalized Softmax probabilities for `REST`, `RESTLESS`, `ACTIVE`)
 - **On-Device Latency**:
-  - Single-Branch: ~6.1 $\mu$s on modern Android CPU
-  - Multimodal: ~8.4 $\mu$s on modern Android CPU
+  - Single-Branch: ~6.1 $\mu$s on modern Android CPU (single-threaded CPU execution benchmark)
+  - Multimodal: ~8.4 $\mu$s on modern Android CPU (single-threaded CPU execution benchmark)
 - **Numerical Parity**: Max absolute discrepancy between Keras reference model and exported TFLite runtime is $2.98 \times 10^{-7}$ (well below tolerance $1.0 \times 10^{-4}$).
 
 ## Neural Network Architecture (Multimodal Classifier)

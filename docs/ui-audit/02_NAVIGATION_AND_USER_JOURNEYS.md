@@ -25,7 +25,7 @@ stateDiagram-v2
 
     MainScaffold --> SettingsOverlay : Tap Settings Gear (Today)
     MainScaffold --> AutomationsOverlay : Tap 'Smart Automation Rules' (Today)
-    
+
     state SettingsOverlay {
         SettingsScreen --> DevLabOverlay : Tap 'Open Developer Lab' or 'Export Tools'
     }

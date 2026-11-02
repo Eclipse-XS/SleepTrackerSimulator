@@ -1,8 +1,8 @@
 # SleepSense 2.0 — Final Blocker Resolution & Acceptance Audit
 
-**Дата:** 27 жовтня 2026 р.  
-**Гілка:** `feature/sleepsense-product-overhaul`  
-**Базовий коміт:** `b002b87`  
+**Дата:** 27 жовтня 2026 р.
+**Гілка:** `feature/sleepsense-product-overhaul`
+**Базовий коміт:** `b002b87`
 **Цільова платформа:** Android 15+ / API 35-36 (Pixel 10 Pro AVD), BLE GATT, Room 2.7, TensorFlow Lite v2.1, Firebase RTDB & Auth.
 
 ---

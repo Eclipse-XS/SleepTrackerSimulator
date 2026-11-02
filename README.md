@@ -6,22 +6,22 @@
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
-[![Android Tests](https://img.shields.io/badge/Android%20Tests-250%20unit%20%2B%2035%20instrumentation%20PASSED-brightgreen.svg?style=flat)]()
-[![Python Tests](https://img.shields.io/badge/Python%20Tests-19%20PASSED-brightgreen.svg?style=flat)]()
-[![Release Status](https://img.shields.io/badge/Status-DEMO__READY-yellow.svg?style=flat)]()
+[![Android Tests](https://img.shields.io/badge/Android%20Unit%20Tests-295%20PASSED%20(279%20app%20%2B%2016%20vsb)-brightgreen.svg?style=flat)]()
+[![Python Tests](https://img.shields.io/badge/Python%20Tests-27%20PASSED-brightgreen.svg?style=flat)]()
+[![Release Status](https://img.shields.io/badge/Status-PORTFOLIO__CODE__READY-brightgreen.svg?style=flat)]()
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
 
 > [!NOTE]
-> **Product Positioning & Medical Disclaimer**: SleepSense is an observational activity tracker and rest diary designed for wellness and behavioral insights. It does **not** diagnose medical conditions (e.g. sleep apnea, narcolepsy, restless leg syndrome) and does not pretend to deliver clinical polysomnography (PSG) sleep staging (NREM/REM) from an uncalibrated smartphone accelerometer. All data is classified transparently as gross body movement intensity with explicit source provenance.
+> **Product Positioning & Medical Disclaimer**: SleepSense is an observational activity tracker and rest diary designed for wellness and behavioral insights. It does **not** diagnose medical conditions (e.g. sleep apnea, narcolepsy, restless leg syndrome) and does not pretend to deliver clinical polysomnography (PSG) sleep staging (NREM/REM) from an uncalibrated smartphone accelerometer. All data is classified transparently as gross body movement intensity with explicit source provenance (`REST`, `RESTLESS`, `ACTIVE`).
 
-### Quick Repository Links & Academic Delivery
-- 🎓 **[University Laboratory Reports (Labs 1–7)](deliverables/README.md)** — Complete course deliverables (`.docx` / `.pdf`) and final defense slide deck (`.pptx`).
-- 📚 **[Technical Documentation Index](docs/README.md)** — Comprehensive index of architecture documents, defense guides, and technical specifications.
-- 🔬 **[Independent Acceptance Audits & Visual Screenshots](docs/acceptance/)** — 11 deep-dive audit reports and 25 UI & Developer Lab screenshots.
-- 🧠 **[ML Model Card & Holdout Benchmarks](docs/ml/MODEL_CARD.md)** — Neural network architecture, Holdout metrics ($N=900$), and on-device latency.
-- 📊 **[Multimodal Ablation Study](docs/ml/multimodal_ablation_study.json)** — Feature ablation evaluating accelerometer vs. BLE heart rate fusion.
-- 📱 **[Internal Testing & QA Distribution](dist/internal-testing/SleepSense-2.0/INSTALL_AND_TEST_UK.md)** — Test plans, APK checksums, and tester guidelines.
+### Quick Repository Links & Technical Audits
+- 🔬 **[Final Project Technical Audit](docs/audit/FINAL_PROJECT_AUDIT.md)** — Comprehensive independent code audit and multi-role acceptance.
+- 📋 **[Final Defect Register](docs/audit/FINAL_DEFECT_REGISTER.md)** — Verified defect records, root-cause analyses, and regression tests.
+- 🧠 **[Final Model Selection & Deployment](docs/datascience/FINAL_MODEL_SELECTION_AND_DEPLOYMENT.md)** — 6-Fold Group CV, ECE calibration, mobile CPU latency, and TFLite contracts.
+- 📊 **[Scientific ML Audit & Group CV](docs/datascience/FINAL_ML_SCIENTIFIC_AUDIT.md)** — Domain shift investigation, statistical significance of heart rate ($p=0.067$), and class weighting.
+- 🗄️ **[Relational SQL Data Model](docs/datascience/SQL_DATA_MODEL.md)** — ANSI DDL schema, 9 tables, 15 analytical SQL queries, and 9 automated quality gates.
+- ⚙️ **[Synthetic Dataset Design](docs/datascience/SYNTHETIC_DATASET_DESIGN.md)** — Hierarchical semi-Markov generator, 20 Hz biomechanical acceleration with gravity, 1 Hz HR with autonomic inertia.
 
 ---
 

@@ -1,10 +1,10 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 04. Machine Learning 2.0 Revalidation & Scientific Calibration
 
-**Audit Date:** 2026-10-27  
-**Model Name:** `activity_classifier.tflite` (v2.1)  
-**Format:** Float32 FlatBuffer (10,756 bytes)  
-**Input Shape:** `[1, 20, 3]` (20 continuous temporal samples @ 20 Hz, 3 acceleration axes X/Y/Z)  
+**Audit Date:** 2026-10-27
+**Model Name:** `activity_classifier.tflite` (v2.1)
+**Format:** Float32 FlatBuffer (10,756 bytes)
+**Input Shape:** `[1, 20, 3]` (20 continuous temporal samples @ 20 Hz, 3 acceleration axes X/Y/Z)
 **Output Classes:** 3 (`REST`, `RESTLESS`, `ACTIVE`)
 
 ---
@@ -12,7 +12,7 @@
 ### 1. Model Grounding & Positioning
 
 > [!IMPORTANT]
-> **Scientific & Regulatory Positioning:**  
+> **Scientific & Regulatory Positioning:**
 > SleepSense 2.0 is an on-device nocturnal actigraphy motion classifier. It analyzes physical phone/wearable movement patterns. It **does not claim or attempt** to diagnose clinical sleep disorders or estimate medical sleep stages (N1/N2/N3/REM polysomnography), which fundamentally require EEG/EOG/EMG physiological channels.
 
 ### 2. Architecture & Normalization Pipeline

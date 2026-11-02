@@ -1,7 +1,7 @@
 # SleepSense 2.0: ML Model Evaluation & Benchmarking Report
 
-Generated: 2026-10-26  
-Status: Verified & Reproducible On-Device  
+Generated: 2026-10-26
+Status: Verified & Reproducible On-Device
 
 ## 1. Executive Summary
 

@@ -1,8 +1,8 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 03. Room Database v7 Migration & Schema Verification
 
-**Audit Date:** 2026-10-27  
-**Database Name:** `sleep_tracker.db`  
+**Audit Date:** 2026-10-27
+**Database Name:** `sleep_tracker.db`
 **Current Target Version:** **7** (Room 2.8.5)
 
 ---

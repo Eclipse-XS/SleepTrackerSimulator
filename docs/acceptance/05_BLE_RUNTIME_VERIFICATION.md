@@ -1,7 +1,7 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 05. BLE GATT Architecture & Peripheral Verification
 
-**Audit Date:** 2026-10-27  
+**Audit Date:** 2026-10-27
 **Subsystems Audited:**
 1. `VirtualSleepBand` (In-process synthetic simulator)
 2. `VirtualSleepBandAdvertiser` (Android BLE GATT Server & Advertiser)

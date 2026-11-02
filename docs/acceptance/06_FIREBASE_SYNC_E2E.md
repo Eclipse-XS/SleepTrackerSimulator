@@ -1,9 +1,9 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 06. Firebase Realtime Database Security & Sync Verification
 
-**Audit Date:** 2026-10-27  
-**Emulator:** `firebase-database-emulator-v4.11.2.jar` (Port 9000)  
-**Security Rules:** `database.rules.json`  
+**Audit Date:** 2026-10-27
+**Emulator:** `firebase-database-emulator-v4.11.2.jar` (Port 9000)
+**Security Rules:** `database.rules.json`
 **Test Suite:** `firebase-tests/database.rules.test.mjs`
 
 ---

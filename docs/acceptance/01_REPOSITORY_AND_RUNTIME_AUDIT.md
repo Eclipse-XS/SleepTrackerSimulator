@@ -1,9 +1,9 @@
 # SLEEPSENSE 2.0 — INDEPENDENT ACCEPTANCE AUDIT
 ## 01. Repository & Runtime Environment Audit
 
-**Audit Date:** 2026-10-27  
-**Branch:** `feature/sleepsense-product-overhaul`  
-**Base Commit:** `9a48e0e` (`release/labs-1-7-verified`)  
+**Audit Date:** 2026-10-27
+**Branch:** `feature/sleepsense-product-overhaul`
+**Base Commit:** `9a48e0e` (`release/labs-1-7-verified`)
 **Remediation Commits:**
 - `608d196`: `fix(remediation): resolve lint permissions, ble advertiser wiring, and session coordination`
 - `8820954`: `test(androidTest): resolve migration test schema references and complete v7 migration chain`
