@@ -38,6 +38,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 import tensorflow as tf
 
+from ml.data.window_dataset import load_dataset_from_sqlite as load_canonical_window_dataset
 from ml.evaluation_quality import expected_calibration_error
 
 DB_STD = ROOT / "data" / "synthetic" / "sleepsense_synthetic.sqlite"
@@ -47,80 +48,9 @@ CLASSES = ["REST", "RESTLESS", "ACTIVE"]
 
 
 def load_dataset_by_subject(db_path: Path | str) -> dict[str, dict[str, Any]]:
-    """Loads all session windows and corresponding raw tensors organized by subject."""
-    conn = sqlite3.connect(str(db_path))
-    sessions_query = """
-        SELECT s.session_id, s.subject_id, s.device_placement
-        FROM sessions s
-        ORDER BY s.subject_id, s.session_id;
-    """
-    sessions_df = conn.execute(sessions_query).fetchall()
-    data_by_subject: dict[str, dict[str, Any]] = {}
-
-    for session_id, subject_id, placement in sessions_df:
-        if subject_id not in data_by_subject:
-            data_by_subject[subject_id] = {
-                "subject_id": subject_id,
-                "placement": placement,
-                "sessions": [],
-                "accel_windows": [],
-                "hr_features": [],
-                "tabular_features": [],
-                "labels": [],
-                "window_ids": [],
-            }
-
-        fw_rows = conn.execute(
-            """
-            SELECT window_id, motion_rms, variance, jerk, peak_to_peak, mean_hr, hr_available, ground_truth_label
-            FROM feature_windows
-            WHERE session_id = ?
-            ORDER BY start_utc_millis ASC;
-            """,
-            (session_id,),
-        ).fetchall()
-
-        if not fw_rows:
-            continue
-
-        raw_samples = conn.execute(
-            """
-            SELECT x, y, z FROM accelerometer_samples
-            WHERE session_id = ?
-            ORDER BY sample_id ASC;
-            """,
-            (session_id,),
-        ).fetchall()
-
-        if not raw_samples:
-            continue
-
-        raw_arr = np.array(raw_samples, dtype=np.float32)
-
-        for w_idx, fw in enumerate(fw_rows):
-            wid, rms, var, jerk, p2p, m_hr, hr_avail, label_str = fw
-            label_int = CLASSES.index(label_str)
-
-            s_start = w_idx * 20
-            s_end = s_start + 20
-            if s_end <= len(raw_arr):
-                accel_win = raw_arr[s_start:s_end]
-            else:
-                accel_win = np.pad(raw_arr[s_start:], ((0, s_end - len(raw_arr)), (0, 0)), mode="edge")
-
-            norm_bpm = float((m_hr - 60.0) / 40.0) if hr_avail else 0.0
-            hr_feat = [norm_bpm, float(hr_avail)]
-            tab_feat = [rms, var, jerk, p2p, m_hr if hr_avail else 65.0, float(hr_avail)]
-
-            data_by_subject[subject_id]["sessions"].append(session_id)
-            data_by_subject[subject_id]["accel_windows"].append(accel_win)
-            data_by_subject[subject_id]["hr_features"].append(hr_feat)
-            data_by_subject[subject_id]["tabular_features"].append(tab_feat)
-            data_by_subject[subject_id]["labels"].append(label_int)
-            data_by_subject[subject_id]["window_ids"].append(wid)
-
-    conn.close()
-    return data_by_subject
+    """Loads all session windows and corresponding raw tensors organized by subject via canonical loader."""
+    dataset = load_canonical_window_dataset(db_path)
+    return dataset.data_by_subject
 
 
 def collate_subjects(data_dict: dict[str, Any], subs: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

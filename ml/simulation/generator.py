@@ -1,30 +1,31 @@
-"""Master Hierarchical Synthetic Sensor Dataset Generator.
+"""Master Hierarchical Synthetic Sensor Dataset Generator for SleepSense 2.0.
 
 Orchestrates population generation, semi-Markov state simulation, biomechanical
 accelerometer modeling, physiological HR inertia, fault injection, ground-truth
 interval alignment, and bounded-memory streaming persistence to SQLite and Parquet.
+Utilizes the authoritative Event-Time WindowBuilder (ml.data.window_builder).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Sequence
 
-import numpy as np
 import polars as pl
 from pyarrow import parquet as pq
 
-from ml.data.sqlite_storage import SqliteStorageManager
+from ml.data.sqlite_storage import OutputPolicy, SqliteStorageManager
+from ml.data.window_builder import WindowQualityPolicy, build_session_windows
 from ml.simulation.accelerometer_simulator import AccelerometerSimulator
 from ml.simulation.failure_simulator import FailureSimulator
 from ml.simulation.heart_rate_simulator import HeartRateSimulator
-from ml.simulation.state_machine import STATE_NAMES, SemiMarkovStateSimulator
-from ml.simulation.subject_profile import SubjectPopulationGenerator, VirtualSubject
+from ml.simulation.state_machine import SemiMarkovStateSimulator
+from ml.simulation.subject_profile import SubjectPopulationGenerator
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -86,11 +87,12 @@ class SyntheticDatasetGenerator:
         config: GeneratorConfig,
         parquet_output_dir: Path | str | None = None,
         progress_callback: Callable[[str], None] | None = None,
+        output_policy: OutputPolicy = OutputPolicy.REPLACE_GENERATED_DATA,
     ) -> dict[str, Any]:
         """Executes full reproducible dataset generation.
 
-        Streams session-by-session into SQLite to maintain bounded RAM (<500MB).
-        Optionally exports feature windows to Parquet.
+        Streams session-by-session into SQLite and Parquet to maintain bounded RAM (<100MB).
+        Uses authoritative event-time windowing with causal heart-rate alignment.
         """
         def log(msg: str) -> None:
             if progress_callback:
@@ -100,8 +102,9 @@ class SyntheticDatasetGenerator:
 
         log(f"Starting synthetic generation for profile '{config.profile_name}' (seed={config.master_seed})...")
 
-        # 1. Initialize SQLite schema
-        self.storage.init_schema(recreate=True)
+        # 1. Initialize SQLite schema safely according to output policy
+        self.storage.output_policy = output_policy
+        self.storage.init_schema(recreate=True, force_replace=True)
 
         # 2. Generate Virtual Subjects
         subjects = SubjectPopulationGenerator.generate_population(
@@ -112,7 +115,7 @@ class SyntheticDatasetGenerator:
         self.storage.insert_subjects(subjects)
         log(f"Generated and persisted {len(subjects)} virtual subjects.")
 
-        # Configuration hash
+        # Configuration fingerprint (deterministic identity)
         config_dict = {
             "profile": config.profile_name,
             "subjects": config.subject_count,
@@ -120,6 +123,9 @@ class SyntheticDatasetGenerator:
             "duration_min": config.session_duration_min,
             "seed": config.master_seed,
             "domain_shift": config.domain_shift,
+            "fault_scenario": config.fault_scenario,
+            "sampling_rate_hz": config.sampling_rate_hz,
+            "schema_version": "2.1.0",
         }
         config_hash = hashlib.sha256(json.dumps(config_dict, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -129,13 +135,15 @@ class SyntheticDatasetGenerator:
         total_gt_intervals = 0
         total_windows = 0
         total_quality_events = 0
+        total_training_eligible = 0
 
-        # Memory buffer for Parquet export
-        parquet_feature_rows: list[dict[str, Any]] = []
+        parquet_path = Path(parquet_output_dir) if parquet_output_dir is not None else None
+        if parquet_path is not None:
+            parquet_path.mkdir(parents=True, exist_ok=True)
 
         base_start_utc = 1730000000000  # Epoch millis reference
-
         failure_sim = FailureSimulator(seed=config.master_seed + 77)
+        quality_policy = WindowQualityPolicy(target_sampling_rate_hz=config.sampling_rate_hz)
 
         # 3. Generate Sessions per Subject in Bounded Chunks
         for sub_idx, subject in enumerate(subjects):
@@ -202,46 +210,45 @@ class SyntheticDatasetGenerator:
                 total_accel_samples += inserted_accel
                 total_hr_samples += inserted_hr
 
-                # F. Segment Synchronized Feature Windows with Leakage-Free Ground Truth
-                windows = self._extract_session_windows(
+                # F. Authoritative Event-Time Feature Window Building
+                build_res = build_session_windows(
                     session_id=session_id,
-                    accel_samples=mod_accel,
-                    hr_samples=mod_hr,
-                    intervals=intervals,
-                    start_utc_ms=start_utc_ms,
-                    window_size=20,
+                    session_start_ms=start_utc_ms,
+                    session_end_ms=end_utc_ms,
+                    raw_accelerometer_samples=mod_accel,
+                    raw_heart_rate_samples=mod_hr,
+                    ground_truth_intervals=intervals,
+                    policy=quality_policy,
                 )
+                windows = build_res.windows
                 self.storage.insert_feature_windows_batch(windows)
                 total_windows += len(windows)
-                parquet_feature_rows.extend(windows)
+                total_training_eligible += build_res.accepted_count
+
+                # Bounded-memory streaming Parquet persistence (session-by-session)
+                if parquet_path is not None and windows:
+                    df_sess = pl.DataFrame(windows)
+                    pq.write_to_dataset(
+                        df_sess.to_arrow(),
+                        root_path=str(parquet_path),
+                        partition_cols=["ground_truth_label"],
+                        existing_data_behavior="overwrite_or_ignore",
+                        compression="SNAPPY",
+                    )
 
                 total_sessions += 1
 
             log(f"Processed subject {sub_idx + 1}/{len(subjects)} ({subject.subject_id}): {config.sessions_per_subject} sessions.")
 
-        # 4. Optional Parquet Export
-        if parquet_output_dir is not None:
-            parquet_path = Path(parquet_output_dir)
-            parquet_path.mkdir(parents=True, exist_ok=True)
-            df_feat = pl.DataFrame(parquet_feature_rows)
+        if parquet_path is not None:
+            log(f"Streamed feature windows to partitioned Parquet at: {parquet_path}")
 
-            # Write partitioned dataset
-            arrow_table = df_feat.to_arrow()
-            pq.write_to_dataset(
-                arrow_table,
-                root_path=str(parquet_path),
-                partition_cols=["ground_truth_label"],
-                existing_data_behavior="overwrite_or_ignore",
-                compression="SNAPPY",
-            )
-            log(f"Exported {len(df_feat)} feature windows to Parquet at: {parquet_path}")
-
-        # 5. Record Dataset Manifest
+        # 4. Record Deterministic Dataset Manifest
         total_duration_hours = (total_sessions * config.session_duration_min) / 60.0
-        manifest_id = f"MANIFEST-{config.profile_name}-{int(time.time())}"
+        manifest_id = f"MANIFEST-{config.profile_name}-{config_hash}"
         manifest = {
             "manifest_id": manifest_id,
-            "dataset_version": f"2.0.0-{config.profile_name.lower()}",
+            "dataset_version": f"2.1.0-{config.profile_name.lower()}",
             "dataset_profile": config.profile_name,
             "generator_config_hash": config_hash,
             "master_seed": config.master_seed,
@@ -254,17 +261,22 @@ class SyntheticDatasetGenerator:
             "window_count": total_windows,
             "ground_truth_count": total_gt_intervals,
             "quality_event_count": total_quality_events,
-            "schema_version": "2.0.0",
+            "training_eligible_count": total_training_eligible,
+            "schema_version": "2.1.0",
         }
         self.storage.record_manifest(manifest)
 
-        # 6. Verify Referential Integrity
+        # 5. Verify Referential Integrity
         fk_violations = self.storage.verify_referential_integrity()
         if fk_violations:
             raise RuntimeError(f"Database referential integrity violations: {fk_violations}")
 
         log(f"Referential integrity verified: 0 foreign key violations.")
-        log(f"Generation complete! Total sessions={total_sessions}, Accel samples={total_accel_samples:,}, HR samples={total_hr_samples:,}, Windows={total_windows:,}.")
+        log(
+            f"Generation complete! Total sessions={total_sessions}, "
+            f"Accel samples={total_accel_samples:,}, HR samples={total_hr_samples:,}, "
+            f"Windows={total_windows:,} (eligible={total_training_eligible:,})."
+        )
 
         return manifest
 
@@ -277,88 +289,14 @@ class SyntheticDatasetGenerator:
         start_utc_ms: int,
         window_size: int = 20,
     ) -> list[dict[str, Any]]:
-        """Segments raw samples into 20-sample windows and extracts features with ground truth."""
-        if len(accel_samples) < window_size:
-            return []
-
-        windows: list[dict[str, Any]] = []
-        n_windows = len(accel_samples) // window_size
-        dt_sec = 0.05
-
-        # Create quick lookup for HR samples by utc_millis
-        hr_times = np.array([h["utc_millis"] for h in hr_samples], dtype=np.int64) if hr_samples else np.array([], dtype=np.int64)
-        hr_bpms = np.array([h["bpm"] for h in hr_samples], dtype=np.float32) if hr_samples else np.array([], dtype=np.float32)
-
-        # Create interval boundaries in ms
-        int_starts_ms = np.array([start_utc_ms + int(round(it.start_sec * 1000)) for it in intervals], dtype=np.int64)
-        int_ends_ms = np.array([start_utc_ms + int(round(it.end_sec * 1000)) for it in intervals], dtype=np.int64)
-        int_labels = [it.state_name for it in intervals]
-
-        for w_idx in range(n_windows):
-            start_i = w_idx * window_size
-            end_i = start_i + window_size
-            w_samples = accel_samples[start_i:end_i]
-
-            w_start_utc = w_samples[0]["utc_millis"]
-            w_end_utc = w_samples[-1]["utc_millis"]
-
-            # Triaxial arrays
-            xs = np.array([s["x"] for s in w_samples], dtype=np.float32)
-            ys = np.array([s["y"] for s in w_samples], dtype=np.float32)
-            zs = np.array([s["z"] for s in w_samples], dtype=np.float32)
-
-            # Center dynamic acceleration (gravity removal)
-            dyn_x = xs - np.mean(xs)
-            dyn_y = ys - np.mean(ys)
-            dyn_z = zs - np.mean(zs)
-
-            mags = np.sqrt(dyn_x**2 + dyn_y**2 + dyn_z**2)
-            rms = float(np.sqrt(np.mean(mags**2)))
-            variance = float(np.var(mags))
-            peak_to_peak = float(np.max(mags) - np.min(mags))
-
-            # Jerk
-            jerk = np.diff(mags) / dt_sec
-            jerk_rms = float(np.sqrt(np.mean(jerk**2))) if len(jerk) > 0 else 0.0
-
-            # Heart rate within [w_start_utc - 10_000, w_end_utc + 1_000]
-            if len(hr_times) > 0:
-                mask = (hr_times >= (w_start_utc - 10_000)) & (hr_times <= (w_end_utc + 1_000))
-                matching_bpms = hr_bpms[mask]
-                if len(matching_bpms) > 0:
-                    mean_hr = float(np.mean(matching_bpms))
-                    hr_available = 1
-                else:
-                    mean_hr = None
-                    hr_available = 0
-            else:
-                mean_hr = None
-                hr_available = 0
-
-            # Ground truth assignment from latent state interval overlap (center of window)
-            w_center_utc = (w_start_utc + w_end_utc) // 2
-            gt_label = "REST"
-            for k in range(len(int_starts_ms)):
-                if int_starts_ms[k] <= w_center_utc <= int_ends_ms[k]:
-                    gt_label = int_labels[k]
-                    break
-
-            window_id = f"{session_id}-w{w_idx:05d}"
-            windows.append({
-                "window_id": window_id,
-                "session_id": session_id,
-                "start_utc_millis": w_start_utc,
-                "end_utc_millis": w_end_utc,
-                "sample_count": window_size,
-                "coverage_fraction": 1.0,
-                "motion_rms": round(rms, 6),
-                "variance": round(variance, 6),
-                "jerk": round(jerk_rms, 6),
-                "peak_to_peak": round(peak_to_peak, 6),
-                "mean_hr": round(mean_hr, 1) if mean_hr is not None else None,
-                "hr_available": hr_available,
-                "ground_truth_label": gt_label,
-                "provenance": "SIMULATED",
-            })
-
-        return windows
+        """Backward-compatible proxy forwarding to authoritative build_session_windows."""
+        end_utc_ms = start_utc_ms + (len(accel_samples) // window_size) * 1000
+        res = build_session_windows(
+            session_id=session_id,
+            session_start_ms=start_utc_ms,
+            session_end_ms=end_utc_ms,
+            raw_accelerometer_samples=accel_samples,
+            raw_heart_rate_samples=hr_samples,
+            ground_truth_intervals=intervals,
+        )
+        return res.windows

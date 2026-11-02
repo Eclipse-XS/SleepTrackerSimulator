@@ -1,0 +1,47 @@
+{
+  "model_id": "multimodal-tflite-v2.1",
+  "model_version": "2.1.0",
+  "tflite_sha256": "e7c6b8c41fa4a2e454b8f7f9c0b3fa1fcdcce8fafd6fed9a2f86b365429aa8f0",
+  "dense_tflite_sha256": "e16278e0d18b710a68bb04fc700091f16791dcb4b01e16491f37ade0ed03b85b",
+  "input_tensors": [
+    {
+      "name": "accelerometer_input",
+      "shape": [
+        1,
+        20,
+        3
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "heart_rate_input",
+      "shape": [
+        1,
+        2
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "output_tensors": [
+    {
+      "name": "probabilities",
+      "shape": [
+        1,
+        3
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "classes": [
+    "REST",
+    "RESTLESS",
+    "ACTIVE"
+  ],
+  "hr_normalization": "norm_bpm = (bpm - 60.0) / 40.0",
+  "hr_staleness_contract": "0 <= age_ms <= 10000",
+  "macro_f1_test": 0.7013915234990998,
+  "accuracy_test": 0.9485185185185185,
+  "balanced_accuracy_test": 0.6116792939220641,
+  "domain_shift_macro_f1": 0.2976079832675353,
+  "created_at_utc": "2026-11-02 21:51:18"
+}

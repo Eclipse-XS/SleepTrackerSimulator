@@ -48,14 +48,18 @@ FROM (
     SELECT w.window_id FROM feature_windows w LEFT JOIN sessions s ON w.session_id = s.session_id WHERE s.session_id IS NULL
 );
 
--- Gate 6: Window Contract Verification (Sample count = 20, non-negative motion features)
+-- Gate 6: Window Contract & Physical Boundaries Verification
+-- Corrected: validates finite boundaries [0, 1] and non-negative features - allows real incomplete windows
 SELECT 'GATE_6_WINDOW_CONTRACT' AS gate_name, COUNT(*) AS violations
 FROM feature_windows
-WHERE sample_count != 20
+WHERE sample_count < 0
    OR motion_rms < 0.0
    OR variance < 0.0
    OR jerk < 0.0
-   OR coverage_fraction != 1.0;
+   OR peak_to_peak < 0.0
+   OR coverage_fraction < 0.0
+   OR coverage_fraction > 1.0
+   OR start_utc_millis >= end_utc_millis;
 
 -- Gate 7: Ground Truth Interval Non-Overlapping Ordering
 SELECT 'GATE_7_INTERVAL_INTEGRITY' AS gate_name, COUNT(*) AS violations
@@ -75,4 +79,33 @@ FROM (
     FROM accelerometer_samples
     GROUP BY session_id, utc_millis
     HAVING cnt > 1
+);
+
+-- Gate 10: Training Eligibility Integrity
+-- Training eligible windows must have valid coverage (>= 0.85), no large gap, and sufficient samples
+SELECT 'GATE_10_TRAINING_ELIGIBILITY' AS gate_name, COUNT(*) AS violations
+FROM feature_windows
+WHERE training_eligible = 1
+  AND (coverage_fraction < 0.85 OR has_large_gap = 1 OR sample_count < 2);
+
+-- Gate 11: Causal Heart Rate Integrity
+-- Available heart rate must be within physiological range [30, 240] - unavailable must be null
+SELECT 'GATE_11_CAUSAL_HR_INTEGRITY' AS gate_name, COUNT(*) AS violations
+FROM feature_windows
+WHERE (hr_available = 1 AND (mean_hr IS NULL OR mean_hr < 30 OR mean_hr > 240))
+   OR (hr_available = 0 AND mean_hr IS NOT NULL);
+
+-- Gate 12: Prediction Referential Integrity & Probability Normalization
+SELECT 'GATE_12_PREDICTION_INTEGRITY' AS gate_name, COUNT(*) AS violations
+FROM (
+    SELECT p.prediction_id
+    FROM model_predictions p
+    LEFT JOIN feature_windows w ON p.window_id = w.window_id
+    WHERE w.window_id IS NULL
+       OR p.confidence < 0.0 OR p.confidence > 1.0
+       OR p.prob_rest < 0.0 OR p.prob_rest > 1.0
+       OR p.prob_restless < 0.0 OR p.prob_restless > 1.0
+       OR p.prob_active < 0.0 OR p.prob_active > 1.0
+       OR (p.prob_rest + p.prob_restless + p.prob_active) < 0.99
+       OR (p.prob_rest + p.prob_restless + p.prob_active) > 1.01
 );

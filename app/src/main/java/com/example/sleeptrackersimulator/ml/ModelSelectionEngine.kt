@@ -107,8 +107,9 @@ class DefaultModelSelectionEngine(
                 qualityFlags.add("SIMULATED_HEART_RATE")
             }
             val refTimeMs = samples.lastOrNull()?.utcTimestampMillis ?: System.currentTimeMillis()
-            val hrAgeMs = kotlin.math.abs(refTimeMs - recentHeartRate.utcTimestampMillis)
-            val isHrFresh = hrAgeMs <= maxHeartRateStalenessMillis
+            val hrAgeMs = refTimeMs - recentHeartRate.utcTimestampMillis
+            val isHrFuture = hrAgeMs < 0
+            val isHrFresh = hrAgeMs in 0..maxHeartRateStalenessMillis
             val isHrValid = recentHeartRate.bpm in 30..240
 
             if (isHrFresh && isHrValid) {
@@ -143,6 +144,9 @@ class DefaultModelSelectionEngine(
                 } catch (t: Throwable) {
                     fallbackReason = "multimodal_inference_failed: ${t.message ?: t.javaClass.simpleName}"
                 }
+            } else if (isHrFuture) {
+                qualityFlags.add("FUTURE_HEART_RATE")
+                fallbackReason = "future_heart_rate_${-hrAgeMs}ms"
             } else if (!isHrFresh) {
                 qualityFlags.add("STALE_HEART_RATE")
                 fallbackReason = "stale_heart_rate_${hrAgeMs}ms"

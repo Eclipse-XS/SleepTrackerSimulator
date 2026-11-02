@@ -187,7 +187,7 @@ class ModelSelectionEngineTest {
             activityClassifier = fakeAccelClassifier,
             multimodalClassifier = fakeMultimodalClassifier,
         )
-        val window = List(20) { makeSample(utcTimestampMillis = 1_700_000_000_000L) }
+        val window = List(20) { index -> makeSample(utcTimestampMillis = 1_700_000_000_000L + index * 50L) }
         val freshHr = makeHeartRate(bpm = 65, utcTimestampMillis = 1_700_000_000_500L)
 
         val result = engine.selectAndClassify(window, recentHeartRate = freshHr)
@@ -196,6 +196,24 @@ class ModelSelectionEngineTest {
         assertEquals(ActivityClass.REST, result.activity)
         assertEquals(0.98f, result.confidence, 0.001f)
         assertEquals("multimodal-tflite-v1.0", result.modelId)
+    }
+
+    @Test
+    fun testMultimodalRejectsFutureHeartRate() {
+        val engine = DefaultModelSelectionEngine(
+            activityClassifier = fakeAccelClassifier,
+            multimodalClassifier = fakeMultimodalClassifier,
+        )
+        val window = List(20) { index -> makeSample(utcTimestampMillis = 1_700_000_000_000L + index * 50L) }
+        // Future HR: 5 seconds in the future relative to the window's last sample
+        val futureHr = makeHeartRate(bpm = 65, utcTimestampMillis = 1_700_000_006_000L)
+
+        val result = engine.selectAndClassify(window, recentHeartRate = futureHr)
+
+        assertEquals(InferenceMode.ACCELEROMETER_TFLITE, result.inferenceMode)
+        assertEquals(ActivityClass.REST, result.activity)
+        assertTrue(result.qualityFlags.contains("FUTURE_HEART_RATE"))
+        assertTrue(result.fallbackReason?.contains("future_heart_rate") == true)
     }
 
     @Test

@@ -98,10 +98,16 @@ CREATE TABLE IF NOT EXISTS feature_windows (
     mean_hr REAL,
     hr_available INTEGER NOT NULL CHECK(hr_available IN (0, 1)),
     ground_truth_label TEXT NOT NULL CHECK(ground_truth_label IN ('REST', 'RESTLESS', 'ACTIVE')),
-    provenance TEXT NOT NULL DEFAULT 'SIMULATED'
+    provenance TEXT NOT NULL DEFAULT 'SIMULATED',
+    max_gap_ms INTEGER NOT NULL DEFAULT 50,
+    has_large_gap INTEGER NOT NULL DEFAULT 0 CHECK(has_large_gap IN (0, 1)),
+    was_resampled INTEGER NOT NULL DEFAULT 0 CHECK(was_resampled IN (0, 1)),
+    training_eligible INTEGER NOT NULL DEFAULT 1 CHECK(training_eligible IN (0, 1)),
+    quality_flags TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_fw_session_label ON feature_windows(session_id, ground_truth_label);
+CREATE INDEX IF NOT EXISTS idx_fw_eligible ON feature_windows(training_eligible);
 
 -- 7. Model Inferences & Predictions
 CREATE TABLE IF NOT EXISTS model_predictions (
@@ -147,5 +153,5 @@ CREATE TABLE IF NOT EXISTS dataset_manifests (
     window_count INTEGER NOT NULL,
     ground_truth_count INTEGER NOT NULL,
     quality_event_count INTEGER NOT NULL,
-    schema_version TEXT NOT NULL DEFAULT '2.0.0'
+    schema_version TEXT NOT NULL DEFAULT '2.1.0'
 );

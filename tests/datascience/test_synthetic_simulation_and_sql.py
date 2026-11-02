@@ -212,3 +212,45 @@ def test_domain_shift_evaluation_source_isolation() -> None:
     _, _, _, y_shift = collate_subjects(fake_shifted, ["SUBJ-001"])
     assert len(y_shift) == 1
     assert y_shift[0] == 2, "Data leakage detected: shifted collation returned standard training data!"
+
+
+def test_domain_shift_end_to_end_isolation(tmp_path: Path) -> None:
+    """End-to-end regression test for ML-004: Standard and Shifted SQL datasets remain completely isolated."""
+    from ml.data.window_dataset import load_dataset_from_sqlite
+
+    # Standard database fixture
+    db_std = tmp_path / "std.sqlite"
+    sm_std = SqliteStorageManager(db_path=db_std)
+    sm_std.init_schema(recreate=True)
+    with sm_std.session_scope() as conn:
+        conn.execute("INSERT INTO subjects (subject_id, baseline_hr, hr_response_amplitude, hr_tau_rise_sec, hr_tau_recovery_sec, hr_variability_std, movement_scale, restlessness_tendency, preferred_placement, device_orientation_euler, sensor_noise_std, ble_packet_loss_rate, typical_duration_min, generator_version, created_at_utc_ms) VALUES ('SUBJ-COLLIDE', 60, 10, 10, 20, 2, 1, 0.1, 'CHEST', '[]', 0.05, 0.01, 30, '2.1.0', 1000);")
+        conn.execute("INSERT INTO sessions (session_id, subject_id, start_utc_millis, end_utc_millis, duration_sec, device_placement, simulation_seed, generator_version) VALUES ('SESS-STD', 'SUBJ-COLLIDE', 1000, 2000, 1.0, 'CHEST', 42, '2.1.0');")
+        for i in range(20):
+            conn.execute("INSERT INTO accelerometer_samples (session_id, elapsed_nanos, utc_millis, x, y, z) VALUES ('SESS-STD', ?, ?, 0.0, 0.0, 9.81);", ((1000 + i * 50) * 1_000_000, 1000 + i * 50))
+        conn.execute("INSERT INTO feature_windows (window_id, session_id, start_utc_millis, end_utc_millis, sample_count, coverage_fraction, motion_rms, variance, jerk, peak_to_peak, mean_hr, hr_available, ground_truth_label, provenance, max_gap_ms, has_large_gap, was_resampled, training_eligible, quality_flags) VALUES ('w-std-1', 'SESS-STD', 1000, 2000, 20, 1.0, 0.01, 0.001, 0.01, 0.01, 60.0, 1, 'REST', 'SIMULATED', 50, 0, 0, 1, '');")
+
+    # Shifted database fixture with identical colliding subject ID
+    db_shift = tmp_path / "shift.sqlite"
+    sm_shift = SqliteStorageManager(db_path=db_shift)
+    sm_shift.init_schema(recreate=True)
+    with sm_shift.session_scope() as conn:
+        conn.execute("INSERT INTO subjects (subject_id, baseline_hr, hr_response_amplitude, hr_tau_rise_sec, hr_tau_recovery_sec, hr_variability_std, movement_scale, restlessness_tendency, preferred_placement, device_orientation_euler, sensor_noise_std, ble_packet_loss_rate, typical_duration_min, generator_version, created_at_utc_ms) VALUES ('SUBJ-COLLIDE', 85, 25, 10, 20, 5, 2, 0.8, 'NIGHTSTAND', '[]', 0.25, 0.05, 30, '2.1.0', 1000);")
+        conn.execute("INSERT INTO sessions (session_id, subject_id, start_utc_millis, end_utc_millis, duration_sec, device_placement, simulation_seed, generator_version) VALUES ('SESS-SHIFT', 'SUBJ-COLLIDE', 5000, 6000, 1.0, 'NIGHTSTAND', 999, '2.1.0');")
+        for i in range(20):
+            conn.execute("INSERT INTO accelerometer_samples (session_id, elapsed_nanos, utc_millis, x, y, z) VALUES ('SESS-SHIFT', ?, ?, 5.0, 5.0, 9.81);", ((5000 + i * 50) * 1_000_000, 5000 + i * 50))
+        conn.execute("INSERT INTO feature_windows (window_id, session_id, start_utc_millis, end_utc_millis, sample_count, coverage_fraction, motion_rms, variance, jerk, peak_to_peak, mean_hr, hr_available, ground_truth_label, provenance, max_gap_ms, has_large_gap, was_resampled, training_eligible, quality_flags) VALUES ('w-shift-1', 'SESS-SHIFT', 5000, 6000, 20, 1.0, 1.85, 0.5, 2.5, 3.0, 95.0, 1, 'ACTIVE', 'SIMULATED', 50, 0, 0, 1, '');")
+
+    ds_std = load_dataset_from_sqlite(db_std)
+    ds_shift = load_dataset_from_sqlite(db_shift)
+
+    X_std, _, _, y_std, wids_std = ds_std.collate_subjects(["SUBJ-COLLIDE"])
+    X_shift, _, _, y_shift, wids_shift = ds_shift.collate_subjects(["SUBJ-COLLIDE"])
+
+    # Assert complete physical and identifier isolation
+    assert wids_std == ["w-std-1"]
+    assert wids_shift == ["w-shift-1"]
+    assert y_std[0] == 0  # REST
+    assert y_shift[0] == 2  # ACTIVE
+    assert not np.allclose(X_std, X_shift)
+    assert np.allclose(X_std[:, :, 0], 0.0)
+    assert np.allclose(X_shift[:, :, 0], 5.0)

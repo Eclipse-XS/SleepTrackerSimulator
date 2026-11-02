@@ -185,6 +185,21 @@ def cmd_build_dataset(args: argparse.Namespace) -> None:
     print(f"SUCCESS: Parquet dataset built and partitioned at: {out_dir}")
 
 
+def cmd_promote(args: argparse.Namespace) -> None:
+    """Verifies and promotes a staged candidate TFLite model to production assets."""
+    from ml.export.model_promoter import ModelPromoter
+
+    promoter = ModelPromoter()
+    print(f"Promoting candidate {args.candidate} -> {args.target}...")
+    receipt = promoter.promote(
+        candidate_filename=args.candidate,
+        target_filename=args.target,
+        notes=args.notes or "Promoted via sleepsense-pipeline CLI",
+    )
+    print("PROMOTION SUCCESSFUL!")
+    print(json.dumps(receipt, indent=2))
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     print(f"Running DuckDB analytics on dataset: {args.dataset}")
     analytics = SleepDataAnalytics(args.dataset)
@@ -226,6 +241,12 @@ def main() -> None:
     p_mon.add_argument("--standard-db", default=str(ROOT / "data" / "synthetic" / "sleepsense_synthetic.sqlite"), help="Baseline SQLite database")
     p_mon.add_argument("--shifted-db", default=str(ROOT / "data" / "synthetic" / "sleepsense_shifted.sqlite"), help="Shifted SQLite database")
 
+    # 7. Promote
+    p_promo = subparsers.add_parser("promote", help="Promote staged candidate model to Android production assets")
+    p_promo.add_argument("--candidate", default="multimodal_classifier_candidate.tflite", help="Candidate filename in ml/artifacts/candidates/")
+    p_promo.add_argument("--target", default="multimodal_classifier.tflite", help="Target filename in app/src/main/assets/")
+    p_promo.add_argument("--notes", default="Promoted via CLI", help="Audit notes")
+
     # Backward compatibility commands
     p_ingest = subparsers.add_parser("ingest", help="Ingest Android JSON/CSV export")
     p_ingest.add_argument("--input", required=True)
@@ -246,6 +267,7 @@ def main() -> None:
         "eda": cmd_eda,
         "train": cmd_train,
         "monitor": cmd_monitor,
+        "promote": cmd_promote,
         "ingest": cmd_ingest,
         "build-dataset": cmd_build_dataset,
         "analyze": cmd_analyze,

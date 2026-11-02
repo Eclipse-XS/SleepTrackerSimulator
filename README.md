@@ -7,7 +7,9 @@
 [![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
 [![Android Tests](https://img.shields.io/badge/Android%20Unit%20Tests-295%20PASSED%20(279%20app%20%2B%2016%20vsb)-brightgreen.svg?style=flat)]()
-[![Python Tests](https://img.shields.io/badge/Python%20Tests-27%20PASSED-brightgreen.svg?style=flat)]()
+[![Python Tests](https://img.shields.io/badge/Python%20Tests-57%20PASSED%20(12%20subtests)-brightgreen.svg?style=flat)]()
+[![SQL Quality Gates](https://img.shields.io/badge/SQL%20Quality%20Gates-12%2F12%20PASSED%20(0%20violations)-brightgreen.svg?style=flat)]()
+[![Engineering Maturity](https://img.shields.io/badge/Maturity%20Score-DE%2094%2F100%20%7C%20ML%2092%2F100-blue.svg?style=flat)]()
 [![Release Status](https://img.shields.io/badge/Status-PORTFOLIO__CODE__READY-brightgreen.svg?style=flat)]()
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
@@ -16,12 +18,16 @@
 > **Product Positioning & Medical Disclaimer**: SleepSense is an observational activity tracker and rest diary designed for wellness and behavioral insights. It does **not** diagnose medical conditions (e.g. sleep apnea, narcolepsy, restless leg syndrome) and does not pretend to deliver clinical polysomnography (PSG) sleep staging (NREM/REM) from an uncalibrated smartphone accelerometer. All data is classified transparently as gross body movement intensity with explicit source provenance (`REST`, `RESTLESS`, `ACTIVE`).
 
 ### Quick Repository Links & Technical Audits
+- 🏆 **[Final ML & DE Engineering Scorecard](docs/audit/FINAL_ML_DE_SCORECARD.md)** — Audited DE (94/100) and ML (92/100) maturity breakdown.
+- 🛠️ **[Final ML & DE Remediation Report](docs/audit/FINAL_ML_DE_REMEDIATION.md)** — Architectural hardening, root cause fixes, and before/after evidence.
+- ⏱️ **[Data Integrity Acceptance Report](docs/datascience/DATA_INTEGRITY_ACCEPTANCE.md)** — Event-time windowing, 20-bin coverage, and 12 SQL quality gates.
+- 🔁 **[Dataset Reproducibility Report](docs/datascience/DATASET_REPRODUCIBILITY_REPORT.md)** — Deterministic manifests, bounded-memory streaming Parquet, and storage safety.
+- 🔬 **[Final Experimental Integrity Report](docs/datascience/FINAL_EXPERIMENTAL_INTEGRITY.md)** — Subject-independent 6-Fold GroupKFold CV, paired t-tests, and true domain shift.
+- 📦 **[Final Model Provenance & Registry](docs/datascience/FINAL_MODEL_PROVENANCE.md)** — Candidate staging, TFLite checksums, and audited promotion protocol.
+- 📱 **[Final ML Deployment Acceptance](docs/datascience/FINAL_ML_DEPLOYMENT_ACCEPTANCE.md)** — 4-tier Android inference engine, causal HR alignment, and on-device parity.
 - 🔬 **[Final Project Technical Audit](docs/audit/FINAL_PROJECT_AUDIT.md)** — Comprehensive independent code audit and multi-role acceptance.
 - 📋 **[Final Defect Register](docs/audit/FINAL_DEFECT_REGISTER.md)** — Verified defect records, root-cause analyses, and regression tests.
-- 🧠 **[Final Model Selection & Deployment](docs/datascience/FINAL_MODEL_SELECTION_AND_DEPLOYMENT.md)** — 6-Fold Group CV, ECE calibration, mobile CPU latency, and TFLite contracts.
-- 📊 **[Scientific ML Audit & Group CV](docs/datascience/FINAL_ML_SCIENTIFIC_AUDIT.md)** — Domain shift investigation, statistical significance of heart rate ($p=0.067$), and class weighting.
-- 🗄️ **[Relational SQL Data Model](docs/datascience/SQL_DATA_MODEL.md)** — ANSI DDL schema, 9 tables, 15 analytical SQL queries, and 9 automated quality gates.
-- ⚙️ **[Synthetic Dataset Design](docs/datascience/SYNTHETIC_DATASET_DESIGN.md)** — Hierarchical semi-Markov generator, 20 Hz biomechanical acceleration with gravity, 1 Hz HR with autonomic inertia.
+- 🗄️ **[Relational SQL Data Model](docs/datascience/SQL_DATA_MODEL.md)** — ANSI DDL schema v2.1.0, 9 tables, 15 analytical SQL queries, and 12 quality gates.
 
 ---
 

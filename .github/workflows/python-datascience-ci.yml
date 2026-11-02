@@ -1,0 +1,58 @@
+name: Python Data Science & ML CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  datascience-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Upgrade pip and install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Verify dependency tree integrity
+        run: |
+          python -m pip check
+
+      - name: Syntax and fatal error linting with Ruff
+        run: |
+          ruff check ml pipelines tests --select=E9,F63,F7,F82
+
+      - name: Fast Unit and Temporal Integrity Tests
+        run: |
+          python -m pytest -q tests/data/test_window_builder.py tests/data/test_window_dataset.py tests/data/test_storage_safety_and_determinism.py tests/ml/test_model_promoter.py
+
+      - name: Synthetic Generation Smoke Test and Relational Quality Gates
+        run: |
+          python -m pipelines.cli.main generate --profile SMALL --seed 42
+          python -m pipelines.cli.main validate
+
+      - name: Mutation Tests and Quality Gate Failure Invariant Verification
+        run: |
+          python -m pytest -q tests/data/test_data_quality_gates_mutation.py
+
+      - name: Leakage-Safe Domain Shift End-to-End Test
+        run: |
+          python -m pytest -q tests/datascience/test_synthetic_simulation_and_sql.py
+
+      - name: Candidate TFLite Staging and Promotion Verification
+        run: |
+          python -m pipelines.cli.main promote --help

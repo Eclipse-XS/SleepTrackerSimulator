@@ -42,8 +42,10 @@ from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
 
 from ml.data.sqlite_storage import SqliteStorageManager
+from ml.data.window_dataset import load_dataset_from_sqlite as load_canonical_window_dataset
 from ml.evaluation_quality import assert_no_recording_leakage, expected_calibration_error
 from ml.simulation.generator import PROFILES, SyntheticDatasetGenerator
+from sklearn.utils.class_weight import compute_class_weight
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "data" / "synthetic" / "sleepsense_synthetic.sqlite"
@@ -53,89 +55,9 @@ LABEL_TO_INT = {c: i for i, c in enumerate(CLASSES)}
 
 
 def load_dataset_from_sqlite(db_path: Path | str = DB_PATH) -> dict[str, Any]:
-    """Loads all session windows and corresponding raw tensors organized by subject."""
-    conn = sqlite3.connect(str(db_path))
-
-    # Fetch subjects and sessions
-    sessions_query = """
-        SELECT s.session_id, s.subject_id, s.device_placement
-        FROM sessions s
-        ORDER BY s.subject_id, s.session_id;
-    """
-    sessions_df = conn.execute(sessions_query).fetchall()
-
-    data_by_subject: dict[str, dict[str, Any]] = {}
-
-    for session_id, subject_id, placement in sessions_df:
-        if subject_id not in data_by_subject:
-            data_by_subject[subject_id] = {
-                "subject_id": subject_id,
-                "placement": placement,
-                "sessions": [],
-                "accel_windows": [],
-                "hr_features": [],
-                "tabular_features": [],
-                "labels": [],
-                "window_ids": [],
-            }
-
-        # Fetch feature windows
-        fw_rows = conn.execute(
-            """
-            SELECT window_id, motion_rms, variance, jerk, peak_to_peak, mean_hr, hr_available, ground_truth_label
-            FROM feature_windows
-            WHERE session_id = ?
-            ORDER BY start_utc_millis ASC;
-            """,
-            (session_id,),
-        ).fetchall()
-
-        if not fw_rows:
-            continue
-
-        # Fetch all raw accelerometer samples for session
-        raw_samples = conn.execute(
-            """
-            SELECT x, y, z FROM accelerometer_samples
-            WHERE session_id = ?
-            ORDER BY utc_millis ASC;
-            """,
-            (session_id,),
-        ).fetchall()
-
-        raw_arr = np.array(raw_samples, dtype=np.float32)
-        n_windows = len(fw_rows)
-
-        # Slice raw accelerometer into [N, 20, 3]
-        if len(raw_arr) >= n_windows * 20:
-            sliced_accel = raw_arr[: n_windows * 20].reshape((n_windows, 20, 3))
-        else:
-            continue
-
-        for i, fw in enumerate(fw_rows):
-            w_id, rms, var, jerk, p2p, mean_hr, hr_avail, label = fw
-            norm_bpm = (float(mean_hr) - 60.0) / 40.0 if (hr_avail and mean_hr is not None) else 0.0
-            hr_mask = 1.0 if hr_avail else 0.0
-
-            # Tabular features for classical models
-            tab_feat = [
-                float(rms),
-                float(var),
-                float(jerk),
-                float(p2p),
-                float(norm_bpm),
-                float(hr_mask),
-            ]
-
-            data_by_subject[subject_id]["sessions"].append(session_id)
-            data_by_subject[subject_id]["window_ids"].append(w_id)
-            data_by_subject[subject_id]["accel_windows"].append(sliced_accel[i])
-            data_by_subject[subject_id]["hr_features"].append([norm_bpm, hr_mask])
-            data_by_subject[subject_id]["tabular_features"].append(tab_feat)
-            data_by_subject[subject_id]["labels"].append(LABEL_TO_INT[label])
-
-    conn.close()
-    return data_by_subject
+    """Loads all session windows and corresponding raw tensors organized by subject via canonical loader."""
+    dataset = load_canonical_window_dataset(db_path)
+    return dataset.data_by_subject
 
 
 def benchmark_model_latency(predict_fn, sample_input, iterations: int = 300) -> float:
@@ -239,7 +161,11 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     # Verify recording session leakage
     assert_no_recording_leakage(train_sids, test_sids)
 
+    # Calculate balanced class weights on Train ONLY to combat minority-class degradation (ML-006)
+    class_weights_arr = compute_class_weight("balanced", classes=np.array([0, 1, 2]), y=y_train)
+    class_weight_dict = {i: float(class_weights_arr[i]) for i in range(3)}
     print(f"Dataset window counts: Train={len(y_train):,}, Val={len(y_val):,}, Test={len(y_test):,}")
+    print(f"Computed training class weights: {class_weight_dict}")
 
     # Standardize tabular features using Train ONLY (zero leakage)
     scaler = StandardScaler()
@@ -403,6 +329,7 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
         validation_data=(X_val_accel, y_val),
         epochs=12,
         batch_size=128,
+        class_weight=class_weight_dict,
         verbose=0,
     )
     dense_probs = dense_model.predict(X_test_accel, verbose=0)
@@ -459,6 +386,7 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
         validation_data=(X_val_accel, y_val),
         epochs=12,
         batch_size=128,
+        class_weight=class_weight_dict,
         verbose=0,
     )
     cnn_probs = cnn_model.predict(X_test_accel, verbose=0)
@@ -524,6 +452,7 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
         validation_data=([X_val_accel, X_val_hr], y_val),
         epochs=14,
         batch_size=128,
+        class_weight=class_weight_dict,
         verbose=0,
     )
     multi_probs = multi_model.predict([X_test_accel, X_test_hr], verbose=0)
@@ -604,10 +533,9 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
 
     # G. Accelerometer + Shifted Generator Configuration
     print("Generating Held-Out SHIFTED Cohort for Domain Shift Evaluation...")
-    shifted_gen = SyntheticDatasetGenerator()
     shifted_db_path = ROOT / "data" / "synthetic" / "sleepsense_shifted.sqlite"
     sm_shifted = SqliteStorageManager(shifted_db_path)
-    shifted_gen.storage = sm_shifted
+    shifted_gen = SyntheticDatasetGenerator(storage_manager=sm_shifted)
     shifted_manifest = shifted_gen.generate_dataset(PROFILES["SHIFTED"])
     data_shifted = load_dataset_from_sqlite(shifted_db_path)
 
@@ -625,6 +553,42 @@ def run_experiments(db_path: Path | str = DB_PATH) -> dict[str, Any]:
     print(f"Domain Shift Evaluation (Standard -> Shifted Cohort N={len(y_shift):,}):")
     print(f"  Dense Accel Macro F1: {results['Domain Shift (Dense Accel DNN)']['macro_f1']:.4f} (Accuracy: {results['Domain Shift (Dense Accel DNN)']['accuracy']:.4f})")
     print(f"  Multimodal Macro F1:  {results['Domain Shift (Multimodal Late-Fusion)']['macro_f1']:.4f} (Accuracy: {results['Domain Shift (Multimodal Late-Fusion)']['accuracy']:.4f})")
+
+    # -------------------------------------------------------------------------
+    # Stage Candidate Models (Controlled Staging - ML-003)
+    # -------------------------------------------------------------------------
+    candidate_dir = ROOT / "ml" / "artifacts" / "candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    candidate_tflite_path = candidate_dir / "multimodal_classifier_candidate.tflite"
+    candidate_tflite_path.write_bytes(multi_tflite_bytes)
+    dense_candidate_path = candidate_dir / "activity_classifier_candidate.tflite"
+    dense_candidate_path.write_bytes(dense_tflite_bytes)
+
+    import hashlib
+    multi_sha256 = hashlib.sha256(multi_tflite_bytes).hexdigest()
+    candidate_manifest = {
+        "model_id": "multimodal-tflite-v2.1",
+        "model_version": "2.1.0",
+        "tflite_sha256": multi_sha256,
+        "dense_tflite_sha256": hashlib.sha256(dense_tflite_bytes).hexdigest(),
+        "input_tensors": [
+            {"name": "accelerometer_input", "shape": [1, 20, 3], "dtype": "float32"},
+            {"name": "heart_rate_input", "shape": [1, 2], "dtype": "float32"},
+        ],
+        "output_tensors": [
+            {"name": "probabilities", "shape": [1, 3], "dtype": "float32"},
+        ],
+        "classes": CLASSES,
+        "hr_normalization": "norm_bpm = (bpm - 60.0) / 40.0",
+        "hr_staleness_contract": "0 <= age_ms <= 10000",
+        "macro_f1_test": multi_metrics["macro_f1"],
+        "accuracy_test": multi_metrics["accuracy"],
+        "balanced_accuracy_test": multi_metrics["balanced_accuracy"],
+        "domain_shift_macro_f1": ablation_results["G_domain_shift_evaluation"]["macro_f1"],
+        "created_at_utc": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    (candidate_dir / "candidate_manifest.json").write_text(json.dumps(candidate_manifest, indent=2), encoding="utf-8")
+    print(f"Staged candidate TFLite models in: {candidate_dir} (SHA256={multi_sha256[:16]}...)")
 
     # -------------------------------------------------------------------------
     # Persist Results
