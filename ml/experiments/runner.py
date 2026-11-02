@@ -41,7 +41,7 @@ from sklearn.metrics import (
 from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
 
-from ml.data.sqlite_storage import SqliteStorageManager
+from ml.data.sqlite_storage import OutputPolicy, SqliteStorageManager
 from ml.data.window_dataset import load_dataset_from_sqlite as load_canonical_window_dataset
 from ml.evaluation_quality import assert_no_recording_leakage, expected_calibration_error
 from ml.simulation.generator import PROFILES, SyntheticDatasetGenerator
