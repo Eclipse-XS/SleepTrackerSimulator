@@ -1,10 +1,19 @@
-"""Train baseline and 1D CNN accelerometer models with MLflow and group-aware validation."""
+"""Train baseline and 1D CNN accelerometer models with MLflow and disjoint group splits.
+
+Auxiliary synthetic session trainer (ML-002): splits train / validation / test by ``session_id`` (or by
+``subject_id`` when subject identifiers are supplied) instead of Keras ``validation_split``, guaranteeing
+zero session overlap between any two splits. For the canonical subject-independent benchmark see
+:mod:`ml.experiments.runner`.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import mlflow
 import numpy as np
@@ -15,6 +24,103 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS_ML = ROOT / "docs" / "ml"
 WINDOW = 20
 CLASSES = ["REST", "RESTLESS", "ACTIVE"]
+
+
+@dataclass(frozen=True)
+class GroupSplitResult:
+    """Disjoint group-aware train / validation / test split allocation."""
+
+    train_mask: np.ndarray
+    val_mask: np.ndarray
+    test_mask: np.ndarray
+    train_sessions: frozenset[str]
+    val_sessions: frozenset[str]
+    test_sessions: frozenset[str]
+    train_groups: tuple[str, ...]
+    val_groups: tuple[str, ...]
+    test_groups: tuple[str, ...]
+    group_kind: str
+
+
+def split_by_group(
+    session_ids: Sequence[str] | np.ndarray,
+    subject_ids: Sequence[str] | np.ndarray | None = None,
+    val_ratio: float = 0.20,
+    test_ratio: float = 0.20,
+    seed: int = 42,
+) -> GroupSplitResult:
+    """Deterministic disjoint train/validation/test split by session (or subject when available)."""
+    sessions_arr = np.asarray(session_ids, dtype=str)
+    if len(sessions_arr) == 0:
+        raise ValueError("Cannot split an empty dataset (0 rows)")
+
+    if subject_ids is not None:
+        groups_arr = np.asarray(subject_ids, dtype=str)
+        if len(groups_arr) != len(sessions_arr):
+            raise ValueError("subject_ids and session_ids must have identical length")
+        # Verify no session spans multiple subjects
+        sess_to_subj: dict[str, str] = {}
+        for sid, sub in zip(sessions_arr.tolist(), groups_arr.tolist()):
+            if sid in sess_to_subj and sess_to_subj[sid] != sub:
+                raise ValueError(f"Session {sid!r} is assigned to multiple subjects: {sess_to_subj[sid]!r}, {sub!r}")
+            sess_to_subj[sid] = sub
+        group_kind = "subject_id"
+    else:
+        groups_arr = sessions_arr
+        group_kind = "session_id"
+
+    unique_groups = sorted(set(groups_arr.tolist()))
+    n_groups = len(unique_groups)
+    if n_groups < 3:
+        raise ValueError(
+            f"At least 3 distinct {group_kind} groups are required for disjoint train/validation/test splits; "
+            f"got {n_groups} ({unique_groups})."
+        )
+    if val_ratio <= 0 or test_ratio <= 0 or (val_ratio + test_ratio) >= 1.0:
+        raise ValueError(f"Invalid split ratios val_ratio={val_ratio}, test_ratio={test_ratio}")
+
+    rng = np.random.default_rng(seed)
+    shuffled = rng.permutation(unique_groups).tolist()
+
+    n_test = max(1, round(n_groups * test_ratio))
+    n_val = max(1, round(n_groups * val_ratio))
+    if n_test + n_val >= n_groups:
+        n_test = 1
+        n_val = 1
+    n_train = n_groups - n_test - n_val
+    if n_train < 1 or n_val < 1 or n_test < 1:
+        raise ValueError(
+            f"Insufficient groups ({n_groups}) to allocate non-empty train/val/test splits "
+            f"(train={n_train}, val={n_val}, test={n_test})."
+        )
+
+    test_groups = tuple(sorted(shuffled[:n_test]))
+    val_groups = tuple(sorted(shuffled[n_test : n_test + n_val]))
+    train_groups = tuple(sorted(shuffled[n_test + n_val :]))
+
+    train_mask = np.isin(groups_arr, train_groups)
+    val_mask = np.isin(groups_arr, val_groups)
+    test_mask = np.isin(groups_arr, test_groups)
+
+    train_sessions = frozenset(sessions_arr[train_mask].tolist())
+    val_sessions = frozenset(sessions_arr[val_mask].tolist())
+    test_sessions = frozenset(sessions_arr[test_mask].tolist())
+
+    if (train_sessions & val_sessions) or (train_sessions & test_sessions) or (val_sessions & test_sessions):
+        raise AssertionError("Session leakage detected across train/validation/test splits")
+
+    return GroupSplitResult(
+        train_mask=train_mask,
+        val_mask=val_mask,
+        test_mask=test_mask,
+        train_sessions=train_sessions,
+        val_sessions=val_sessions,
+        test_sessions=test_sessions,
+        train_groups=train_groups,
+        val_groups=val_groups,
+        test_groups=test_groups,
+        group_kind=group_kind,
+    )
 
 
 def generate_session_dataset(
@@ -87,20 +193,16 @@ def train_and_evaluate(
     epochs: int = 15,
     seed: int = 42,
     log_mlflow: bool = True,
-) -> dict[str, any]:
+) -> dict[str, Any]:
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
     xs, ys, sessions = generate_session_dataset(n_sessions=14, windows_per_session=70, seed=seed)
+    split = split_by_group(sessions, val_ratio=0.20, test_ratio=0.20, seed=seed)
 
-    # Group-Aware Holdout: 3 sessions for testing, 11 for training (zero data leakage)
-    unique_sessions = np.unique(sessions)
-    test_sessions = set(unique_sessions[:3])
-    train_mask = ~np.isin(sessions, list(test_sessions))
-    test_mask = np.isin(sessions, list(test_sessions))
-
-    train_x, train_y = xs[train_mask], ys[train_mask]
-    test_x, test_y = xs[test_mask], ys[test_mask]
+    train_x, train_y = xs[split.train_mask], ys[split.train_mask]
+    val_x, val_y = xs[split.val_mask], ys[split.val_mask]
+    test_x, test_y = xs[split.test_mask], ys[split.test_mask]
 
     model = build_dense_model() if model_type == "dense" else build_1d_cnn_model()
     model.compile(
@@ -116,9 +218,13 @@ def train_and_evaluate(
             "model_type": model_type,
             "epochs": epochs,
             "seed": seed,
+            "split_group_kind": split.group_kind,
             "train_samples": len(train_x),
+            "val_samples": len(val_x),
             "test_samples": len(test_x),
-            "test_sessions": list(test_sessions),
+            "train_sessions": sorted(split.train_sessions),
+            "val_sessions": sorted(split.val_sessions),
+            "test_sessions": sorted(split.test_sessions),
         })
 
     model.fit(
@@ -126,7 +232,7 @@ def train_and_evaluate(
         train_y,
         epochs=epochs,
         batch_size=64,
-        validation_split=0.15,
+        validation_data=(val_x, val_y),
         verbose=0,
     )
 
@@ -139,6 +245,10 @@ def train_and_evaluate(
 
     metrics = {
         "model_type": model_type,
+        "split_group_kind": split.group_kind,
+        "train_sessions": sorted(split.train_sessions),
+        "val_sessions": sorted(split.val_sessions),
+        "test_sessions": sorted(split.test_sessions),
         "test_accuracy": acc,
         "test_f1_macro": f1,
         "confusion_matrix": cm,

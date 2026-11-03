@@ -12,6 +12,8 @@ from typing import Any, Sequence
 
 import numpy as np
 
+UNLABELED_LABEL = "UNLABELED"
+
 
 @dataclass(frozen=True)
 class WindowQualityPolicy:
@@ -127,7 +129,8 @@ def build_session_windows(
     1. Timeline intervals are half-open: [w_start_utc, w_end_utc).
     2. Coverage is calculated using event-time sub-bins (no hardcoded 1.0).
     3. Dropouts / large gaps are detected and flag windows as training-ineligible.
-    4. Causal HR: Only samples with utc_millis <= w_end_utc are considered; signed staleness <= 10s.
+    4. Causal HR: prediction cutoff = event time of the last accelerometer sample in the window; only HR with
+       hr_utc <= cutoff and cutoff - hr_utc <= max_hr_staleness_ms is eligible (latest one wins).
     5. Model-ready [20, 3] tensors are produced via controlled resampling for training-eligible windows.
     6. Ground-truth label is assigned via maximum temporal interval overlap.
     """
@@ -170,13 +173,19 @@ def build_session_windows(
     int_labels: list[str] = []
     for it in ground_truth_intervals:
         if hasattr(it, "start_sec") and hasattr(it, "end_sec"):
+            label = getattr(it, "state_name", None) or getattr(it, "state_label", None)
+            if not label:
+                raise ValueError(f"Ground-truth interval without a label in session {session_id}: {it!r}")
             int_starts.append(session_start_ms + int(round(it.start_sec * 1000)))
             int_ends.append(session_start_ms + int(round(it.end_sec * 1000)))
-            int_labels.append(getattr(it, "state_name", getattr(it, "state_label", "REST")))
+            int_labels.append(label)
         elif isinstance(it, dict):
+            label = it.get("state_name") or it.get("state_label")
+            if not label:
+                raise ValueError(f"Ground-truth interval without a label in session {session_id}: {it!r}")
             int_starts.append(it["start_utc_millis"])
             int_ends.append(it["end_utc_millis"])
-            int_labels.append(it.get("state_name", it.get("state_label", "REST")))
+            int_labels.append(label)
 
     n_windows = duration_ms // policy.window_duration_ms
     nominal_dt_sec = 1.0 / policy.target_sampling_rate_hz
@@ -237,23 +246,28 @@ def build_session_windows(
         if coverage_fraction < policy.min_coverage_fraction:
             quality_flags.append("LOW_COVERAGE")
 
-        # Causal Heart Rate Alignment (prediction cutoff is w_end_utc)
-        # MUST satisfy: hr_utc_millis <= w_end_utc
+        # Causal Heart Rate Alignment.
+        # The prediction cutoff is the event timestamp of the LAST accelerometer sample included in this
+        # window (the moment the Android online segmenter would emit the window), NOT the nominal bin end.
+        # An HR sample is eligible iff hr_utc <= cutoff and 0 <= cutoff - hr_utc <= max_hr_staleness_ms.
         mean_hr: float | None = None
         hr_available = 0
         hr_utc_millis: int | None = None
         hr_sample_id: str | None = None
         norm_bpm = 0.0
         hr_mask = 0.0
+        prediction_cutoff_utc: int | None = int(sample_ts[-1]) if len(sample_ts) > 0 else None
 
-        if len(hr_times) > 0:
-            # Search for latest HR sample at or before w_end_utc
-            hr_idx = np.searchsorted(hr_times, w_end_utc, side="right") - 1
+        if prediction_cutoff_utc is None:
+            pass  # no accelerometer observation => no prediction => no HR alignment
+        elif len(hr_times) > 0:
+            # Latest HR sample at or before the prediction cutoff
+            hr_idx = np.searchsorted(hr_times, prediction_cutoff_utc, side="right") - 1
             if hr_idx >= 0:
                 latest_hr_time = int(hr_times[hr_idx])
                 latest_bpm = float(hr_bpms[hr_idx])
-                # Signed age: prediction_time - hr_time
-                hr_age_ms = w_end_utc - latest_hr_time
+                # Signed age: prediction_cutoff - hr_time
+                hr_age_ms = prediction_cutoff_utc - latest_hr_time
                 if 0 <= hr_age_ms <= policy.max_hr_staleness_ms:
                     mean_hr = round(latest_bpm, 1)
                     hr_available = 1
@@ -268,9 +282,10 @@ def build_session_windows(
         else:
             quality_flags.append("NO_HEART_RATE_SAMPLES")
 
-        # Ground Truth state from maximum interval overlap
+        # Ground Truth state from maximum interval overlap. Without any overlapping interval the
+        # window is explicitly UNLABELED - a missing annotation is never silently turned into REST.
         best_overlap_ms = 0
-        gt_label = "REST"
+        gt_label = UNLABELED_LABEL
         for k in range(len(int_starts)):
             overlap_start = max(w_start_utc, int_starts[k])
             overlap_end = min(w_end_utc, int_ends[k])
@@ -331,6 +346,8 @@ def build_session_windows(
             "hr_available": hr_available,
             "hr_utc_millis": hr_utc_millis,
             "hr_sample_id": hr_sample_id,
+            "prediction_cutoff_utc": prediction_cutoff_utc,
+            "model_tensor_sample_count": policy.target_sampling_rate_hz,
             "ground_truth_label": gt_label,
             "provenance": "SIMULATED",
             "max_gap_ms": max_gap_ms,

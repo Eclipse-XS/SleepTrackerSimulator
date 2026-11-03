@@ -16,11 +16,15 @@ from typing import Any
 
 import numpy as np
 
+from ml.data.label_policy import (  # noqa: F401  (re-exported for backward compatibility)
+    CLASSES,
+    INT_TO_LABEL,
+    LABEL_TO_INT,
+    InvalidLabelError,
+    encode_label_strict,
+    is_supervised_label,
+)
 from ml.data.window_builder import construct_window_tensor
-
-CLASSES = ["REST", "RESTLESS", "ACTIVE"]
-LABEL_TO_INT = {c: i for i, c in enumerate(CLASSES)}
-INT_TO_LABEL = {i: c for i, c in enumerate(CLASSES)}
 
 
 @dataclass
@@ -32,6 +36,9 @@ class WindowDataset:
     training_eligible_count: int = 0
     rejected_count: int = 0
     class_distribution: dict[str, int] = field(default_factory=lambda: {"REST": 0, "RESTLESS": 0, "ACTIVE": 0})
+    # Windows dropped because their label is not a supervised class (only with unlabeled_policy="exclude").
+    excluded_label_count: int = 0
+    excluded_label_audit: dict[str, int] = field(default_factory=dict)
 
     def get_subject_ids(self) -> list[str]:
         return sorted(self.data_by_subject.keys())
@@ -162,6 +169,7 @@ def load_dataset_from_sqlite(
     db_path: Path | str,
     target_sampling_rate_hz: int = 20,
     enforce_training_eligible: bool = False,
+    unlabeled_policy: str = "raise",
 ) -> WindowDataset:
     """Loads feature windows and maps raw accelerometer records strictly via event-time bounds.
 
@@ -170,7 +178,11 @@ def load_dataset_from_sqlite(
     2. Missing samples in earlier windows NEVER shift raw sample indices for later windows.
     3. Missing / sparse windows are safely resampled or marked ineligible.
     4. Causal HR is normalized according to the production contract: (mean_hr - 60) / 40.
+    5. Labels must be REST/RESTLESS/ACTIVE. Anything else raises InvalidLabelError (session, window and label
+       in the message) unless ``unlabeled_policy="exclude"``, which drops and counts such windows.
     """
+    if unlabeled_policy not in ("raise", "exclude"):
+        raise ValueError("unlabeled_policy must be 'raise' or 'exclude'")
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
@@ -285,7 +297,15 @@ def load_dataset_from_sqlite(
             hr_mask = 1.0 if hr_avail else 0.0
 
             tab_feat = [rms, var, jerk, p2p, norm_bpm, hr_mask]
-            label_int = LABEL_TO_INT.get(label, 0)
+            if not is_supervised_label(label):
+                if unlabeled_policy == "raise":
+                    # Raises InvalidLabelError naming session, window and label.
+                    encode_label_strict(label, session_id=session_id, window_id=w_id)
+                key = repr(label)
+                dataset.excluded_label_count += 1
+                dataset.excluded_label_audit[key] = dataset.excluded_label_audit.get(key, 0) + 1
+                continue
+            label_int = LABEL_TO_INT[label]
 
             # Record into dataset
             entry = dataset.data_by_subject[subject_id]
