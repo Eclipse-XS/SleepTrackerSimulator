@@ -28,13 +28,15 @@ class SessionCoordinatorTest {
 
     private lateinit var repository: RoomSessionRepository
     private lateinit var coordinator: SessionCoordinatorImpl
+    private lateinit var sensorSampleDao: FakeSensorSampleDao
     private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setUp() {
+        sensorSampleDao = FakeSensorSampleDao()
         repository = RoomSessionRepository(
             sessionDao = FakeSessionDao(),
-            sensorSampleDao = FakeSensorSampleDao(),
+            sensorSampleDao = sensorSampleDao,
             heartRateSampleDao = FakeHeartRateSampleDao(),
             featureWindowDao = FakeFeatureWindowDao(),
             predictionDao = FakePredictionDao(),
@@ -164,6 +166,14 @@ class SessionCoordinatorTest {
         val summary = repository.getSessionSummary(session.sessionId)
         assertNotNull(summary)
         assertEquals(0f, summary!!.dataCoverageFraction)
+    }
+
+    @Test
+    fun `finalization counts eight hour sample volume without loading raw rows`() = runTest(testDispatcher) {
+        sensorSampleDao.forcedSampleCount = 576_000L
+        coordinator.startSession(samplingHz = 20).getOrThrow()
+        coordinator.stopSession().getOrThrow()
+        assertEquals(0, sensorSampleDao.getSamplesCallCount)
     }
 
     @Test

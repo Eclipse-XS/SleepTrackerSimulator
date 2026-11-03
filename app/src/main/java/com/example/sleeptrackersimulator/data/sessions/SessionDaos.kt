@@ -53,7 +53,7 @@ interface SensorSampleDao {
     suspend fun getSamplesForSession(sessionId: String): List<SensorSampleEntity>
 
     @Query("SELECT COUNT(*) FROM sensor_samples WHERE sessionId = :sessionId")
-    suspend fun countSamplesForSession(sessionId: String): Int
+    suspend fun countSamplesForSession(sessionId: String): Long
 
     @Query("DELETE FROM sensor_samples WHERE sessionId = :sessionId")
     suspend fun deleteForSession(sessionId: String): Int

@@ -20,6 +20,7 @@ interface SessionRepository {
 
     suspend fun insertSamplesBatch(samples: List<RawSensorSample>)
     suspend fun getSamplesForSession(sessionId: String): List<RawSensorSample>
+    suspend fun countSamplesForSession(sessionId: String): Long = getSamplesForSession(sessionId).size.toLong()
 
     suspend fun insertHeartRateSamples(samples: List<HeartRateSample>)
     suspend fun getHeartRateForSession(sessionId: String): List<HeartRateSample>

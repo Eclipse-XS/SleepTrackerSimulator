@@ -125,7 +125,8 @@ class CloudErasureConsentPolicyTest {
         // Interleaved operations: deletion followed by upload, or upload followed by deletion
         store.enqueue(PendingCloudOperation("del-4", PendingOperationType.DELETE_SESSION, "session-4"))
         store.enqueue(PendingCloudOperation("m-4", PendingOperationType.UPLOAD_MEASUREMENT, "session-4", payload = SensorPayload()))
-        assertEquals(2, store.pendingCount)
+        // The durable deletion tombstone suppresses the conflicting later upload immediately.
+        assertEquals(1, store.pendingCount)
 
         // Consent withdrawn
         val drainResult = CloudOutboxDrainer.drain(store, repository, auth, isConsentEnabled = false)

@@ -726,10 +726,11 @@ class CloudSyncViewModelTest {
         }
         override fun peek() = delegate.peek()
         override fun removeFirst() { fail("remove"); delegate.removeFirst() }
+        override fun removeOperation(operationId: String): Boolean { fail("remove"); return delegate.removeOperation(operationId) }
         override fun pendingOperations() = delegate.pendingOperations()
         override fun activeSession() = delegate.activeSession()
         override fun saveActiveSession(session: ActiveCloudSession?) { fail("save"); delegate.saveActiveSession(session) }
-        override fun completeSessionEnd(sessionId: String) { fail("complete"); delegate.completeSessionEnd(sessionId) }
+        override fun completeSessionEnd(operationId: String, sessionId: String) { fail("complete"); delegate.completeSessionEnd(operationId, sessionId) }
         private fun fail(operation: String) {
             if (failOn.remove(operation)) throw java.io.IOException("simulated $operation persistence failure")
         }

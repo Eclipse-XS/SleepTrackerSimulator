@@ -70,6 +70,7 @@ class CloudOutboxWorker(
         try {
             RoomSmartRuleEventCoordinator(database.smartRuleEventCoordinatorDao())
                 .reconcile(System.currentTimeMillis())
+            store.reconcileDeliveryIntents()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -111,14 +112,14 @@ object CloudOutboxDrainer {
             val operation = store.peekDeletion() ?: break
             try {
                 repository.deleteSession(uid, operation.sessionId)
-                check(store.removeOperation(operation.operationId)) { "Deletion acknowledgement was not persisted" }
+                store.completeDeletion(operation.operationId, operation.sessionId, uid)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: CloudOperationException) {
-                val exhausted = failure.retriable && operation.retryCount + 1 >= MAX_RETRY_ATTEMPTS
-                runCatching { store.recordOperationFailure(operation.operationId, failure.message ?: failure.type.name, !failure.retriable || exhausted) }
-                return if (failure.retriable && !exhausted) Result.retry() else Result.failure()
-            } catch (_: Exception) {
+                runCatching { store.recordOperationFailure(operation.operationId, failure.message ?: failure.type.name, !failure.retriable) }
+                return if (failure.retriable) Result.retry() else Result.failure()
+            } catch (failure: Exception) {
+                runCatching { store.recordOperationFailure(operation.operationId, failure.message ?: failure.javaClass.simpleName, false) }
                 return Result.retry()
             }
         }
@@ -147,11 +148,11 @@ object CloudOutboxDrainer {
                     when (operation.type) {
                         PendingOperationType.UPLOAD_SESSION_SUMMARY -> {
                             repository.uploadSessionSummary(uid, requireNotNull(operation.summary))
-                            store.removeFirst()
+                            store.removeOperation(operation.operationId)
                         }
                         PendingOperationType.DELETE_SESSION -> {
                             repository.deleteSession(uid, operation.sessionId)
-                            store.removeFirst()
+                            store.completeDeletion(operation.operationId, operation.sessionId, uid)
                         }
                         else -> {
                             store.recordFirstFailure("Operation ${operation.type} requires active session metadata", true)
@@ -165,7 +166,8 @@ object CloudOutboxDrainer {
             } catch (failure: CloudOperationException) {
                 runCatching { store.recordFirstFailure(failure.message ?: failure.type.name, !failure.retriable) }
                 if (failure.retriable) Result.retry() else Result.failure()
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                runCatching { store.recordFirstFailure(failure.message ?: failure.javaClass.simpleName, false) }
                 Result.retry()
             }
         }
@@ -190,27 +192,27 @@ object CloudOutboxDrainer {
                 when (operation.type) {
                     PendingOperationType.UPLOAD_MEASUREMENT -> {
                         repository.uploadMeasurement(uid, operation.sessionId, requireNotNull(operation.payload))
-                        store.removeFirst()
+                        store.removeOperation(operation.operationId)
                     }
                     PendingOperationType.UPLOAD_RULE_EVENT -> {
                         val event = requireNotNull(operation.ruleEvent)
                         repository.uploadRuleEvent(uid, operation.sessionId, event)
                         statusUpdater(event.eventId)
-                        store.removeFirst()
+                        store.removeOperation(operation.operationId)
                     }
                     PendingOperationType.UPLOAD_SESSION_SUMMARY -> {
                         val summary = requireNotNull(operation.summary)
                         repository.uploadSessionSummary(uid, summary)
-                        store.removeFirst()
+                        store.removeOperation(operation.operationId)
                     }
                     PendingOperationType.END_SESSION -> {
                         repository.endSession(uid, operation.sessionId, requireNotNull(operation.endedAt))
-                        store.completeSessionEnd(operation.sessionId)
+                        store.completeSessionEnd(operation.operationId, operation.sessionId)
                         runCatching { repository.applyRetention(uid, null, System.currentTimeMillis()) }
                     }
                     PendingOperationType.DELETE_SESSION -> {
                         repository.deleteSession(uid, operation.sessionId)
-                        store.removeFirst()
+                        store.completeDeletion(operation.operationId, operation.sessionId, uid)
                     }
                 }
             }
@@ -220,7 +222,8 @@ object CloudOutboxDrainer {
         } catch (failure: CloudOperationException) {
             runCatching { store.recordFirstFailure(failure.message ?: failure.type.name, !failure.retriable) }
             if (failure.retriable) Result.retry() else Result.failure()
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            runCatching { store.recordFirstFailure(failure.message ?: failure.javaClass.simpleName, false) }
             Result.retry()
         }
     }

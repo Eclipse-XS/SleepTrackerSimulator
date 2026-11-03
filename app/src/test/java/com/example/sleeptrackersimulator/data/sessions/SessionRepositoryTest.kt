@@ -285,6 +285,8 @@ class SessionRepositoryTest {
 
 class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDao() {
     private val records = mutableListOf<com.example.sleeptrackersimulator.cloud.CloudOutboxEntity>()
+    private val intents = mutableListOf<com.example.sleeptrackersimulator.cloud.CloudDeliveryIntentEntity>()
+    private val deletions = mutableMapOf<String, com.example.sleeptrackersimulator.cloud.CloudSessionDeletionEntity>()
 
     fun insertDirect(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity) {
         records.add(entity)
@@ -292,11 +294,17 @@ class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDa
 
     override fun count(): Int = records.size
     override fun countTypeForSession(type: String, sessionId: String): Int = records.count { it.type == type && it.sessionId == sessionId }
+    override fun hasDeletion(sessionId: String): Int = if (deletions.containsKey(sessionId)) 1 else 0
     override fun first(): com.example.sleeptrackersimulator.cloud.CloudOutboxEntity? = records.firstOrNull()
     override fun firstDeletion(): com.example.sleeptrackersimulator.cloud.CloudOutboxEntity? = records.firstOrNull { it.type == "DELETE_SESSION" }
     override fun all(): List<com.example.sleeptrackersimulator.cloud.CloudOutboxEntity> = records.toList()
     override fun activeSession(): com.example.sleeptrackersimulator.cloud.CloudSessionEntity? = null
     override fun insert(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity) { records.add(entity) }
+    override fun insertDeletion(entity: com.example.sleeptrackersimulator.cloud.CloudSessionDeletionEntity) { deletions[entity.sessionId] = entity }
+    override fun insertIntent(entity: com.example.sleeptrackersimulator.cloud.CloudDeliveryIntentEntity): Long { intents.add(entity); return intents.size.toLong() }
+    override fun firstIntent(): com.example.sleeptrackersimulator.cloud.CloudDeliveryIntentEntity? = intents.firstOrNull()
+    override fun deleteIntent(operationId: String): Int = if (intents.removeIf { it.operationId == operationId }) 1 else 0
+    override fun deleteIntentsForSession(sessionId: String): Int { val before = intents.size; intents.removeAll { it.sessionId == sessionId }; return before - intents.size }
     override fun insertForMigration(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity): Long { records.add(entity); return records.size.toLong() }
     override fun saveSession(entity: com.example.sleeptrackersimulator.cloud.CloudSessionEntity) {}
     override fun clearSession() {}
@@ -379,16 +387,18 @@ class FakeSessionDao : SessionDao {
 
 class FakeSensorSampleDao : SensorSampleDao {
     private val samples = mutableListOf<SensorSampleEntity>()
+    var getSamplesCallCount: Int = 0
+    var forcedSampleCount: Long? = null
 
     override suspend fun insertBatch(samples: List<SensorSampleEntity>) {
         this.samples.addAll(samples)
     }
 
     override suspend fun getSamplesForSession(sessionId: String): List<SensorSampleEntity> =
-        samples.filter { it.sessionId == sessionId }
+        samples.filter { it.sessionId == sessionId }.also { getSamplesCallCount++ }
 
-    override suspend fun countSamplesForSession(sessionId: String): Int =
-        samples.count { it.sessionId == sessionId }
+    override suspend fun countSamplesForSession(sessionId: String): Long =
+        forcedSampleCount ?: samples.count { it.sessionId == sessionId }.toLong()
 
     override suspend fun deleteForSession(sessionId: String): Int {
         val before = samples.size

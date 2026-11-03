@@ -411,13 +411,17 @@ class CloudSyncViewModel(
                     }
                 }
                 if (operation.type == PendingOperationType.END_SESSION) {
-                    stateStore.completeSessionEnd(operation.sessionId)
+                    stateStore.completeSessionEnd(operation.operationId, operation.sessionId)
                     _state.update { it.copy(status = CloudSyncStatus.IDLE, sessionId = null, monitoringActive = false, pendingCount = stateStore.pendingCount) }
                     runCatching { repository.applyRetention(uid, null, now()) }
                     log("I", "Cloud monitoring session ended", null)
                 }
-                if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT || operation.type == PendingOperationType.UPLOAD_SESSION_SUMMARY || operation.type == PendingOperationType.DELETE_SESSION) {
-                    stateStore.removeFirst()
+                if (operation.type != PendingOperationType.END_SESSION) {
+                    if (operation.type == PendingOperationType.DELETE_SESSION) {
+                        stateStore.completeDeletion(operation.operationId, operation.sessionId, uid)
+                    } else {
+                        stateStore.removeOperation(operation.operationId)
+                    }
                     DiagnosticLog.event(DiagnosticTags.CLOUD, if (operation.type == PendingOperationType.UPLOAD_MEASUREMENT) "uploadMeasurement" else "uploadSessionSummary", DiagnosticResult.SUCCESS, correlationId = correlationId, details = mapOf("pendingCount" to stateStore.pendingCount))
                     recordSuccess()
                 }

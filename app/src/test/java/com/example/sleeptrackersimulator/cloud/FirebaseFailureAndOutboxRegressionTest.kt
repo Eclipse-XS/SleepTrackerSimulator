@@ -3,6 +3,7 @@ package com.example.sleeptrackersimulator.cloud
 import androidx.work.ListenableWorker.Result
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,7 +46,7 @@ class FirebaseFailureAndOutboxRegressionTest {
     }
 
     @Test
-    fun `network deletion retry becomes permanent at bounded attempt count`() = runTest {
+    fun `network deletion remains pending at bounded attempt count`() = runTest {
         val store = InMemoryCloudStateStore()
         store.enqueue(
             PendingCloudOperation(
@@ -62,9 +63,52 @@ class FirebaseFailureAndOutboxRegressionTest {
             Auth(),
         )
 
-        assertEquals(Result.failure(), result)
-        assertEquals(DeliveryState.PERMANENT_FAILURE, store.pendingOperations().single().deliveryState)
+        assertEquals(Result.retry(), result)
+        assertEquals(DeliveryState.PENDING, store.pendingOperations().single().deliveryState)
         assertEquals(CloudOutboxDrainer.MAX_RETRY_ATTEMPTS, store.pendingOperations().single().retryCount)
+    }
+
+    @Test
+    fun `successful deletion survives restart and suppresses stale upload`() = runTest {
+        val file = kotlin.io.path.createTempDirectory("delete-tombstone").resolve("state.json").toFile()
+        val first = AtomicJsonCloudStateStore(file)
+        first.enqueue(PendingCloudOperation("old-upload", PendingOperationType.UPLOAD_SESSION_SUMMARY, "session-A", summary = SessionSummaryPayload("session-A")))
+        first.enqueue(PendingCloudOperation("delete-A", PendingOperationType.DELETE_SESSION, "session-A"))
+        val repository = Repository()
+
+        assertEquals(Result.success(), CloudOutboxDrainer.drain(first, repository, Auth()))
+        val restarted = AtomicJsonCloudStateStore(file)
+        restarted.enqueue(PendingCloudOperation("stale-upload", PendingOperationType.UPLOAD_SESSION_SUMMARY, "session-A", summary = SessionSummaryPayload("session-A")))
+
+        assertEquals(0, restarted.pendingCount)
+        assertEquals(listOf("session-A"), repository.deleted)
+    }
+
+    @Test
+    fun `delete enqueued while upload is in flight is not acknowledged as the upload`() = runTest {
+        val store = InMemoryCloudStateStore()
+        store.enqueue(PendingCloudOperation("upload-A", PendingOperationType.UPLOAD_SESSION_SUMMARY, "A", summary = SessionSummaryPayload("A")))
+        val deleted = mutableListOf<String>()
+        val repository = object : CloudRepository by Repository() {
+            override suspend fun uploadSessionSummary(ownerUid: String, payload: SessionSummaryPayload) {
+                store.enqueue(PendingCloudOperation("delete-A", PendingOperationType.DELETE_SESSION, "A"))
+            }
+            override suspend fun deleteSession(ownerUid: String, sessionId: String) { deleted += sessionId }
+        }
+
+        assertEquals(Result.success(), CloudOutboxDrainer.drain(store, repository, Auth()))
+        assertEquals(listOf("A"), deleted)
+        assertEquals(0, store.pendingCount)
+    }
+
+    @Test(expected = CancellationException::class)
+    fun `drainer propagates coroutine cancellation`() = runTest {
+        val store = InMemoryCloudStateStore()
+        store.enqueue(PendingCloudOperation("delete", PendingOperationType.DELETE_SESSION, "s"))
+        val repository = object : CloudRepository by Repository() {
+            override suspend fun deleteSession(ownerUid: String, sessionId: String): Unit = throw CancellationException("cancelled")
+        }
+        CloudOutboxDrainer.drain(store, repository, Auth())
     }
 
     @Test

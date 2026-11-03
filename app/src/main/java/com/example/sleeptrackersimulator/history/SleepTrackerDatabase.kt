@@ -9,6 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.sleeptrackersimulator.cloud.CloudOutboxDao
 import com.example.sleeptrackersimulator.cloud.CloudOutboxEntity
 import com.example.sleeptrackersimulator.cloud.CloudSessionEntity
+import com.example.sleeptrackersimulator.cloud.CloudDeliveryIntentEntity
+import com.example.sleeptrackersimulator.cloud.CloudSessionDeletionEntity
 import com.example.sleeptrackersimulator.data.sessions.DeviceDao
 import com.example.sleeptrackersimulator.data.sessions.DeviceEntity
 import com.example.sleeptrackersimulator.data.sessions.FeatureWindowDao
@@ -39,6 +41,8 @@ import com.example.sleeptrackersimulator.smart.SmartRuleExecutionEntity
         ActuatorEvent::class,
         CloudOutboxEntity::class,
         CloudSessionEntity::class,
+        CloudDeliveryIntentEntity::class,
+        CloudSessionDeletionEntity::class,
         SmartRuleEntity::class,
         SmartRuleExecutionEntity::class,
         RecordingSessionEntity::class,
@@ -50,7 +54,7 @@ import com.example.sleeptrackersimulator.smart.SmartRuleExecutionEntity
         PersonalBaselineEntity::class,
         DeviceEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class SleepTrackerDatabase : RoomDatabase() {
@@ -88,6 +92,7 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
                 ).addCallback(object : Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
                         DiagnosticLog.event(
@@ -360,6 +365,25 @@ abstract class SleepTrackerDatabase : RoomDatabase() {
                         `batteryLevel` INTEGER,
                         `lastSeenUtcMillis` INTEGER NOT NULL,
                         PRIMARY KEY(`deviceId`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `cloud_delivery_intents` (
+                        `operationId` TEXT NOT NULL, `type` TEXT NOT NULL, `sessionId` TEXT NOT NULL,
+                        `payloadJson` TEXT, `endedAt` INTEGER, `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`operationId`)
+                    )""".trimIndent(),
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_cloud_delivery_intents_operationId` ON `cloud_delivery_intents` (`operationId`)")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `cloud_session_deletions` (
+                        `sessionId` TEXT NOT NULL, `ownerUid` TEXT NOT NULL, `requestedAt` INTEGER NOT NULL,
+                        `completedAt` INTEGER, PRIMARY KEY(`sessionId`)
                     )""".trimIndent(),
                 )
             }

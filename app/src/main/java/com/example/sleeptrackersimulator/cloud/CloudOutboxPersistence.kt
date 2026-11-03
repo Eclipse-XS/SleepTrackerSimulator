@@ -29,6 +29,24 @@ data class CloudOutboxEntity(
     val readyForDelivery: Boolean = true,
 )
 
+@Entity(tableName = "cloud_delivery_intents", indices = [Index(value = ["operationId"], unique = true)])
+data class CloudDeliveryIntentEntity(
+    @PrimaryKey val operationId: String,
+    val type: String,
+    val sessionId: String,
+    val payloadJson: String?,
+    val endedAt: Long?,
+    val createdAt: Long,
+)
+
+@Entity(tableName = "cloud_session_deletions")
+data class CloudSessionDeletionEntity(
+    @PrimaryKey val sessionId: String,
+    val ownerUid: String,
+    val requestedAt: Long,
+    val completedAt: Long?,
+)
+
 @Entity(tableName = "cloud_active_session")
 data class CloudSessionEntity(
     @PrimaryKey val singletonId: Int = SINGLETON_ID,
@@ -50,6 +68,9 @@ abstract class CloudOutboxDao {
     @Query("SELECT COUNT(*) FROM cloud_outbox WHERE type = :type AND sessionId = :sessionId")
     protected abstract fun countTypeForSession(type: String, sessionId: String): Int
 
+    @Query("SELECT COUNT(*) FROM cloud_session_deletions WHERE sessionId = :sessionId")
+    protected abstract fun hasDeletion(sessionId: String): Int
+
     @Query("SELECT * FROM cloud_outbox ORDER BY sequence ASC LIMIT 1")
     abstract fun first(): CloudOutboxEntity?
 
@@ -64,6 +85,18 @@ abstract class CloudOutboxDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     protected abstract fun insert(entity: CloudOutboxEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract fun insertDeletion(entity: CloudSessionDeletionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    protected abstract fun insertIntent(entity: CloudDeliveryIntentEntity): Long
+
+    @Query("SELECT * FROM cloud_delivery_intents ORDER BY createdAt ASC LIMIT 1")
+    protected abstract fun firstIntent(): CloudDeliveryIntentEntity?
+
+    @Query("DELETE FROM cloud_delivery_intents WHERE operationId = :operationId")
+    protected abstract fun deleteIntent(operationId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     protected abstract fun insertForMigration(entity: CloudOutboxEntity): Long
@@ -86,17 +119,29 @@ abstract class CloudOutboxDao {
     @Query("DELETE FROM cloud_outbox WHERE sessionId = :sessionId")
     abstract fun deleteForSession(sessionId: String): Int
 
+    @Query("DELETE FROM cloud_delivery_intents WHERE sessionId = :sessionId")
+    protected abstract fun deleteIntentsForSession(sessionId: String): Int
+
     @Query("DELETE FROM cloud_outbox WHERE type != 'DELETE_SESSION'")
     abstract fun purgeUnconsentedUploads(): Int
 
-    @Query("UPDATE cloud_outbox SET retryCount = retryCount + 1, lastError = :message, deliveryState = :state WHERE sequence = :sequence")
+    @Query("UPDATE cloud_outbox SET retryCount = MIN(retryCount + 1, 5), lastError = :message, deliveryState = :state WHERE sequence = :sequence")
     protected abstract fun updateFailure(sequence: Long, message: String, state: String): Int
 
-    @Query("UPDATE cloud_outbox SET retryCount = retryCount + 1, lastError = :message, deliveryState = :state WHERE operationId = :operationId")
+    @Query("UPDATE cloud_outbox SET retryCount = MIN(retryCount + 1, 5), lastError = :message, deliveryState = :state WHERE operationId = :operationId")
     protected abstract fun updateOperationFailure(operationId: String, message: String, state: String): Int
 
     @Transaction
     open fun enqueue(entity: CloudOutboxEntity, maximumOperations: Int) {
+        if (entity.type == PendingOperationType.DELETE_SESSION.name) {
+            deleteForSession(entity.sessionId)
+            deleteIntentsForSession(entity.sessionId)
+            insertDeletion(CloudSessionDeletionEntity(entity.sessionId, "", entity.createdAt, null))
+            insert(entity)
+            return
+        } else if (hasDeletion(entity.sessionId) > 0) {
+            return
+        }
         val currentCount = count()
         val limit = when (entity.type) {
             PendingOperationType.UPLOAD_MEASUREMENT.name -> maximumOperations - RoomCloudStateStore.RESERVED_CRITICAL_SLOTS
@@ -116,18 +161,45 @@ abstract class CloudOutboxDao {
     }
 
     @Transaction
+    open fun saveDeliveryIntent(entity: CloudOutboxEntity) {
+        if (hasDeletion(entity.sessionId) > 0) return
+        insertIntent(entity.toDeliveryIntent())
+    }
+
+    @Transaction
+    open fun reconcileDeliveryIntents(maximumOperations: Int): Int {
+        var moved = 0
+        while (count() < maximumOperations) {
+            val intent = firstIntent() ?: break
+            if (hasDeletion(intent.sessionId) == 0) {
+                try {
+                    enqueue(intent.toOutbox(), maximumOperations)
+                } catch (_: CloudOutboxFullException) {
+                    break
+                }
+            }
+            check(deleteIntent(intent.operationId) == 1)
+            moved++
+        }
+        return moved
+    }
+
+    @Transaction
+    open fun completeDeletion(operationId: String, sessionId: String, ownerUid: String, completedAt: Long) {
+        deleteForSession(sessionId)
+        deleteIntentsForSession(sessionId)
+        insertDeletion(CloudSessionDeletionEntity(sessionId, ownerUid, completedAt, completedAt))
+    }
+
+    @Transaction
     open fun removeFirst() {
         val head = first() ?: return
         check(deleteSequence(head.sequence) == 1) { "Outbox head changed during acknowledgement" }
     }
 
     @Transaction
-    open fun completeSessionEnd(sessionId: String) {
-        val head = first()
-        require(head?.type == PendingOperationType.END_SESSION.name && head.sessionId == sessionId) {
-            "The first pending operation is not END_SESSION for $sessionId"
-        }
-        check(deleteSequence(head.sequence) == 1)
+    open fun completeSessionEnd(operationId: String, sessionId: String) {
+        deleteOperation(operationId)
         deleteSession(sessionId)
     }
 
@@ -194,7 +266,7 @@ class RoomCloudStateStore(
         ensureLegacyImported()
         if (session == null) dao.clearSession() else dao.saveSession(session.toEntity())
     }
-    override fun completeSessionEnd(sessionId: String) = dao.completeSessionEnd(sessionId)
+    override fun completeSessionEnd(operationId: String, sessionId: String) = dao.completeSessionEnd(operationId, sessionId)
     override fun removeOperationsForSession(sessionId: String): Int {
         ensureLegacyImported()
         return dao.deleteForSession(sessionId)
@@ -207,6 +279,9 @@ class RoomCloudStateStore(
         dao.recordFirstFailure(message, permanent)
     override fun recordOperationFailure(operationId: String, message: String, permanent: Boolean) =
         dao.recordOperationFailure(operationId, message, permanent)
+    override fun reconcileDeliveryIntents(): Int = dao.reconcileDeliveryIntents(maximumOperations)
+    override fun completeDeletion(operationId: String, sessionId: String, ownerUid: String) =
+        dao.completeDeletion(operationId, sessionId, ownerUid, System.currentTimeMillis())
 
     @Synchronized
     private fun ensureLegacyImported() {
@@ -270,6 +345,22 @@ fun CloudOutboxEntity.toModel(gson: Gson = Gson()): PendingCloudOperation = Pend
     lastError = lastError,
     deliveryState = DeliveryState.valueOf(deliveryState),
     readyForDelivery = readyForDelivery,
+)
+
+private fun CloudOutboxEntity.toDeliveryIntent() = CloudDeliveryIntentEntity(
+    operationId, type, sessionId, payloadJson, endedAt, createdAt,
+)
+
+private fun CloudDeliveryIntentEntity.toOutbox() = CloudOutboxEntity(
+    operationId = operationId,
+    type = type,
+    sessionId = sessionId,
+    payloadJson = payloadJson,
+    endedAt = endedAt,
+    createdAt = createdAt,
+    retryCount = 0,
+    lastError = null,
+    deliveryState = DeliveryState.PENDING.name,
 )
 
 fun ActiveCloudSession.toEntity(): CloudSessionEntity = CloudSessionEntity(

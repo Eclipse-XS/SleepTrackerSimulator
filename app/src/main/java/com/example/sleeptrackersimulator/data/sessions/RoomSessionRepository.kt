@@ -84,6 +84,10 @@ class RoomSessionRepository(
         sensorSampleDao.getSamplesForSession(sessionId).map { it.toDomain() }
     }
 
+    override suspend fun countSamplesForSession(sessionId: String): Long = withContext(dispatcher) {
+        sensorSampleDao.countSamplesForSession(sessionId)
+    }
+
     override suspend fun insertHeartRateSamples(samples: List<HeartRateSample>) = withContext(dispatcher) {
         if (samples.isNotEmpty()) {
             heartRateSampleDao.insertBatch(samples.map { HeartRateSampleEntity.fromDomain(it) })
@@ -136,7 +140,8 @@ class RoomSessionRepository(
                         )
                         outboxEnqueued = true
                     } catch (_: com.example.sleeptrackersimulator.cloud.CloudOutboxFullException) {
-                        // Cloud backpressure must not roll back the authoritative local completion.
+                        // Preserve delivery intent in the same transaction as local completion.
+                        database.cloudOutboxDao().saveDeliveryIntent(outboxOperation.toEntity())
                         outboxEnqueued = false
                     }
                 }

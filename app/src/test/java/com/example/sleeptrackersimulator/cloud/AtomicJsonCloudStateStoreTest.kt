@@ -78,7 +78,7 @@ class AtomicJsonCloudStateStoreTest {
         AtomicJsonCloudStateStore(file).apply {
             saveActiveSession(ActiveCloudSession("s", 1, "uid", monitoringActive = false))
             enqueue(PendingCloudOperation("end-s", PendingOperationType.END_SESSION, "s", endedAt = 2))
-            completeSessionEnd("s")
+            completeSessionEnd("end-s", "s")
         }
         val restored = AtomicJsonCloudStateStore(file)
         assertNull(restored.activeSession())

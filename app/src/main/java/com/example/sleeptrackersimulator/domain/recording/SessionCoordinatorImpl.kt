@@ -407,7 +407,7 @@ class SessionCoordinatorImpl(
             val windowCoverage = if (windows.isNotEmpty()) {
                 validWindowsCount.toFloat() / windows.size
             } else 0.0f
-            val persistedSamples = sessionRepository.getSamplesForSession(session.sessionId).size.toLong()
+            val persistedSamples = sessionRepository.countSamplesForSession(session.sessionId)
             val expectedSamples = ((observationDurationMs * session.requestedSamplingHz) / 1_000L).coerceAtLeast(1L)
             val totalSampleDenominator = maxOf(expectedSamples, persistedSamples + droppedSamplesCount)
             val ingestionCoverage = if (persistedSamples > 0L) {
