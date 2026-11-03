@@ -441,6 +441,7 @@ class FakeFeatureWindowDao : FeatureWindowDao {
         windows.removeAll { it.sessionId == sessionId }
         return before - windows.size
     }
+    override suspend fun countDemoWindows(): Int = windows.count { it.sessionId.startsWith("demo-v1-") }
 
     override suspend fun deleteOldWindows(olderThanUtcMillis: Long, activeSessionId: String?): Int {
         val initial = windows.size

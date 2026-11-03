@@ -88,8 +88,11 @@ interface FeatureWindowDao {
     @Query("DELETE FROM feature_windows WHERE sessionId = :sessionId")
     suspend fun deleteForSession(sessionId: String): Int
 
-    @Query("DELETE FROM feature_windows WHERE startUtcMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId)")
+    @Query("DELETE FROM feature_windows WHERE startUtcMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId) AND sessionId NOT IN (SELECT sessionId FROM recording_sessions WHERE sourceMode = 'DEMO')")
     suspend fun deleteOldWindows(olderThanUtcMillis: Long, activeSessionId: String? = null): Int
+
+    @Query("SELECT COUNT(*) FROM feature_windows WHERE sessionId IN (SELECT sessionId FROM recording_sessions WHERE sourceMode = 'DEMO')")
+    suspend fun countDemoWindows(): Int
 }
 
 @Dao
@@ -106,7 +109,7 @@ interface PredictionDao {
     @Query("DELETE FROM predictions WHERE sessionId = :sessionId")
     suspend fun deleteForSession(sessionId: String): Int
 
-    @Query("DELETE FROM predictions WHERE timestampMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId)")
+    @Query("DELETE FROM predictions WHERE timestampMillis < :olderThanUtcMillis AND (:activeSessionId IS NULL OR sessionId != :activeSessionId) AND sessionId NOT IN (SELECT sessionId FROM recording_sessions WHERE sourceMode = 'DEMO')")
     suspend fun deleteOldPredictions(olderThanUtcMillis: Long, activeSessionId: String? = null): Int
 }
 

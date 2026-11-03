@@ -15,6 +15,7 @@ import com.example.sleeptrackersimulator.cloud.PendingCloudOperation
 import com.example.sleeptrackersimulator.cloud.PendingOperationType
 import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
 import com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
+import com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
 import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -57,6 +58,50 @@ class DemoDatasetRoomTest {
         assertEquals(90, repository.resetDemoNights())
         assertEquals(0, repository.countDemoNights())
         assertNotNull(repository.getSessionById("real-session"))
+    }
+
+    @Test fun retentionPreservesAllDemoRows() = runBlocking {
+        repository.importDemoNights(DemoDatasetGenerator().generate())
+        DataRetentionPolicy(
+            db.sensorSampleDao(), db.heartRateSampleDao(), db.featureWindowDao(), db.predictionDao(), db.sessionDao(),
+        ).pruneExpiredData(now = Long.MAX_VALUE / 2)
+
+        assertEquals(90, repository.countDemoNights())
+        assertEquals(4_320, repository.countDemoWindows())
+        assertEquals(4_320, repository.countDemoPredictions())
+        assertTrue(repository.verifyDemoNights(nowUtcMillis = Long.MAX_VALUE).isEmpty())
+    }
+
+    @Test fun retainedDemoRowsSurviveDatabaseRestart() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "demo-retention-restart.db"
+        context.deleteDatabase(name)
+        fun open() = Room.databaseBuilder(context, SleepTrackerDatabase::class.java, name)
+            .allowMainThreadQueries().build()
+        fun repo(database: SleepTrackerDatabase) = RoomSessionRepository(
+            database.sessionDao(), database.sensorSampleDao(), database.heartRateSampleDao(), database.featureWindowDao(),
+            database.predictionDao(), database.sessionSummaryDao(), database.personalBaselineDao(), database.deviceDao(), database,
+        )
+        var fileDb = open()
+        var fileRepository = repo(fileDb)
+        try {
+            fileRepository.importDemoNights(DemoDatasetGenerator().generate())
+            DataRetentionPolicy(
+                fileDb.sensorSampleDao(), fileDb.heartRateSampleDao(), fileDb.featureWindowDao(),
+                fileDb.predictionDao(), fileDb.sessionDao(),
+            ).pruneExpiredData(now = Long.MAX_VALUE / 2)
+            fileDb.close()
+
+            fileDb = open()
+            fileRepository = repo(fileDb)
+            assertEquals(90, fileRepository.countDemoNights())
+            assertEquals(4_320, fileRepository.countDemoWindows())
+            assertEquals(4_320, fileRepository.countDemoPredictions())
+            assertTrue(fileRepository.verifyDemoNights(nowUtcMillis = Long.MAX_VALUE).isEmpty())
+        } finally {
+            fileDb.close()
+            context.deleteDatabase(name)
+        }
     }
 
     @Test fun verificationReadsPersistedRowsAndRejectsCorruption() = runBlocking {
