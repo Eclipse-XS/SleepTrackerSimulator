@@ -5,7 +5,7 @@
 The prompt highlighted a known visual defect in the `Automations & Rules` screen:
 > "Nearly black text on a dark background; extremely low contrast for headings and descriptions; weak visual hierarchy; an underdeveloped empty state; a screen that looks unfinished despite the underlying rule engine being implemented."
 
-Our code inspection and live emulator verification on branch `codex/production-hardening-2026-10-27` confirmed this defect and revealed its exact architectural root causes.
+Our code inspection and live emulator verification during the hardening phase (lineage tip: `bcfe938312276386c348bb72a4fcdd48615d7d08`) confirmed this defect and revealed its exact architectural root causes.
 
 ### Code Proof: The Three Compounding Defects
 

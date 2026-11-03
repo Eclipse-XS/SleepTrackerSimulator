@@ -1,7 +1,7 @@
 # Baseline audit — 2026-10-27
 
 - Base branch: `feature/sleepsense-product-overhaul`.
-- Audit branch: `codex/production-hardening-2026-10-27`.
+- Historical hardening lineage tip: `bcfe938312276386c348bb72a4fcdd48615d7d08` (branch subsequently removed).
 - Base commit: `0db7afaaf27d466085e54fbe49598fb2f5235ddf`.
 - Working tree was dirty before this audit. Existing changes and untracked deliverables were preserved.
 - Requested field-feedback file `docs/acceptance/FIELD_FEEDBACK_2026-10-27.md` is absent.

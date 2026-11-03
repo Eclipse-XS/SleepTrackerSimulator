@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-This inventory documents all screens, sub-views, dialogs, overlays, and companion components in the **SleepSense 2.0** Android application (repository: `SleepTrackerSimulator`, branch: `codex/production-hardening-2026-10-27`).
+This inventory documents all screens, sub-views, dialogs, overlays, and companion components in the **SleepSense 2.0** Android application (repository: `SleepTrackerSimulator`, historical hardening lineage tip: `bcfe938312276386c348bb72a4fcdd48615d7d08`).
 
 The codebase is built with **Kotlin 2.0.21** and **Jetpack Compose (Material 3)**. It integrates seven distinct university laboratory workflows (Sensor Ingestion, BLE GATT, Cloud Sync, Actuators, Room Persistence, On-device TFLite ML, and Smart Scenarios). The project consists of two modules:
 1. `:app` — The primary user-facing wellness application with embedded developer diagnostic tools.

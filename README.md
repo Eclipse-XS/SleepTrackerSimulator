@@ -3,14 +3,10 @@
 [![Android SDK](https://img.shields.io/badge/Android-SDK%2035%20(14%2B)-3DDC84.svg?style=flat&logo=android)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF.svg?style=flat&logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202025.02-4285F4.svg?style=flat&logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
-[![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
+[![Room](https://img.shields.io/badge/Room-v8%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
 [![LiteRT](https://img.shields.io/badge/LiteRT-1.4.2-FF6F00.svg?style=flat)](https://ai.google.dev/edge/litert)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
-[![Android Tests](https://img.shields.io/badge/Android%20Unit%20Tests-295%20PASSED%20(279%20app%20%2B%2016%20vsb)-brightgreen.svg?style=flat)]()
-[![Python Tests](https://img.shields.io/badge/Python%20Tests-75%20PASSED%20(12%20subtests)-brightgreen.svg?style=flat)]()
-[![SQL Quality Gates](https://img.shields.io/badge/SQL%20Quality%20Gates-12%2F12%20PASSED%20(0%20violations)-brightgreen.svg?style=flat)]()
-[![Engineering Maturity](https://img.shields.io/badge/Maturity%20Score-DE%2094%2F100%20%7C%20ML%2092%2F100-blue.svg?style=flat)]()
-[![Release Status](https://img.shields.io/badge/Status-PORTFOLIO__CODE__READY-brightgreen.svg?style=flat)]()
+[![Python CI](https://github.com/Eclipse-XS/SleepTrackerSimulator/actions/workflows/python-datascience-ci.yml/badge.svg?branch=main)](https://github.com/Eclipse-XS/SleepTrackerSimulator/actions/workflows/python-datascience-ci.yml)
 
 **SleepSense** is a modern, privacy-first Android application designed for overnight physical movement observation, sleep restlessness characterization, and local on-device machine learning analytics. Built on clean architecture principles, it seamlessly coordinates phone accelerometer streams, Bluetooth Low Energy (BLE) peripherals, durable SQLite persistence, foreground background recording services, decoupled background rule automations, an offline-first Firebase cloud synchronizer, and a full Python Data Engineering pipeline.
 
@@ -19,18 +15,14 @@
 
 Release evidence: [`docs/PORTFOLIO_RELEASE_ACCEPTANCE.md`](docs/PORTFOLIO_RELEASE_ACCEPTANCE.md). Deployed TFLite hashes and tensor contracts: [`ml/artifacts/deployment_manifest.json`](ml/artifacts/deployment_manifest.json).
 
-### Quick Repository Links & Technical Audits
-- 🏆 **[Final ML & DE Engineering Scorecard](docs/audit/FINAL_ML_DE_SCORECARD.md)** — Audited DE (94/100) and ML (92/100) maturity breakdown.
-- 🛠️ **[Final ML & DE Remediation Report](docs/audit/FINAL_ML_DE_REMEDIATION.md)** — Architectural hardening, root cause fixes, and before/after evidence.
-- ⏱️ **[Data Integrity Acceptance Report](docs/datascience/DATA_INTEGRITY_ACCEPTANCE.md)** — Event-time windowing, 20-bin coverage, and 12 SQL quality gates.
-- 🔁 **[Dataset Reproducibility Report](docs/datascience/DATASET_REPRODUCIBILITY_REPORT.md)** — Deterministic manifests, bounded-memory streaming Parquet, and storage safety.
-- 🔬 **[Final Experimental Integrity Report](docs/datascience/FINAL_EXPERIMENTAL_INTEGRITY.md)** — Subject-independent 6-Fold GroupKFold CV, paired t-tests, and true domain shift.
-- 📜 **[Android ↔ Python Data & ML Contract](docs/datascience/ANDROID_PYTHON_DATA_CONTRACT.md)** — Schema v2.1, monotonic-to-UTC timestamp anchoring, causal HR cutoff, `android_runtime_features_v1` golden parity, and strict label/provenance rules.
-- 📦 **[Final Model Provenance & Registry](docs/datascience/FINAL_MODEL_PROVENANCE.md)** — Candidate staging, TFLite checksums, and audited promotion protocol.
-- 📱 **[Final ML Deployment Acceptance](docs/datascience/FINAL_ML_DEPLOYMENT_ACCEPTANCE.md)** — 4-tier Android inference engine, causal HR alignment, and on-device parity.
-- 🔬 **[Final Project Technical Audit](docs/audit/FINAL_PROJECT_AUDIT.md)** — Comprehensive independent code audit and multi-role acceptance.
-- 📋 **[Final Defect Register](docs/audit/FINAL_DEFECT_REGISTER.md)** — Verified defect records, root-cause analyses, and regression tests.
-- 🗄️ **[Relational SQL Data Model](docs/datascience/SQL_DATA_MODEL.md)** — ANSI DDL schema v2.1.0, 9 tables, 15 analytical SQL queries, and 12 quality gates.
+### Technical Documentation
+
+- [Architecture](ARCHITECTURE.md) — Android architecture, recording lifecycle and component boundaries.
+- [Data Pipeline](DATA_PIPELINE.md) — Python ingestion, transformation and analytical datasets.
+- [ML Model Card](ML_MODEL_CARD.md) — model contracts, evaluation and limitations.
+- [Android–Python Data Contract](docs/datascience/ANDROID_PYTHON_DATA_CONTRACT.md) — timestamp, label and feature consistency.
+- [Domain Shift Evaluation](docs/datascience/DOMAIN_SHIFT_EVALUATION.md) — evaluation under distribution changes.
+- [Release Acceptance](docs/PORTFOLIO_RELEASE_ACCEPTANCE.md) — release evidence and remaining limitations.
 
 ---
 
@@ -62,7 +54,7 @@ flowchart TD
     end
 
     subgraph Data ["Data & Persistence Layer"]
-        Room["Room Database v7\n(Sessions, Samples, Predictions)"]
+        Room["Room Database v8\n(Sessions, Samples, Predictions)"]
         Retention["DataRetentionPolicy & Worker\n(7d Raw / 30d Aggregates Pruning)"]
         BLE["DeviceTransport\n(Mock, Android GATT, Advertiser)"]
         Cloud["Firebase RTDB & Outbox\n(Durable SQLite Queue)"]
@@ -258,7 +250,7 @@ Production observability is grouped under **Settings → Advanced → Developer 
 | **L2** | BLE Wearable Transport | `MockDeviceTransport`, `VirtualSleepBand` | **BLE (L2)** | [Звіт ЛР-2](deliverables/ЛР-2_МПСС_Гончаров_Вадим_ОІ-43.docx) | `MockBleConnectorTest` | `VERIFIED` |
 | **L3** | Firebase Cloud Sync | `FirebaseCloudRepository`, `RoomCloudStateStore` | **Cloud (L3)** | [Звіт ЛР-3](deliverables/ЛР-3_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `database.rules.test.mjs` (11 tests) | `VERIFIED` |
 | **L4** | Hardware Actuators | `AndroidSmartActuator` (Camera & Vibrator) | **Actuators (L4)** | [Звіт ЛР-4](deliverables/ЛР-4_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActuatorViewModelTest` | `VERIFIED` |
-| **L5** | Room Database v7 | `SleepTrackerDatabase`, `RoomSessionRepository` | **Room (L5)** | [Звіт ЛР-5](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `SleepTrackerMigrationV6ToV7Test` | `VERIFIED` |
+| **L5** | Room Database v8 | `SleepTrackerDatabase`, `RoomSessionRepository` | **Room (L5)** | [Звіт ЛР-5](deliverables/ЛР-5_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `SleepTrackerMigrationV6ToV7Test` | `VERIFIED` |
 | **L6** | On-Device TFLite ML | `ActivityClassifier`, `ModelSelectionEngine` | **ML (L6)** | [Звіт ЛР-6](deliverables/ЛР-6_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `ActivityClassifierInstrumentedTest` | `VERIFIED` |
 | **L7** | Correlated Smart Rules | `SmartRuleEngine`, `BackgroundAutomationCoordinator` | **Trace (L7)** | [Звіт ЛР-7](deliverables/ЛР-7_ПМСС_Гончаров_Вадим_ОІ-43.docx) | `SmartRuleEngineTest` | `VERIFIED` |
 
@@ -304,7 +296,7 @@ Production observability is grouped under **Settings → Advanced → Developer 
 
 - **UI**: Jetpack Compose 1.7, Material 3, Navigation, Compose Lifecycle 2.8
 - **Concurrency**: Kotlin Coroutines 1.9, StateFlow, SharedFlow, Mutex
-- **Persistence**: Room 2.6 (Schema v7 additive), SQLite
+- **Persistence**: Room schema v8 (migrations through 7 to 8), SQLite
 - **Machine Learning**: TensorFlow Lite 2.20.0, Keras, Scikit-Learn 1.9, MLflow
 - **Data Engineering**: Polars 1.24, PyArrow 19.0, Pandera 0.23, DuckDB 1.2
 - **Networking & Cloud**: Firebase Realtime Database SDK, Firebase Anonymous Auth

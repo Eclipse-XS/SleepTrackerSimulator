@@ -1,6 +1,6 @@
 # SleepSense 2.0 — Prioritized Issue Backlog
 
-This backlog catalogs all identified usability, visual, accessibility, and architectural defects discovered during the Phase 1 & 2 audit of SleepSense 2.0 (`codex/production-hardening-2026-10-27`).
+This backlog catalogs all identified usability, visual, accessibility, and architectural defects discovered during the Phase 1 & 2 audit of SleepSense 2.0 (historical hardening phase; lineage tip: `bcfe938312276386c348bb72a4fcdd48615d7d08`).
 
 Issues are organized by severity:
 - **P0**: Broken UI, completely unreadable text, system crashes, or dangerous/misleading interactions.
