@@ -329,6 +329,7 @@ class SessionCoordinatorImpl(
                 sessionRepository.insertSamplesBatch(pendingSamples.toList())
                 pendingSamples.clear()
             }
+            windowSegmenter.clear()
 
             val paused = session.withStatus(SessionStatus.PAUSED)
             lastPauseTimestampMs = System.currentTimeMillis()
@@ -406,9 +407,10 @@ class SessionCoordinatorImpl(
             val windowCoverage = if (windows.isNotEmpty()) {
                 validWindowsCount.toFloat() / windows.size
             } else 0.0f
-            val persistedSamples = windows.sumOf { it.sampleCount }.toLong() + pendingSamples.size
-            val totalSampleDenominator = persistedSamples + droppedSamplesCount
-            val ingestionCoverage = if (totalSampleDenominator > 0L && persistedSamples > 0L) {
+            val persistedSamples = sessionRepository.getSamplesForSession(session.sessionId).size.toLong()
+            val expectedSamples = ((observationDurationMs * session.requestedSamplingHz) / 1_000L).coerceAtLeast(1L)
+            val totalSampleDenominator = maxOf(expectedSamples, persistedSamples + droppedSamplesCount)
+            val ingestionCoverage = if (persistedSamples > 0L) {
                 persistedSamples.toFloat() / totalSampleDenominator.toFloat()
             } else 0.0f
             val coverageFraction = if (windows.isEmpty() || persistedSamples == 0L) {

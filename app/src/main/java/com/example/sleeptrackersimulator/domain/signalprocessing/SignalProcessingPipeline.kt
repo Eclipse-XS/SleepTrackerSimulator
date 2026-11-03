@@ -65,6 +65,7 @@ class SampleValidator(
 class SlidingWindowSegmenter(
     val windowSize: Int = 20,
     val stride: Int = 20, // non-overlapping by default, matches Lab 6 TFLite window
+    private val maximumGapNanos: Long = 250_000_000L,
 ) {
     private val buffer = ArrayList<RawSensorSample>(windowSize * 2)
 
@@ -73,6 +74,16 @@ class SlidingWindowSegmenter(
 
     @Synchronized
     fun addSample(sample: RawSensorSample): List<List<RawSensorSample>> {
+        val previous = buffer.lastOrNull()
+        if (previous != null && (
+                sample.sessionId != previous.sessionId ||
+                    sample.sourceId != previous.sourceId ||
+                    sample.elapsedRealtimeNanos <= previous.elapsedRealtimeNanos ||
+                    sample.elapsedRealtimeNanos - previous.elapsedRealtimeNanos > maximumGapNanos
+                )
+        ) {
+            buffer.clear()
+        }
         buffer.add(sample)
         val readyWindows = mutableListOf<List<RawSensorSample>>()
 
@@ -111,7 +122,19 @@ object FeatureExtractor {
         val first = samples.first()
         val last = samples.last()
         val count = samples.size
-        val coverage = minOf(1.0f, count.toFloat() / expectedSampleCount)
+        val countCoverage = minOf(1.0f, count.toFloat() / expectedSampleCount)
+        val positiveIntervals = samples.zipWithNext().mapNotNull { (a, b) ->
+            (b.elapsedRealtimeNanos - a.elapsedRealtimeNanos).takeIf { it > 0L }
+        }
+        val medianInterval = positiveIntervals.sorted().let { values ->
+            values.getOrNull(values.size / 2) ?: 0L
+        }
+        val expectedSpan = medianInterval * (expectedSampleCount - 1L)
+        val actualSpan = (last.elapsedRealtimeNanos - first.elapsedRealtimeNanos).coerceAtLeast(0L)
+        val temporalCoverage = if (expectedSpan > 0L && actualSpan > 0L) {
+            minOf(1f, expectedSpan.toFloat() / actualSpan.toFloat())
+        } else countCoverage
+        val coverage = countCoverage * temporalCoverage
 
         // Calculate magnitudes and dynamic acceleration
         var sumDynSq = 0.0

@@ -9,6 +9,12 @@ import org.junit.Test
 
 class SignalProcessingPipelineTest {
 
+    private fun sample(index: Int, baseNanos: Long = 0L) = RawSensorSample(
+        sampleId = index.toLong(), sessionId = "s1", sourceId = "phone",
+        elapsedRealtimeNanos = baseNanos + index * 50_000_000L,
+        utcTimestampMillis = 1_000L + index * 50L, x = 0f, y = 0f, z = 9.81f,
+    )
+
     @Test
     fun `sample validator accepts normal samples and rejects non-finite and extremes`() {
         val validator = SampleValidator()
@@ -76,6 +82,40 @@ class SignalProcessingPipelineTest {
         assertEquals(2, readyWindows.size)
         assertEquals(20, readyWindows[0].size)
         assertEquals(20, readyWindows[1].size)
+    }
+
+    @Test
+    fun `pause boundary discards partial window and does not make cross-boundary prediction`() {
+        val segmenter = SlidingWindowSegmenter(windowSize = 20, stride = 20)
+        repeat(15) { assertTrue(segmenter.addSample(sample(it + 1)).isEmpty()) }
+        segmenter.clear() // pause transition
+
+        val afterFive = (1..5).flatMap { segmenter.addSample(sample(it, baseNanos = 5_000_000_000L)) }
+
+        assertTrue(afterFive.isEmpty())
+        assertEquals(5, segmenter.pendingSampleCount)
+    }
+
+    @Test
+    fun `twenty fresh samples after resume produce exactly one valid window`() {
+        val segmenter = SlidingWindowSegmenter(windowSize = 20, stride = 20)
+        repeat(15) { segmenter.addSample(sample(it + 1)) }
+        segmenter.clear()
+
+        val windows = (1..20).flatMap { segmenter.addSample(sample(it, baseNanos = 5_000_000_000L)) }
+
+        assertEquals(1, windows.size)
+        assertEquals(20, windows.single().size)
+        assertTrue(windows.single().all { it.elapsedRealtimeNanos > 5_000_000_000L })
+    }
+
+    @Test
+    fun `timestamp discontinuity discards partial window`() {
+        val segmenter = SlidingWindowSegmenter(windowSize = 20, stride = 20)
+        repeat(15) { segmenter.addSample(sample(it + 1)) }
+        val windows = (1..5).flatMap { segmenter.addSample(sample(it, baseNanos = 10_000_000_000L)) }
+        assertTrue(windows.isEmpty())
+        assertEquals(5, segmenter.pendingSampleCount)
     }
 
     @Test
