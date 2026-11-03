@@ -3,6 +3,7 @@ package com.example.sleeptrackersimulator.dataset
 import android.content.Context
 import android.os.Build
 import android.os.SystemClock
+import com.example.sleeptrackersimulator.core.model.ClockAnchor
 import com.example.sleeptrackersimulator.core.model.SensorSample
 import java.io.File
 import java.io.StringReader
@@ -46,7 +47,23 @@ data class DatasetSample(
     val rejectionReason: String?,
     val groundTruthLabel: String,
     val predictedMotionClass: String,
+    /** Provenance of the accelerometer observation; matches `SourceKind` names. */
+    val sourceKind: String = "PHONE_REAL",
 )
+
+/**
+ * Export contract (schema 2.1).
+ *
+ * Timestamp convention: `elapsed_realtime_ns` / `elapsedRealtimeNanos` is the raw monotonic
+ * sensor-event timestamp (never replaced by processing time). `timestamp_utc_ms` /
+ * `utcTimestampMillis` is derived from it with ONE session-scoped [ClockAnchor]:
+ * `utc = anchorUtc + (elapsed - anchorElapsed) / 1e6`. Therefore UTC deltas between samples
+ * equal elapsed deltas regardless of how fast samples were processed.
+ *
+ * `ground_truth_label` is the experimental [GroundTruthActivity] annotation.
+ * `predicted_motion_class` is a model output and must never be used as a training label.
+ */
+const val DATASET_EXPORT_SCHEMA_VERSION = "2.1"
 
 data class DatasetSession(
     val sessionId: String = UUID.randomUUID().toString(),
@@ -72,13 +89,15 @@ data class DatasetSession(
 object DatasetCsvExporter {
 
     private const val HEADER_PREFIX = "#"
-    private const val CSV_COLUMNS = "timestamp_utc_ms,elapsed_realtime_ns,accel_x,accel_y,accel_z,dynamic_magnitude,is_valid,ground_truth_label,predicted_motion_class"
+    private const val CSV_COLUMNS = "timestamp_utc_ms,elapsed_realtime_ns,accel_x,accel_y,accel_z,dynamic_magnitude,is_valid,ground_truth_label,predicted_motion_class,rejection_reason,source_kind"
 
     fun generateCsv(session: DatasetSession): String {
         val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
         val sb = StringBuilder()
 
         sb.appendLine("$HEADER_PREFIX SleepSense Ground-Truth Accelerometry Dataset v2.0")
+        sb.appendLine("$HEADER_PREFIX SchemaVersion: $DATASET_EXPORT_SCHEMA_VERSION")
+        sb.appendLine("$HEADER_PREFIX TimestampConvention: utc = session ClockAnchor(elapsed_realtime_ns) mapping; elapsed_realtime_ns = raw sensor event time")
         sb.appendLine("$HEADER_PREFIX SessionId: ${session.sessionId}")
         sb.appendLine("$HEADER_PREFIX ExperimentType: ${session.experimentType.name}")
         sb.appendLine("$HEADER_PREFIX Placement: ${session.placement.name}")
@@ -102,7 +121,9 @@ object DatasetCsvExporter {
                 .append(String.format(Locale.US, "%.5f", s.dynamicMagnitude)).append(',')
                 .append(s.isValid).append(',')
                 .append(s.groundTruthLabel).append(',')
-                .append(s.predictedMotionClass).append('\n')
+                .append(s.predictedMotionClass).append(',')
+                .append(s.rejectionReason.orEmpty()).append(',')
+                .append(s.sourceKind).append('\n')
         }
 
         return sb.toString()
@@ -170,9 +191,14 @@ object DatasetCsvExporter {
                             z = z,
                             dynamicMagnitude = mag,
                             isValid = isValid,
-                            rejectionReason = if (!isValid) "ValidationFailure" else null,
+                            rejectionReason = if (isValid) {
+                                null
+                            } else {
+                                tokens.getOrNull(9)?.takeIf { it.isNotBlank() } ?: "ValidationFailure"
+                            },
                             groundTruthLabel = gtLabel,
                             predictedMotionClass = predClass,
+                            sourceKind = tokens.getOrNull(10)?.takeIf { it.isNotBlank() } ?: "PHONE_REAL",
                         )
                     )
                 }
@@ -206,6 +232,8 @@ object DatasetJsonExporter {
         heartRateSamples: List<Map<String, Any>> = emptyList(),
     ): String {
         val root = mapOf(
+            "schemaVersion" to DATASET_EXPORT_SCHEMA_VERSION,
+            "timestampConvention" to "utcTimestampMillis = session ClockAnchor(elapsedRealtimeNanos) mapping; elapsedRealtimeNanos = raw sensor event time",
             "sessionId" to session.sessionId,
             "experimentType" to session.experimentType.name,
             "placement" to session.placement.name,
@@ -214,28 +242,41 @@ object DatasetJsonExporter {
             "startTimeUtcMs" to session.startTimeUtcMs,
             "endTimeUtcMs" to session.endTimeUtcMs,
             "samples" to session.samples.map { s ->
+                // Non-finite values are not valid JSON numbers: export them as null and rely on
+                // isValid=false / rejectionReason to keep the observation auditable.
                 mapOf(
                     "utcTimestampMillis" to s.timestampUtcMs,
                     "elapsedRealtimeNanos" to s.elapsedRealtimeNanos,
-                    "x" to s.x,
-                    "y" to s.y,
-                    "z" to s.z,
+                    "x" to s.x.takeIf { it.isFinite() },
+                    "y" to s.y.takeIf { it.isFinite() },
+                    "z" to s.z.takeIf { it.isFinite() },
+                    "dynamicMagnitude" to s.dynamicMagnitude.takeIf { it.isFinite() },
                     "sensorAccuracy" to 3,
-                    "sourceKind" to "PHONE_REAL",
+                    "sourceKind" to s.sourceKind,
+                    "isValid" to s.isValid,
+                    "rejectionReason" to s.rejectionReason,
                     "groundTruthLabel" to s.groundTruthLabel,
                     "predictedMotionClass" to s.predictedMotionClass,
                 )
             },
             "heartRateSamples" to heartRateSamples,
         )
-        return com.google.gson.Gson().toJson(root)
+        return com.google.gson.GsonBuilder().serializeNulls().create().toJson(root)
     }
 }
 
-class DatasetRecordingController {
+class DatasetRecordingController(
+    /**
+     * Supplies the session-scoped monotonic-to-UTC anchor. Injectable so tests are deterministic.
+     * It is invoked once per recording (at [start]); every sample of that session is mapped with
+     * the same anchor.
+     */
+    private val clockAnchorProvider: () -> ClockAnchor = { ClockAnchor.current() },
+) {
 
     private val samples = mutableListOf<DatasetSample>()
     private var isRecording = false
+    private var anchor: ClockAnchor? = null
     private var startUtcMs: Long = 0L
     private var experimentType: ExperimentType = ExperimentType.CONTROLLED_REST
     private var placement: DevicePlacement = DevicePlacement.MATTRESS
@@ -255,7 +296,9 @@ class DatasetRecordingController {
         experimentType = experiment
         placement = devicePlacement
         currentGroundTruth = groundTruth
-        startUtcMs = System.currentTimeMillis()
+        val sessionAnchor = clockAnchorProvider()
+        anchor = sessionAnchor
+        startUtcMs = sessionAnchor.utcTimestampMillis
         isRecording = true
     }
 
@@ -264,7 +307,8 @@ class DatasetRecordingController {
     }
 
     fun processSample(sample: SensorSample, predictedClass: String = "REST"): DatasetSample {
-        val utcNow = System.currentTimeMillis()
+        val sessionAnchor = anchor ?: clockAnchorProvider().also { anchor = it }
+        val utcNow = sessionAnchor.toUtcMillis(sample.timestampNanos)
         val elapsedNs = sample.timestampNanos
 
         // Validation against physical bounds
@@ -308,12 +352,14 @@ class DatasetRecordingController {
 
     fun stop(): DatasetSession {
         isRecording = false
-        val endUtcMs = System.currentTimeMillis()
+        // Event-time boundaries: first/last sample UTC (derived from sensor timestamps), not processing time.
+        val sessionStart = samples.firstOrNull()?.timestampUtcMs ?: startUtcMs
+        val endUtcMs = samples.lastOrNull()?.timestampUtcMs ?: sessionStart
         return DatasetSession(
             experimentType = experimentType,
             placement = placement,
             groundTruthActivity = currentGroundTruth,
-            startTimeUtcMs = startUtcMs,
+            startTimeUtcMs = sessionStart,
             endTimeUtcMs = endUtcMs,
             samples = samples.toList(),
         )
