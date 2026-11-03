@@ -1,6 +1,14 @@
-package com.example.sleeptrackersimulator.ui.insights
+﻿package com.example.sleeptrackersimulator.ui.insights
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.remember
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import com.example.sleeptrackersimulator.core.model.SessionSummary
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -178,7 +186,7 @@ fun InsightsScreen(
                         Spacer(modifier = Modifier.height(14.dp))
 
                         Text(
-                            text = "Y: low-motion fraction (%) · X: recorded night (earliest → latest)",
+                            text = "Y: low-motion fraction (%) · X: night (date) · line: 7-night moving average",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -193,92 +201,21 @@ fun InsightsScreen(
                             "Nightly low-motion trend chart across ${points.size} nights, ranging from $minVal% to $maxVal%."
                         }
 
-                        val primaryColor = MaterialTheme.colorScheme.primary
-                        val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                        val baselineColor = CalmGreen.copy(alpha = 0.8f)
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .semantics {
-                                    contentDescription = chartSemanticsDescription
-                                },
-                        ) {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val chartHeight = size.height
-                                val chartWidth = size.width
-
-                                // Horizontal grid lines for 0%, 50%, 100%
-                                val y100 = 0f
-                                val y50 = chartHeight * 0.5f
-                                val y0 = chartHeight
-
-                                drawLine(color = gridColor, start = Offset(0f, y100), end = Offset(chartWidth, y100), strokeWidth = 1f)
-                                drawLine(color = gridColor, start = Offset(0f, y50), end = Offset(chartWidth, y50), strokeWidth = 1f)
-                                drawLine(color = gridColor, start = Offset(0f, y0), end = Offset(chartWidth, y0), strokeWidth = 1f)
-
-                                if (points.size > 1) {
-                                    val step = chartWidth / (points.size - 1)
-
-                                    // Line segments
-                                    for (i in 0 until points.lastIndex) {
-                                        val startOffset = Offset(
-                                            x = i * step,
-                                            y = (1f - points[i].lowMotionFraction.coerceIn(0f, 1f)) * chartHeight,
-                                        )
-                                        val endOffset = Offset(
-                                            x = (i + 1) * step,
-                                            y = (1f - points[i + 1].lowMotionFraction.coerceIn(0f, 1f)) * chartHeight,
-                                        )
-
-                                        drawLine(
-                                            color = primaryColor,
-                                            start = startOffset,
-                                            end = endOffset,
-                                            strokeWidth = 3.dp.toPx(),
-                                        )
-                                    }
-
-                                    // Point dots
-                                    for (i in points.indices) {
-                                        val dotOffset = Offset(
-                                            x = i * step,
-                                            y = (1f - points[i].lowMotionFraction.coerceIn(0f, 1f)) * chartHeight,
-                                        )
-                                        drawCircle(
-                                            color = primaryColor,
-                                            radius = 4.dp.toPx(),
-                                            center = dotOffset,
-                                        )
-                                    }
-                                }
-                            }
+                        if (points.isEmpty()) {
+                            Text(
+                                text = "No full-night recordings (≥30 min, ≥85% coverage) to plot yet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            LowMotionTrendChart(points = points, description = chartSemanticsDescription)
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // X-axis & Y-axis labels
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = "Earliest",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                text = "${points.size} recorded night(s)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                text = "Latest",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Shaded band: 70–90% reference range (descriptive, not a clinical threshold). ${points.size} full night(s) plotted.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
 
@@ -370,6 +307,82 @@ fun InsightsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LowMotionTrendChart(points: List<SessionSummary>, description: String) {
+    val primary = MaterialTheme.colorScheme.primary
+    val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+    val band = CalmGreen.copy(alpha = 0.12f)
+    val avgColor = MotionAmber.copy(alpha = 0.9f)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = labelColor)
+    val fractions = points.map { it.lowMotionFraction.coerceIn(0f, 1f) }
+    val average = LowMotionTrend.movingAverage(fractions)
+    val dateFormat = remember { SimpleDateFormat("MMM d", Locale.getDefault()) }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(190.dp)
+            .semantics { contentDescription = description },
+    ) {
+        val leftPad = 36.dp.toPx()
+        val bottomPad = 20.dp.toPx()
+        val topPad = 6.dp.toPx()
+        val rightPad = 8.dp.toPx()
+        val plotW = size.width - leftPad - rightPad
+        val plotH = size.height - bottomPad - topPad
+        fun yOf(v: Float) = topPad + (1f - v) * plotH
+        fun xOf(i: Int) = if (points.size == 1) leftPad + plotW / 2 else leftPad + i * plotW / (points.size - 1)
+
+        drawRect(
+            color = band,
+            topLeft = Offset(leftPad, yOf(LowMotionTrend.TARGET_HIGH)),
+            size = Size(plotW, yOf(LowMotionTrend.TARGET_LOW) - yOf(LowMotionTrend.TARGET_HIGH)),
+        )
+        for (pct in listOf(0, 25, 50, 75, 100)) {
+            val y = yOf(pct / 100f)
+            drawLine(grid, Offset(leftPad, y), Offset(leftPad + plotW, y), strokeWidth = 1f)
+            val layout = measurer.measure("$pct%", labelStyle)
+            drawText(
+                layout,
+                topLeft = Offset(leftPad - layout.size.width - 4.dp.toPx(), (y - layout.size.height / 2f).coerceIn(0f, size.height - layout.size.height)),
+            )
+        }
+
+        val maxLabels = if (size.width > 600.dp.toPx()) 6 else 4
+        for (i in LowMotionTrend.labelIndices(points.size, maxLabels)) {
+            val text = dateFormat.format(Date(points[i].calculatedAtUtcMillis)) + " · #${i + 1}"
+            val layout = measurer.measure(text, labelStyle)
+            val x = (xOf(i) - layout.size.width / 2f).coerceIn(leftPad - 4.dp.toPx(), size.width - layout.size.width.toFloat())
+            drawText(layout, topLeft = Offset(x, topPad + plotH + 4.dp.toPx()))
+        }
+
+        val dense = points.size > 30
+        for (i in 0 until points.lastIndex) {
+            drawLine(
+                color = primary.copy(alpha = if (dense) 0.7f else 1f),
+                start = Offset(xOf(i), yOf(fractions[i])),
+                end = Offset(xOf(i + 1), yOf(fractions[i + 1])),
+                strokeWidth = (if (dense) 1.5.dp else 2.5.dp).toPx(),
+            )
+        }
+        if (!dense) {
+            for (i in points.indices) drawCircle(primary, radius = 3.dp.toPx(), center = Offset(xOf(i), yOf(fractions[i])))
+        }
+        if (points.size >= 3) {
+            for (i in 0 until points.lastIndex) {
+                drawLine(
+                    color = avgColor,
+                    start = Offset(xOf(i), yOf(average[i])),
+                    end = Offset(xOf(i + 1), yOf(average[i + 1])),
+                    strokeWidth = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                )
             }
         }
     }

@@ -1,4 +1,4 @@
-package com.example.sleeptrackersimulator.ui.insights
+﻿package com.example.sleeptrackersimulator.ui.insights
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -55,7 +55,7 @@ internal fun calculateMetrics(summaries: List<SessionSummary>): InsightsMetrics 
         averageMovementEpisodes = summaries.map { it.movementEpisodeCount }.average().toFloat(),
         averageHeartRateBpm = heartRates.takeIf { it.isNotEmpty() }?.average()?.toFloat(),
         averageCoverageFraction = summaries.map { it.dataCoverageFraction }.average().toFloat(),
-        nightlyTrend = summaries.sortedBy { it.calculatedAtUtcMillis },
+        nightlyTrend = LowMotionTrend.trendPoints(summaries),
     )
 }
 
