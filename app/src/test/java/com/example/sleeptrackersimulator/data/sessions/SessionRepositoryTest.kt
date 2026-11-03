@@ -499,6 +499,9 @@ class FakeSessionSummaryDao : SessionSummaryDao {
     override suspend fun getSummariesSince(sinceUtcMillis: Long): List<SessionSummaryEntity> =
         summaries.values.filter { it.calculatedAtUtcMillis >= sinceUtcMillis }
 
+    override suspend fun getBaselineCandidates(sourceMode: String, placement: String, limit: Int): List<SessionSummaryEntity> =
+        summaries.values.take(limit)
+
     override suspend fun deleteSummaryForSession(sessionId: String): Int {
         val removed = summaries.remove(sessionId)
         if (removed != null) stateFlow.value = summaries.values.toList()

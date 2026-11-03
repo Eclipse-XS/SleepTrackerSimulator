@@ -212,7 +212,7 @@ fun InsightsScreen(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Shaded band: 70–90% reference range (descriptive, not a clinical threshold). ${points.size} full night(s) plotted.",
+                            text = "Shaded band: 70–90% reference range (descriptive, not a clinical threshold). ${metrics.trendEligibleCount} eligible; ${metrics.trendExcludedCount} excluded (<30 min or <85% coverage).",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -104,6 +104,39 @@ class DemoDatasetRoomTest {
         }
     }
 
+    @Test fun sourceAndPlacementSpecificBaselinesNeverMixCandidates() = runBlocking {
+        val groups = listOf(
+            Triple(SourceMode.PHONE_ONLY, DevicePlacement.MATTRESS, 0.20f),
+            Triple(SourceMode.COMBINED, DevicePlacement.MATTRESS, 0.40f),
+            Triple(SourceMode.WEARABLE_ONLY, DevicePlacement.MATTRESS, 0.60f),
+            Triple(SourceMode.PHONE_ONLY, DevicePlacement.NIGHTSTAND, 0.80f),
+        )
+        groups.forEachIndexed { groupIndex, (mode, placement, lowMotion) ->
+            repeat(3) { item ->
+                val id = "baseline-$groupIndex-$item"
+                repository.saveSession(
+                    completedSession(id).copy(sourceMode = mode, devicePlacement = placement),
+                )
+                repository.saveSessionSummary(
+                    summaryFor(completedSession(id)).copy(
+                        observationDurationMs = 8 * 3_600_000L,
+                        validDurationMs = 8 * 3_600_000L,
+                        dataCoverageFraction = 0.95f,
+                        lowMotionFraction = lowMotion,
+                        devicePlacement = placement,
+                    ),
+                )
+            }
+        }
+
+        groups.forEach { (mode, placement, expectedMedian) ->
+            val baseline = repository.recalculateBaseline(mode, placement)
+            assertNotNull(baseline)
+            assertEquals(3, baseline?.compatibleSessionCount)
+            assertEquals(expectedMedian, baseline?.medianLowMotionFraction ?: -1f, 0.0001f)
+        }
+    }
+
     @Test fun verificationReadsPersistedRowsAndRejectsCorruption() = runBlocking {
         val nights = DemoDatasetGenerator().generate()
         repository.importDemoNights(nights)

@@ -59,6 +59,15 @@ class InsightsViewModelTest {
         assertFalse(viewModel.uiState.value.isQualityGateSatisfied)
     }
 
+    @Test fun trendReportsExactEligibleAndExcludedCounts() {
+        val eligible = summary("eligible", SourceKind.PHONE_REAL, 0.75f)
+        val tooShort = eligible.copy(sessionId = "short", observationDurationMs = 29 * 60 * 1000L)
+        val lowCoverage = eligible.copy(sessionId = "coverage", dataCoverageFraction = 0.84f)
+        val metrics = calculateMetrics(listOf(eligible, tooShort, lowCoverage))
+        assertEquals(1, metrics.trendEligibleCount)
+        assertEquals(2, metrics.trendExcludedCount)
+    }
+
     private fun summary(id: String, source: SourceKind, lowMotion: Float) = SessionSummary(
         sessionId = id,
         observationDurationMs = 8 * 3_600_000L,

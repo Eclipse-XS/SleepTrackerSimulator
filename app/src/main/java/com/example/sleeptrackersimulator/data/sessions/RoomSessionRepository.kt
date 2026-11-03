@@ -246,7 +246,7 @@ class RoomSessionRepository(
         sourceMode: SourceMode,
         placement: DevicePlacement,
     ): PersonalBaseline? = withContext(dispatcher) {
-        val summaries = sessionSummaryDao.getRecentSummaries(limit = 60)
+        val summaries = sessionSummaryDao.getBaselineCandidates(sourceMode.name, placement.name, limit = 60)
             .map { it.toDomain() }
             .filter { it.isComparableWithBaseline && it.devicePlacement == placement }
 
@@ -279,8 +279,9 @@ class RoomSessionRepository(
 
     override suspend fun compareSessionWithBaseline(sessionId: String): BaselineComparison? = withContext(dispatcher) {
         val summary = getSessionSummary(sessionId) ?: return@withContext null
+        val session = sessionDao.getSessionById(sessionId)?.toDomain() ?: return@withContext null
         val baseline = getPersonalBaseline(
-            sourceMode = SourceMode.PHONE_ONLY,
+            sourceMode = session.sourceMode,
             placement = summary.devicePlacement,
         ) ?: return@withContext null
 

@@ -133,6 +133,9 @@ interface SessionSummaryDao {
     @Query("SELECT * FROM session_summaries WHERE calculatedAtUtcMillis >= :sinceUtcMillis ORDER BY calculatedAtUtcMillis DESC")
     suspend fun getSummariesSince(sinceUtcMillis: Long): List<SessionSummaryEntity>
 
+    @Query("SELECT ss.* FROM session_summaries ss INNER JOIN recording_sessions rs ON rs.sessionId = ss.sessionId WHERE rs.sourceMode = :sourceMode AND rs.devicePlacement = :placement ORDER BY ss.calculatedAtUtcMillis DESC LIMIT :limit")
+    suspend fun getBaselineCandidates(sourceMode: String, placement: String, limit: Int): List<SessionSummaryEntity>
+
     @Query("DELETE FROM session_summaries WHERE sessionId = :sessionId")
     suspend fun deleteSummaryForSession(sessionId: String): Int
 }

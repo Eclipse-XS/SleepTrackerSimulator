@@ -27,6 +27,8 @@ data class InsightsMetrics(
     val averageHeartRateBpm: Float? = null,
     val averageCoverageFraction: Float = 0f,
     val nightlyTrend: List<SessionSummary> = emptyList(),
+    val trendEligibleCount: Int = 0,
+    val trendExcludedCount: Int = 0,
 )
 
 data class InsightsUiState(
@@ -48,6 +50,7 @@ data class InsightsUiState(
 internal fun calculateMetrics(summaries: List<SessionSummary>): InsightsMetrics {
     if (summaries.isEmpty()) return InsightsMetrics()
     val heartRates = summaries.mapNotNull { it.averageHeartRateBpm }
+    val trend = LowMotionTrend.trendPoints(summaries)
     return InsightsMetrics(
         sessionCount = summaries.size,
         averageDurationMs = summaries.map { it.observationDurationMs }.average().toLong(),
@@ -55,7 +58,9 @@ internal fun calculateMetrics(summaries: List<SessionSummary>): InsightsMetrics 
         averageMovementEpisodes = summaries.map { it.movementEpisodeCount }.average().toFloat(),
         averageHeartRateBpm = heartRates.takeIf { it.isNotEmpty() }?.average()?.toFloat(),
         averageCoverageFraction = summaries.map { it.dataCoverageFraction }.average().toFloat(),
-        nightlyTrend = LowMotionTrend.trendPoints(summaries),
+        nightlyTrend = trend,
+        trendEligibleCount = trend.size,
+        trendExcludedCount = summaries.size - trend.size,
     )
 }
 
