@@ -2,6 +2,7 @@
 
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.DatabaseException
+import java.io.IOException
 import kotlinx.coroutines.tasks.await
 
 class FirebaseCloudRepository(
@@ -85,7 +86,22 @@ class FirebaseCloudRepository(
 
     private suspend fun <T> databaseCall(block: suspend () -> T): T = try {
         block()
-    } catch (error: DatabaseException) {
-        throw CloudOperationException(CloudErrorType.SERVER, "Firebase database operation failed: ${error.message ?: error.javaClass.simpleName}", error)
+    } catch (error: Exception) {
+        if (error is CloudOperationException) throw error
+        val type = classifyFirebaseFailure(error)
+        throw CloudOperationException(type, "Firebase database operation failed: ${error.message ?: error.javaClass.simpleName}", error)
+    }
+}
+
+internal fun classifyFirebaseFailure(error: Throwable): CloudErrorType {
+    val chain = generateSequence(error as Throwable?) { it.cause }
+    val message = chain.joinToString(" ") { "${it.javaClass.name} ${it.message.orEmpty()}" }.lowercase()
+    return when {
+        "permission denied" in message || "permission_denied" in message -> CloudErrorType.PERMISSION
+        "unauth" in message || "auth" in message && "network" !in message -> CloudErrorType.AUTH
+        "invalid" in message || "validation" in message || "failed to parse" in message -> CloudErrorType.VALIDATION
+        error is IOException || "network" in message || "disconnected" in message || "timeout" in message -> CloudErrorType.NETWORK
+        error is DatabaseException -> CloudErrorType.SERVER
+        else -> CloudErrorType.UNKNOWN
     }
 }

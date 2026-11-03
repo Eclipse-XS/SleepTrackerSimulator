@@ -293,6 +293,7 @@ class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDa
     override fun count(): Int = records.size
     override fun countTypeForSession(type: String, sessionId: String): Int = records.count { it.type == type && it.sessionId == sessionId }
     override fun first(): com.example.sleeptrackersimulator.cloud.CloudOutboxEntity? = records.firstOrNull()
+    override fun firstDeletion(): com.example.sleeptrackersimulator.cloud.CloudOutboxEntity? = records.firstOrNull { it.type == "DELETE_SESSION" }
     override fun all(): List<com.example.sleeptrackersimulator.cloud.CloudOutboxEntity> = records.toList()
     override fun activeSession(): com.example.sleeptrackersimulator.cloud.CloudSessionEntity? = null
     override fun insert(entity: com.example.sleeptrackersimulator.cloud.CloudOutboxEntity) { records.add(entity) }
@@ -301,6 +302,10 @@ class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDa
     override fun clearSession() {}
     override fun deleteSequence(sequence: Long): Int {
         val removed = records.removeIf { it.sequence == sequence }
+        return if (removed) 1 else 0
+    }
+    override fun deleteOperation(operationId: String): Int {
+        val removed = records.removeIf { it.operationId == operationId }
         return if (removed) 1 else 0
     }
     override fun deleteSession(sessionId: String): Int = deleteForSession(sessionId)
@@ -315,6 +320,7 @@ class FakeCloudOutboxDao : com.example.sleeptrackersimulator.cloud.CloudOutboxDa
         return before - records.size
     }
     override fun updateFailure(sequence: Long, message: String, state: String): Int = 0
+    override fun updateOperationFailure(operationId: String, message: String, state: String): Int = 0
 }
 
 // In-Memory Fakes for Unit Testing DAOs

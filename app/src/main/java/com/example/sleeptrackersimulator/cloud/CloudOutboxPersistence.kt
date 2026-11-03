@@ -53,6 +53,9 @@ abstract class CloudOutboxDao {
     @Query("SELECT * FROM cloud_outbox ORDER BY sequence ASC LIMIT 1")
     abstract fun first(): CloudOutboxEntity?
 
+    @Query("SELECT * FROM cloud_outbox WHERE type = 'DELETE_SESSION' ORDER BY sequence ASC LIMIT 1")
+    abstract fun firstDeletion(): CloudOutboxEntity?
+
     @Query("SELECT * FROM cloud_outbox ORDER BY sequence ASC")
     abstract fun all(): List<CloudOutboxEntity>
 
@@ -74,6 +77,9 @@ abstract class CloudOutboxDao {
     @Query("DELETE FROM cloud_outbox WHERE sequence = :sequence")
     protected abstract fun deleteSequence(sequence: Long): Int
 
+    @Query("DELETE FROM cloud_outbox WHERE operationId = :operationId")
+    abstract fun deleteOperation(operationId: String): Int
+
     @Query("DELETE FROM cloud_active_session WHERE sessionId = :sessionId")
     protected abstract fun deleteSession(sessionId: String): Int
 
@@ -85,6 +91,9 @@ abstract class CloudOutboxDao {
 
     @Query("UPDATE cloud_outbox SET retryCount = retryCount + 1, lastError = :message, deliveryState = :state WHERE sequence = :sequence")
     protected abstract fun updateFailure(sequence: Long, message: String, state: String): Int
+
+    @Query("UPDATE cloud_outbox SET retryCount = retryCount + 1, lastError = :message, deliveryState = :state WHERE operationId = :operationId")
+    protected abstract fun updateOperationFailure(operationId: String, message: String, state: String): Int
 
     @Transaction
     open fun enqueue(entity: CloudOutboxEntity, maximumOperations: Int) {
@@ -130,6 +139,12 @@ abstract class CloudOutboxDao {
     }
 
     @Transaction
+    open fun recordOperationFailure(operationId: String, message: String, permanent: Boolean) {
+        val state = if (permanent) DeliveryState.PERMANENT_FAILURE.name else DeliveryState.PENDING.name
+        check(updateOperationFailure(operationId, message, state) == 1)
+    }
+
+    @Transaction
     open fun importLegacy(operations: List<CloudOutboxEntity>, session: CloudSessionEntity?) {
         operations.forEach(::insertForMigration)
         if (activeSession() == null && session != null) saveSession(session)
@@ -162,6 +177,11 @@ class RoomCloudStateStore(
     }
 
     override fun removeFirst() = dao.removeFirst()
+    override fun peekDeletion(): PendingCloudOperation? {
+        ensureLegacyImported()
+        return dao.firstDeletion()?.takeIf { it.readyForDelivery }?.toModel()
+    }
+    override fun removeOperation(operationId: String): Boolean = dao.deleteOperation(operationId) == 1
     override fun pendingOperations(): List<PendingCloudOperation> {
         ensureLegacyImported()
         return dao.all().map { it.toModel() }
@@ -185,6 +205,8 @@ class RoomCloudStateStore(
     }
     override fun recordFirstFailure(message: String, permanent: Boolean) =
         dao.recordFirstFailure(message, permanent)
+    override fun recordOperationFailure(operationId: String, message: String, permanent: Boolean) =
+        dao.recordOperationFailure(operationId, message, permanent)
 
     @Synchronized
     private fun ensureLegacyImported() {

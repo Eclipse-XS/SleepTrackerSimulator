@@ -86,6 +86,7 @@ class CloudOutboxWorker(
 }
 
 object CloudOutboxDrainer {
+    internal const val MAX_RETRY_ATTEMPTS = 5
     suspend fun drain(
         store: CloudStateStore,
         repository: CloudRepository,
@@ -107,21 +108,18 @@ object CloudOutboxDrainer {
         // Data erasure (Right to be Forgotten) is an independent privacy right and
         // must execute even if upload consent is revoked, without resurrecting sessions.
         while (true) {
-            val operation = store.peek() ?: break
-            if (operation.type == PendingOperationType.DELETE_SESSION) {
-                try {
-                    repository.deleteSession(uid, operation.sessionId)
-                    store.removeFirst()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (failure: CloudOperationException) {
-                    runCatching { store.recordFirstFailure(failure.message ?: failure.type.name, !failure.retriable) }
-                    return if (failure.retriable) Result.retry() else Result.failure()
-                } catch (_: Exception) {
-                    return Result.retry()
-                }
-            } else {
-                break
+            val operation = store.peekDeletion() ?: break
+            try {
+                repository.deleteSession(uid, operation.sessionId)
+                check(store.removeOperation(operation.operationId)) { "Deletion acknowledgement was not persisted" }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: CloudOperationException) {
+                val exhausted = failure.retriable && operation.retryCount + 1 >= MAX_RETRY_ATTEMPTS
+                runCatching { store.recordOperationFailure(operation.operationId, failure.message ?: failure.type.name, !failure.retriable || exhausted) }
+                return if (failure.retriable && !exhausted) Result.retry() else Result.failure()
+            } catch (_: Exception) {
+                return Result.retry()
             }
         }
 

@@ -12,11 +12,14 @@ interface CloudStateStore {
     fun enqueue(operation: PendingCloudOperation): EnqueueResult
     fun peek(): PendingCloudOperation?
     fun removeFirst()
+    fun peekDeletion(): PendingCloudOperation? = pendingOperations().firstOrNull { it.type == PendingOperationType.DELETE_SESSION }
+    fun removeOperation(operationId: String): Boolean = false
     fun pendingOperations(): List<PendingCloudOperation>
     fun activeSession(): ActiveCloudSession?
     fun saveActiveSession(session: ActiveCloudSession?)
     fun completeSessionEnd(sessionId: String)
     fun recordFirstFailure(message: String, permanent: Boolean) = Unit
+    fun recordOperationFailure(operationId: String, message: String, permanent: Boolean) = Unit
     fun removeOperationsForSession(sessionId: String): Int = 0
     fun purgeUnconsentedUploads(): Int = 0
 }
@@ -59,6 +62,25 @@ class AtomicJsonCloudStateStore(
 
     @Synchronized override fun removeFirst() {
         if (state.operations.isNotEmpty()) persist(state.copy(operations = state.operations.drop(1)))
+    }
+
+    @Synchronized override fun removeOperation(operationId: String): Boolean {
+        val filtered = state.operations.filterNot { it.operationId == operationId }
+        if (filtered.size == state.operations.size) return false
+        persist(state.copy(operations = filtered))
+        return true
+    }
+
+    @Synchronized override fun recordOperationFailure(operationId: String, message: String, permanent: Boolean) {
+        val index = state.operations.indexOfFirst { it.operationId == operationId }
+        if (index < 0) return
+        val operation = state.operations[index]
+        val updated = operation.copy(
+            retryCount = operation.retryCount + 1,
+            lastError = message,
+            deliveryState = if (permanent) DeliveryState.PERMANENT_FAILURE else DeliveryState.PENDING,
+        )
+        persist(state.copy(operations = state.operations.toMutableList().also { it[index] = updated }))
     }
 
     @Synchronized override fun pendingOperations(): List<PendingCloudOperation> = state.operations.toList()
@@ -144,6 +166,24 @@ class InMemoryCloudStateStore(
     }
     override fun peek() = state.operations.firstOrNull()
     override fun removeFirst() { if (state.operations.isNotEmpty()) state = state.copy(operations = state.operations.drop(1)) }
+    override fun removeOperation(operationId: String): Boolean {
+        val filtered = state.operations.filterNot { it.operationId == operationId }
+        if (filtered.size == state.operations.size) return false
+        state = state.copy(operations = filtered)
+        return true
+    }
+    override fun recordOperationFailure(operationId: String, message: String, permanent: Boolean) {
+        val index = state.operations.indexOfFirst { it.operationId == operationId }
+        if (index < 0) return
+        val operation = state.operations[index]
+        state = state.copy(operations = state.operations.toMutableList().also {
+            it[index] = operation.copy(
+                retryCount = operation.retryCount + 1,
+                lastError = message,
+                deliveryState = if (permanent) DeliveryState.PERMANENT_FAILURE else DeliveryState.PENDING,
+            )
+        })
+    }
     override fun pendingOperations() = state.operations.toList()
     override fun activeSession() = state.activeSession
     override fun saveActiveSession(session: ActiveCloudSession?) { state = state.copy(activeSession = session) }
