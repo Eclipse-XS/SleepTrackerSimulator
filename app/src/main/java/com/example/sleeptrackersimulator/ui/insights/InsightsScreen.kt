@@ -177,6 +177,13 @@ fun InsightsScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
+                        Text(
+                            text = "Y: low-motion fraction (%) · X: recorded night (earliest → latest)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         val points = metrics.nightlyTrend
                         val chartSemanticsDescription = if (points.isEmpty()) {
                             "Nightly trend chart: no data points"

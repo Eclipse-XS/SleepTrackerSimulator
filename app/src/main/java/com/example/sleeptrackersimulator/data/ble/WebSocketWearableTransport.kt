@@ -23,12 +23,17 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import java.net.URI
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.TimeUnit
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 
 /** Independent-process virtual wearable transport. This is WebSocket, never BLE. */
 class WebSocketWearableTransport(
@@ -44,26 +49,44 @@ class WebSocketWearableTransport(
     private val last = MutableStateFlow<HeartRateSample?>(null)
     override val lastHeartRate: StateFlow<HeartRateSample?> = last.asStateFlow()
     private val discovered = MutableStateFlow<List<DeviceInfo>>(emptyList())
+    private val failure = MutableStateFlow<String?>(null)
+    val connectionFailure: StateFlow<String?> = failure.asStateFlow()
     private val pendingCommands = ConcurrentHashMap<String, CompletableDeferred<CommandResult>>()
     private val sequence = AtomicLong(0)
     private var remoteSequence = -1L
     private var sessionId = ""
     @Volatile private var lastHeartbeatElapsed = 0L
     @Volatile private var client: WebSocketClient? = null
+    @Volatile private var intentionalClose = false
 
     override fun observeDiscoveredDevices(): Flow<List<DeviceInfo>> = discovered.asStateFlow()
 
     override suspend fun startScan(): Result<Unit> {
+        discovered.value = emptyList()
+        failure.value = null
         state.value = DeviceConnectionState.SCANNING
-        discovered.value = listOf(candidate())
-        state.value = DeviceConnectionState.DISCONNECTED
-        return Result.success(Unit)
+        return connect(endpoint.toString()).fold(
+            onSuccess = {
+                val verified = withTimeout(DISCOVERY_TIMEOUT_MILLIS) {
+                    connectedDevice.first { it != null }
+                }!!
+                disconnect()
+                discovered.value = listOf(verified.copy(deviceId = endpoint.toString()))
+                Result.success(Unit)
+            },
+            onFailure = { error ->
+                clearConnection()
+                Result.failure(error)
+            },
+        )
     }
 
     override suspend fun stopScan(): Result<Unit> = Result.success(Unit)
 
-    override suspend fun connect(deviceId: String): Result<Unit> = runCatching {
+    override suspend fun connect(deviceId: String): Result<Unit> = withContext(Dispatchers.IO) { runCatching {
         disconnect()
+        intentionalClose = false
+        failure.value = null
         state.value = DeviceConnectionState.CONNECTING
         sessionId = UUID.randomUUID().toString()
         remoteSequence = -1L
@@ -73,11 +96,26 @@ class WebSocketWearableTransport(
                 sendMessage(WearableProtocol.EventType.HELLO, JsonObject().apply { addProperty("role", "SLEEPSENSE") })
             }
             override fun onMessage(raw: String?) { raw?.let(::handleMessage) }
-            override fun onClose(code: Int, reason: String?, remote: Boolean) { clearConnection() }
-            override fun onError(ex: Exception?) { state.value = DeviceConnectionState.ERROR }
+            override fun onClose(code: Int, reason: String?, remote: Boolean) {
+                if (intentionalClose) clearConnection() else {
+                    failure.value = "Connection closed (code $code${reason?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""})"
+                    clearConnection(DeviceConnectionState.ERROR)
+                }
+            }
+            override fun onError(ex: Exception?) {
+                failure.value = when (ex) {
+                    is ConnectException -> "Endpoint unreachable: $endpoint"
+                    is SocketTimeoutException -> "Connection timed out: $endpoint"
+                    else -> "WebSocket error: ${ex?.message ?: "unknown error"}"
+                }
+                state.value = DeviceConnectionState.ERROR
+            }
         }
         client = socket
-        if (!socket.connectBlocking()) error("Unable to connect to $endpoint")
+        if (!socket.connectBlocking(CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+            throw SocketTimeoutException("Connection timed out: $endpoint")
+        }
+        withTimeout(SESSION_TIMEOUT_MILLIS) { connectedDevice.first { it != null } }
         scope.launch {
             while (client === socket && socket.isOpen) {
                 delay(1_000L)
@@ -86,12 +124,22 @@ class WebSocketWearableTransport(
                 }
             }
         }
-    }
-
-    override suspend fun disconnect(): Result<Unit> = runCatching {
-        client?.closeBlocking()
+        Unit
+    }.recoverCatching { error ->
         clearConnection()
-    }
+        throw when (error) {
+            is SocketTimeoutException, is kotlinx.coroutines.TimeoutCancellationException ->
+                SocketTimeoutException("Timed out while connecting to $endpoint")
+            is ConnectException -> ConnectException("Endpoint unreachable: $endpoint")
+            else -> IllegalStateException("WebSocket connection failed: ${error.message ?: error.javaClass.simpleName}", error)
+        }
+    } }
+
+    override suspend fun disconnect(): Result<Unit> = withContext(Dispatchers.IO) { runCatching {
+        intentionalClose = true
+        withTimeout(CLOSE_TIMEOUT_MILLIS) { client?.closeBlocking() }
+        clearConnection()
+    } }
 
     override suspend fun executeCommand(command: DeviceCommand): Result<CommandResult> = runCatching {
         check(state.value == DeviceConnectionState.CONNECTED) { "Virtual wearable session is not established" }
@@ -116,6 +164,7 @@ class WebSocketWearableTransport(
                 val info = candidate().copy(deviceId = message.deviceId, displayName = message.payload.get("name")?.asString ?: "VirtualSleepBand")
                 device.value = info
                 state.value = DeviceConnectionState.CONNECTED
+                android.util.Log.i(TAG, "DEVICE_INFO accepted session=${sessionId.take(8)} device=${message.deviceId}")
             }
             WearableProtocol.EventType.HEART_RATE_SAMPLE -> {
                 if (state.value != DeviceConnectionState.CONNECTED) return
@@ -126,6 +175,7 @@ class WebSocketWearableTransport(
                 )
                 last.value = sample
                 samples.tryEmit(sample)
+                android.util.Log.d(TAG, "HEART_RATE_SAMPLE accepted sequence=${message.sequenceNumber} provenance=WEBSOCKET_SIMULATED")
             }
             WearableProtocol.EventType.COMMAND_RESULT -> {
                 val id = message.payload.get("commandId")?.asString ?: return
@@ -143,13 +193,14 @@ class WebSocketWearableTransport(
         )))
     }
 
-    private fun clearConnection() {
+    private fun clearConnection(finalState: DeviceConnectionState = DeviceConnectionState.DISCONNECTED) {
         client = null
-        state.value = DeviceConnectionState.DISCONNECTED
+        state.value = finalState
         device.value = null
         last.value = null
         pendingCommands.values.forEach { it.cancel() }
         pendingCommands.clear()
+        intentionalClose = false
     }
 
     private fun candidate() = DeviceInfo(
@@ -157,4 +208,12 @@ class WebSocketWearableTransport(
         sourceKind = SourceKind.WEBSOCKET_SIMULATED,
         capabilities = setOf(DeviceCapability.HEART_RATE, DeviceCapability.VIBRATION_ALERT, DeviceCapability.REMOTE_COMMANDS),
     )
+
+    companion object {
+        const val TAG = "SleepSenseWebSocket"
+        const val CONNECT_TIMEOUT_MILLIS = 4_000L
+        const val SESSION_TIMEOUT_MILLIS = 4_000L
+        const val DISCOVERY_TIMEOUT_MILLIS = 5_000L
+        const val CLOSE_TIMEOUT_MILLIS = 2_000L
+    }
 }

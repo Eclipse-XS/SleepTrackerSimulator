@@ -191,7 +191,7 @@ fun VirtualBandScreen(
                         ),
                     ) {
                         Text(
-                            text = if (state.isAdvertising) "STOP BLE ADVERTISING" else "START BLE ADVERTISING",
+                            text = if (state.isAdvertising) "STOP VIRTUAL WEARABLE" else "START VIRTUAL WEARABLE",
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                         )

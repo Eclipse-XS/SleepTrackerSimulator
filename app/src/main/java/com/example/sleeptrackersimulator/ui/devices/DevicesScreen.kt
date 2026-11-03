@@ -35,6 +35,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,6 +64,8 @@ fun DevicesScreen(
     onDisconnectDevice: () -> Unit,
     onStartScan: () -> Unit,
     onSelectMode: (BleMode) -> Unit,
+    onVirtualEndpointChanged: (String) -> Unit,
+    onSaveVirtualEndpoint: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isConnected = state.connectionState == DeviceConnectionState.CONNECTED
@@ -153,7 +156,7 @@ fun DevicesScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "BLUETOOTH WEARABLE",
+                    text = if (state.mode == BleMode.REAL) "PHYSICAL BLE WEARABLE" else "VIRTUAL WEARABLE · WEBSOCKET",
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
@@ -205,6 +208,39 @@ fun DevicesScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            if (state.mode == BleMode.VIRTUAL_WEBSOCKET) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Virtual WebSocket endpoint", fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            value = state.virtualEndpoint,
+                            onValueChange = onVirtualEndpointChanged,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("ws://host:port") },
+                            supportingText = {
+                                Text(state.endpointValidationError ?: "127.0.0.1: same emulator · 10.0.2.2: host-forwarded · LAN IP: physical devices")
+                            },
+                            isError = state.endpointValidationError != null,
+                        )
+                        Text(
+                            "Unencrypted WebSocket. Use only on an isolated development network. This is not Bluetooth.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MotionAmber,
+                        )
+                        OutlinedButton(onClick = onSaveVirtualEndpoint, modifier = Modifier.fillMaxWidth()) {
+                            Text("Save endpoint and disconnect old transport")
+                        }
+                        state.endpointSavedMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = CalmGreen) }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Active or Connected Device Card
             Card(
@@ -289,7 +325,7 @@ fun DevicesScreen(
                     if (isConnected) {
                         Spacer(modifier = Modifier.height(8.dp))
                         StatusBadge(
-                            text = if (state.isHeartRateStreaming) "HR STREAM ACTIVE" else "GATT CONNECTED · NO CURRENT HR",
+                            text = if (state.isHeartRateStreaming) "HR STREAM ACTIVE" else if (state.mode == BleMode.REAL) "GATT CONNECTED · NO CURRENT HR" else "WEBSOCKET SESSION · HR NOT FRESH",
                             color = if (state.isHeartRateStreaming) CalmGreen else MotionAmber,
                         )
                     }
@@ -330,7 +366,7 @@ fun DevicesScreen(
                                         color = MaterialTheme.colorScheme.onPrimary,
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Scanning for Devices...")
+                                    Text(if (state.mode == BleMode.REAL) "Scanning for BLE devices..." else "Checking WebSocket endpoint...")
                                 } else {
                                     Icon(
                                         imageVector = Icons.Rounded.Refresh,
@@ -338,7 +374,7 @@ fun DevicesScreen(
                                         modifier = Modifier.size(18.dp),
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Scan for BLE Devices", fontWeight = FontWeight.Bold)
+                                    Text(if (state.mode == BleMode.REAL) "Scan for BLE Devices" else "Verify VirtualSleepBand", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -359,7 +395,7 @@ fun DevicesScreen(
             if (state.discoveredDevices.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "DISCOVERED PERIPHERALS (${state.discoveredDevices.size})",
+                    text = if (state.mode == BleMode.REAL) "DISCOVERED BLE PERIPHERALS (${state.discoveredDevices.size})" else "VERIFIED WEBSOCKET ENDPOINT (${state.discoveredDevices.size})",
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -388,7 +424,11 @@ fun DevicesScreen(
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = "RSSI: ${device.rssi ?: 0} dBm · ${device.sourceKind.name}",
+                                    text = if (state.mode == BleMode.VIRTUAL_WEBSOCKET) {
+                                        "Endpoint responded · synthetic HR source"
+                                    } else {
+                                        "RSSI: ${device.rssi ?: 0} dBm · ${device.sourceKind.name}"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

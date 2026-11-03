@@ -45,8 +45,8 @@ class VirtualBandService : Service() {
                     .setContentTitle("VirtualSleepBand running")
                     .setContentText("Synthetic measurements · not medical data")
                     .setOngoing(true).build())
-                server.startAdvertising().onFailure { sharedState.value = sharedState.value.copy(errorMessage = it.message) }
                 runCatching { webSocketServer.start() }.onFailure { sharedState.value = sharedState.value.copy(errorMessage = it.message) }
+                server.startAdvertising().onFailure { sharedState.value = sharedState.value.copy(errorMessage = it.message) }
             }
             ACTION_STOP -> {
                 server.stopAdvertising()

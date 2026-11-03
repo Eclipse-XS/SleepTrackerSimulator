@@ -159,6 +159,7 @@ class RoomSessionRepository(
 
     suspend fun resetDemoNights(): Int = withContext(dispatcher) { sessionDao.deleteDemoSessions() }
     suspend fun countDemoNights(): Int = withContext(dispatcher) { sessionDao.countDemoSessions() }
+    suspend fun countDemoPredictions(): Int = withContext(dispatcher) { predictionDao.countDemoPredictions() }
 
     suspend fun clearAllLocalData() = withContext(dispatcher) {
         val db = requireNotNull(database) { "Database is required to clear all local data" }

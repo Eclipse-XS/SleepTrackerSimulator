@@ -21,6 +21,12 @@ class VirtualWearableWebSocketServer(
     private val scope: CoroutineScope,
     port: Int = 8765,
 ) : WebSocketServer(InetSocketAddress("0.0.0.0", port)) {
+    init {
+        // A force-stop closes accepted sockets abruptly. Reusing the listener address
+        // prevents the independent wearable from becoming unavailable during TIME_WAIT.
+        setReuseAddr(true)
+    }
+
     private data class Session(val id: String, var lastRemoteSequence: Long = -1L, val localSequence: AtomicLong = AtomicLong())
     private val sessions = ConcurrentHashMap<WebSocket, Session>()
     private val generator = SimulatedHeartRate()
@@ -43,6 +49,7 @@ class VirtualWearableWebSocketServer(
             }
             val session = Session(message.sessionId, message.sequenceNumber)
             sessions[conn] = session
+            android.util.Log.i(TAG, "HELLO accepted session=${session.id.take(8)}")
             send(conn, session, WearableProtocol.EventType.DEVICE_INFO, JsonObject().apply {
                 addProperty("name", "VirtualSleepBand")
                 addProperty("simulated", true)
@@ -71,9 +78,13 @@ class VirtualWearableWebSocketServer(
     }
 
     override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) { sessions.remove(conn) }
-    override fun onError(conn: WebSocket?, ex: Exception?) { conn?.let(sessions::remove) }
+    override fun onError(conn: WebSocket?, ex: Exception?) {
+        conn?.let(sessions::remove)
+        android.util.Log.e(TAG, "WebSocket server failure", ex)
+    }
     override fun onStart() {
         connectionLostTimeout = 10
+        android.util.Log.i(TAG, "Listening on ${address.hostString}:${address.port}")
         val started = System.currentTimeMillis()
         streamJob = scope.launch {
             while (isActive) {
@@ -100,5 +111,8 @@ class VirtualWearableWebSocketServer(
         )))
     }
 
-    companion object { const val DEVICE_ID = "virtual-sleep-band-ws-01" }
+    companion object {
+        const val DEVICE_ID = "virtual-sleep-band-ws-01"
+        const val TAG = "VirtualBandWebSocket"
+    }
 }

@@ -161,7 +161,7 @@ fun ProvenanceChip(
         SourceKind.BLE_REAL -> "WEARABLE" to MoonBlue
         SourceKind.BLE_UNVERIFIED -> "BLE UNVERIFIED" to MotionAmber
         SourceKind.SIMULATED -> "SIMULATED" to HeartCoral
-        SourceKind.WEBSOCKET_SIMULATED -> "VIRTUAL · WEBSOCKET" to HeartCoral
+        SourceKind.WEBSOCKET_SIMULATED -> "WS SIM" to HeartCoral
         SourceKind.REPLAY -> "REPLAY" to MotionAmber
         SourceKind.IMPORTED -> "IMPORTED" to Color(0xFFC084FC)
     }
@@ -236,6 +236,14 @@ fun HorizontalActivityTimeline(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Earlier", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Time → · activity class", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Later", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 data class DemoDatasetUiState(
     val generatedCount: Int = 0,
     val importedCount: Int = 0,
+    val importedPredictionCount: Int = 0,
     val isBusy: Boolean = false,
     val message: String = "No demo dataset generated",
     val exportPath: String? = null,
@@ -26,6 +27,15 @@ class DemoDatasetViewModel(
     private var generated: List<DemoNight> = emptyList()
     private val _state = MutableStateFlow(DemoDatasetUiState())
     val state: StateFlow<DemoDatasetUiState> = _state
+
+    init {
+        viewModelScope.launch {
+            _state.update { it.copy(
+                importedCount = repository.countDemoNights(),
+                importedPredictionCount = repository.countDemoPredictions(),
+            ) }
+        }
+    }
 
     fun generate() {
         generated = generator.generate()
@@ -43,8 +53,11 @@ class DemoDatasetViewModel(
         require(errors.isEmpty()) { errors.joinToString() }
         repository.importDemoNights(generated)
         val count = repository.countDemoNights()
-        _state.update { it.copy(importedCount = count, message = "Imported $count demo nights; repeated import is idempotent") }
+        val predictions = repository.countDemoPredictions()
+        _state.update { it.copy(importedCount = count, importedPredictionCount = predictions, message = "Loaded $count demo nights and $predictions predictions; repeated load is idempotent") }
     }
+
+    fun loadDemoData() = importHistory()
 
     fun verify() = runBusy {
         val count = repository.countDemoNights()
@@ -52,6 +65,7 @@ class DemoDatasetViewModel(
         _state.update {
             it.copy(
                 importedCount = count,
+                importedPredictionCount = repository.countDemoPredictions(),
                 message = if (errors.isEmpty()) "Room integrity verified: 90 synthetic sessions, summaries, and 4,320 timeline predictions" else "Integrity failed: ${errors.joinToString(limit = 3)}",
             )
         }
@@ -59,7 +73,7 @@ class DemoDatasetViewModel(
 
     fun reset() = runBusy {
         val deleted = repository.resetDemoNights()
-        _state.update { it.copy(importedCount = repository.countDemoNights(), message = "Deleted $deleted demo sessions; real sessions were not targeted") }
+        _state.update { it.copy(importedCount = repository.countDemoNights(), importedPredictionCount = repository.countDemoPredictions(), message = "Deleted $deleted demo sessions; real sessions were not targeted") }
     }
 
     fun exportCsv() = runBusy {

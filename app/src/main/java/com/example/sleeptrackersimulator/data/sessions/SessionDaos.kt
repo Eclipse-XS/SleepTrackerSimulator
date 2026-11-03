@@ -100,6 +100,9 @@ interface PredictionDao {
     @Query("SELECT * FROM predictions WHERE sessionId = :sessionId ORDER BY timestampMillis ASC")
     suspend fun getPredictionsForSession(sessionId: String): List<PredictionEntity>
 
+    @Query("SELECT COUNT(*) FROM predictions WHERE sessionId LIKE 'demo-v1-%'")
+    suspend fun countDemoPredictions(): Int
+
     @Query("DELETE FROM predictions WHERE sessionId = :sessionId")
     suspend fun deleteForSession(sessionId: String): Int
 

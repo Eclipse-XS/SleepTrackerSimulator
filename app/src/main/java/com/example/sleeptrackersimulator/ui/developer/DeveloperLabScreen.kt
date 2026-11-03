@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +41,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -552,6 +555,18 @@ private fun DatabaseInspectorTab(
     onExport: () -> Unit,
     onReset: () -> Unit,
 ) {
+    var showResetConfirmation by remember { mutableStateOf(false) }
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text("Reset demo data?") },
+            text = { Text("Only sessions with DEMO provenance and demo-v1 IDs will be removed. Real recordings are preserved.") },
+            confirmButton = {
+                TextButton(onClick = { showResetConfirmation = false; onReset() }) { Text("Reset demo data", color = HeartCoral) }
+            },
+            dismissButton = { TextButton(onClick = { showResetConfirmation = false }) { Text("Cancel") } },
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -576,16 +591,20 @@ private fun DatabaseInspectorTab(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("90-night synthetic demo history", fontWeight = FontWeight.Bold, color = MistBlue)
                 Text(demoState.message, color = MistBlue.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
-                Text("Generated: ${demoState.generatedCount} · Imported: ${demoState.importedCount}", color = CalmGreen)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onGenerate, enabled = !demoState.isBusy) { Text("Generate") }
-                    Button(onClick = onImport, enabled = !demoState.isBusy) { Text("Import") }
-                    OutlinedButton(onClick = onVerify, enabled = !demoState.isBusy) { Text("Verify") }
+                Text("Room: ${demoState.importedCount} demo sessions · ${demoState.importedPredictionCount} predictions", color = CalmGreen)
+                Button(onClick = onImport, enabled = !demoState.isBusy, modifier = Modifier.fillMaxWidth()) {
+                    if (demoState.isBusy) {
+                        CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (demoState.isBusy) "Loading demo data…" else "Load Demo Data")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = onVerify, enabled = !demoState.isBusy) { Text("Verify counts") }
                     OutlinedButton(onClick = onExport, enabled = !demoState.isBusy) { Text("Export CSV") }
-                    OutlinedButton(onClick = onReset, enabled = !demoState.isBusy) { Text("Reset demo") }
+                    OutlinedButton(onClick = { showResetConfirmation = true }, enabled = !demoState.isBusy) { Text("Reset Demo Data") }
                 }
+                Text("Synthetic demo rows are local-only and are never uploaded as real telemetry.", style = MaterialTheme.typography.labelSmall, color = MotionAmber)
             }
         }
 

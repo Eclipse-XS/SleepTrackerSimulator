@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import android.widget.Toast
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -163,13 +164,13 @@ private fun DisconnectedExperience(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp),
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AppHeader()
-        Spacer(Modifier.height(58.dp))
+        Spacer(Modifier.height(24.dp))
         BandIllustration(bleState is BleConnectionState.Scanning || bleState is BleConnectionState.Connecting)
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
             text = when (bleState) {
                 BleConnectionState.Scanning -> "Looking for your band"
@@ -194,9 +195,9 @@ private fun DisconnectedExperience(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(18.dp))
         ConnectionAction(bleState, onScan, onConnect)
-        Spacer(Modifier.height(56.dp))
+        Spacer(Modifier.height(28.dp))
         PhoneSensorStrip(sensorState)
         Spacer(Modifier.height(12.dp))
         AiInsightsCard(mlState)
@@ -274,7 +275,21 @@ private fun PhoneSensorStrip(state: SensorUiState) {
             }
             if (analysis != null) {
                 val sample = analysis.sample
-                Text("X ${format(sample.x)} m/s²    Y ${format(sample.y)} m/s²    Z ${format(sample.z)} m/s²", fontFamily = FontFamily.Monospace)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("X" to sample.x, "Y" to sample.y, "Z" to sample.z).forEach { (axis, value) ->
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Column(Modifier.padding(horizontal = 8.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(axis, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                Text(format(value), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1)
+                                Text("m/s²", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
                 val gridColor = MaterialTheme.colorScheme.outlineVariant
                 Canvas(Modifier.fillMaxWidth().height(72.dp)) {
                     val values = listOf(sample.x, sample.y, sample.z)
@@ -312,12 +327,16 @@ private fun ConnectedDashboard(
     onVibrationChanged: (Boolean) -> Unit,
     onFlashlightChanged: (Boolean) -> Unit,
 ) {
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 26.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+    val compact = LocalConfiguration.current.screenHeightDp < 760
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 14.dp else 20.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 18.dp),
+    ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column { Text("Sleep Tracker", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("Tonight · ${device.name}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Surface(color = CalmGreen.copy(alpha = .14f), shape = RoundedCornerShape(50)) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Box(Modifier.size(7.dp).background(CalmGreen, CircleShape)); Text("MOCK BLE", color = CalmGreen, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Box(Modifier.size(7.dp).background(MotionAmber, CircleShape)); Text("LEGACY MOCK BLE · SIMULATED", color = MotionAmber, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -356,7 +375,7 @@ private fun RestEstimate(result: RestStateResult) {
             letterSpacing = 1.2.sp,
         )
         Text(
-            text = result.reason,
+            text = "Heuristic academic estimate · ${result.reason}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -366,11 +385,14 @@ private fun RestEstimate(result: RestStateResult) {
 
 @Composable
 private fun HeartRateHero(measurement: HeartRateMeasurement?) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("♥", color = HeartCoral, fontSize = 34.sp)
-        Text(measurement?.beatsPerMinute?.toString() ?: "…", fontSize = 78.sp, lineHeight = 82.sp, fontWeight = FontWeight.Light)
-        Text("BPM", letterSpacing = 2.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Live heart rate", modifier = Modifier.padding(top = 5.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Surface(color = HeartCoral.copy(alpha = .08f), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Text("♥", color = HeartCoral, fontSize = 26.sp)
+            Spacer(Modifier.size(12.dp))
+            Text(measurement?.beatsPerMinute?.toString() ?: "—", fontSize = 46.sp, lineHeight = 50.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.size(8.dp))
+            Column { Text("BPM", fontWeight = FontWeight.Bold); Text("Legacy simulated HR", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
     }
 }
 
@@ -379,12 +401,21 @@ private fun HeartRateChart(samples: List<Int>) {
     val line = HeartCoral
     val grid = MaterialTheme.colorScheme.outlineVariant
     Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp)) {
-            Canvas(Modifier.fillMaxWidth().height(140.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Heart rate over time", fontWeight = FontWeight.SemiBold)
+            Text("Y: heart rate (BPM) · X: elapsed seconds", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val low = ((samples.minOrNull() ?: 45) - 4).coerceAtLeast(30)
+            val high = ((samples.maxOrNull() ?: 90) + 4).coerceAtMost(240)
+            val mid = (low + high) / 2
+            Row(Modifier.fillMaxWidth().height(104.dp)) {
+                Column(Modifier.padding(end = 6.dp).height(104.dp), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
+                    Text("$high", style = MaterialTheme.typography.labelSmall)
+                    Text("$mid", style = MaterialTheme.typography.labelSmall)
+                    Text("$low", style = MaterialTheme.typography.labelSmall)
+                }
+                Canvas(Modifier.weight(1f).height(104.dp)) {
                 repeat(3) { i -> val y = size.height * i / 2f; drawLine(grid.copy(alpha = .35f), Offset(0f, y), Offset(size.width, y), 1f) }
                 if (samples.size < 2) return@Canvas
-                val low = (samples.minOrNull() ?: 45) - 4
-                val high = (samples.maxOrNull() ?: 90) + 4
                 val range = (high - low).coerceAtLeast(1).toFloat()
                 val path = Path()
                 samples.forEachIndexed { index, bpm ->
@@ -393,8 +424,12 @@ private fun HeartRateChart(samples: List<Int>) {
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 drawPath(path, line, style = Stroke(5f, cap = StrokeCap.Round))
+                }
             }
-            Text("Live timeline · last ${samples.size.coerceAtMost(60)} samples", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(start = 26.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("-${(samples.size - 1).coerceAtLeast(0)} s", style = MaterialTheme.typography.labelSmall)
+                Text("now", style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Analytics
@@ -160,7 +162,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val devicesViewModel: DevicesViewModel by viewModels {
-        DevicesViewModel.factory(container.deviceTransport)
+        DevicesViewModel.factory(this, container.deviceTransport)
     }
 
     // Diagnostics & Labs ViewModels
@@ -362,7 +364,7 @@ class MainActivity : ComponentActivity() {
                             onToggleBleAdvertising = {},
                             demoDatasetState = demoDatasetState,
                             onGenerateDemo = demoDatasetViewModel::generate,
-                            onImportDemo = demoDatasetViewModel::importHistory,
+                            onImportDemo = demoDatasetViewModel::loadDemoData,
                             onVerifyDemo = demoDatasetViewModel::verify,
                             onExportDemo = demoDatasetViewModel::exportCsv,
                             onResetDemo = demoDatasetViewModel::reset,
@@ -382,6 +384,8 @@ class MainActivity : ComponentActivity() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .statusBarsPadding()
+                                    .displayCutoutPadding()
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -537,8 +541,13 @@ class MainActivity : ComponentActivity() {
                                         state = devicesState,
                                         onConnectDevice = devicesViewModel::connectDevice,
                                         onDisconnectDevice = devicesViewModel::disconnectDevice,
-                                        onStartScan = ::startBleScanWithPermissions,
+                                        onStartScan = {
+                                            if (devicesState.mode == com.example.sleeptrackersimulator.data.ble.BleMode.VIRTUAL_WEBSOCKET) devicesViewModel.startScan()
+                                            else startBleScanWithPermissions()
+                                        },
                                         onSelectMode = devicesViewModel::selectMode,
+                                        onVirtualEndpointChanged = devicesViewModel::updateVirtualEndpointDraft,
+                                        onSaveVirtualEndpoint = devicesViewModel::saveVirtualEndpoint,
                                     )
                                 }
                             }

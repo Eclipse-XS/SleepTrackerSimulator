@@ -453,6 +453,8 @@ class FakePredictionDao : PredictionDao {
     override suspend fun getPredictionsForSession(sessionId: String): List<PredictionEntity> =
         predictions.filter { it.sessionId == sessionId }
 
+    override suspend fun countDemoPredictions(): Int = predictions.count { it.sessionId.startsWith("demo-v1-") }
+
     override suspend fun deleteForSession(sessionId: String): Int {
         val before = predictions.size
         predictions.removeAll { it.sessionId == sessionId }
