@@ -1,4 +1,4 @@
-package com.example.sleeptrackersimulator.ui.dashboard
+﻿package com.example.sleeptrackersimulator.ui.dashboard
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -36,6 +36,10 @@ import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -141,7 +145,7 @@ fun SensorScreen(
             onDismissRequest = { showDiagnostics = false },
             containerColor = DarkSurfaceRaised,
         ) {
-            DiagnosticsContent(bleState, bleLogs, notificationsEnabled, restState, cloudSyncState, onRead, onWrite)
+            DiagnosticsContent(bleState, bleLogs, notificationsEnabled, heartRate, restState, cloudSyncState, onRead, onWrite)
         }
     }
 }
@@ -505,50 +509,119 @@ private fun DeviceSummary(device: BleDevice, onDiagnostics: () -> Unit) {
 }
 
 @Composable
+private fun DiagCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Surface(color = androidx.compose.ui.graphics.Color(0xFF1E2A3A), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color.White)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun DiagLine(label: String, value: String, mono: Boolean = false, valueColor: androidx.compose.ui.graphics.Color = DiagText) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = DiagMuted)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = if (mono) 12.sp else 14.sp, lineHeight = if (mono) 17.sp else 20.sp),
+            fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default,
+            color = valueColor,
+        )
+    }
+}
+
+private val DiagText = androidx.compose.ui.graphics.Color(0xFFE8EEF7)
+private val DiagMuted = androidx.compose.ui.graphics.Color(0xFFA9B8CC)
+
+@Composable
 private fun DiagnosticsContent(
     state: BleConnectionState,
     logs: List<String>,
     notify: Boolean,
+    heartRate: HeartRateMeasurement?,
     restState: RestStateResult,
     cloudSyncState: CloudSyncUiState,
     onRead: () -> BleOperationResult,
     onWrite: (String) -> BleOperationResult,
 ) {
     var result by rememberSaveable { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Text("Device & BLE diagnostics", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("Connection: ${if (state is BleConnectionState.Connected) "Connected" else "Disconnected"}\nHeart Rate Service: ${HeartRateProfile.SERVICE_SHORT_ID}\nHR Measurement (Notify): ${HeartRateProfile.MEASUREMENT_SHORT_ID}\nBody location (Read): ${HeartRateProfile.BODY_SENSOR_LOCATION_SHORT_ID}\nCommand (Write, custom): ${HeartRateProfile.COMMAND_ID}\nNotifications: ${if (notify) "Active" else "Stopped"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = { result = operationText(onRead()) }, Modifier.weight(1f)) { Text("Read location") }
-            OutlinedButton(onClick = { result = operationText(onWrite("REQUEST_STATUS")) }, Modifier.weight(1f)) { Text("Write status") }
+    var busy by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val connected = state is BleConnectionState.Connected
+    val health = DiagnosticsModel.hrStreamHealth(heartRate?.timestampNanos, System.nanoTime())
+    val cloudError = DiagnosticsModel.cloudErrorSummary(cloudSyncState.pendingCount, cloudSyncState.lastErrorMessage, cloudSyncState.storageErrorMessage)
+    fun run(op: () -> BleOperationResult) {
+        scope.launch { busy = true; kotlinx.coroutines.yield(); result = operationText(op()); busy = false }
+    }
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp)
+            .navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Device & BLE diagnostics", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, color = androidx.compose.ui.graphics.Color.White)
+
+        DiagCard("BLE") {
+            DiagLine("Transport", "LEGACY MOCK BLE · SIMULATED — not physical BLE, not WebSocket", valueColor = MotionAmber)
+            DiagLine("Connection", if (connected) "Connected (mock link)" else "Disconnected")
+            DiagLine("HR stream", DiagnosticsModel.healthLabel(health, notify), valueColor = if (health == HrStreamHealth.LIVE) CalmGreen else MotionAmber)
+            DiagLine("Notification subscription", if (notify) "Subscribed (not proof of data flow)" else "Not subscribed")
+            DiagLine("Heart Rate Service", HeartRateProfile.SERVICE_SHORT_ID, mono = true)
+            DiagLine("HR Measurement (Notify)", HeartRateProfile.MEASUREMENT_SHORT_ID, mono = true)
+            DiagLine("Body location (Read)", HeartRateProfile.BODY_SENSOR_LOCATION_SHORT_ID, mono = true)
+            DiagLine("Command (Write, custom)", HeartRateProfile.COMMAND_ID, mono = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf("Read location" to { run(onRead) }, "Write status" to { run { onWrite("REQUEST_STATUS") } }).forEach { (label, action) ->
+                    OutlinedButton(
+                        onClick = action,
+                        enabled = connected && !busy,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (connected && !busy) androidx.compose.ui.graphics.Color(0xFF8FB4FF) else DiagMuted.copy(alpha = .4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFBFD4FF), disabledContentColor = DiagMuted.copy(alpha = .5f)),
+                    ) {
+                        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = DiagMuted) else Text(label)
+                    }
+                }
+            }
+            if (!connected) Text("Buttons are disabled while disconnected.", style = MaterialTheme.typography.bodySmall, color = DiagMuted)
+            result?.let { Text(it, color = androidx.compose.ui.graphics.Color(0xFFBFD4FF), style = MaterialTheme.typography.bodySmall) }
         }
-        result?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
-        Text("State estimation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-            "Current: ${restState.state.name.replace('_', ' ')}\n" +
-                "Still duration: ${restState.stillDurationMillis / 1_000}s\n" +
-                "HR samples: ${restState.heartRateSampleCount}\n" +
-                "Recent HR average: ${restState.recentAverageHeartRate?.let { String.format(Locale.US, "%.1f BPM", it) } ?: "—"}\n" +
-                "HR variation (σ): ${restState.heartRateVariation?.let { String.format(Locale.US, "%.2f", it) } ?: "—"}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text("Cloud diagnostics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-            "Status: ${cloudSyncState.status}\nUploaded: ${cloudSyncState.uploadedCount}\nPending: ${cloudSyncState.pendingCount}\n" +
-                "Dropped telemetry: ${cloudSyncState.droppedTelemetryCount}\nSession: ${cloudSyncState.sessionId ?: "not created"}\n" +
-                "Storage error: ${cloudSyncState.storageErrorMessage ?: "none"}\n" +
-                "Last error: ${cloudSyncState.lastErrorMessage ?: "none"}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text("BLE terminal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Surface(color = MaterialTheme.colorScheme.background.copy(alpha = .55f), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                (logs.takeLast(18).ifEmpty { listOf("No BLE events") }).forEach { Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+        DiagCard("State estimation") {
+            DiagLine("Current (heuristic estimate, not LiteRT inference)", restState.state.name.replace('_', ' '))
+            DiagLine("Still duration", "${restState.stillDurationMillis / 1_000}s")
+            DiagLine("HR samples", restState.heartRateSampleCount.toString())
+            DiagLine("Recent HR average", restState.recentAverageHeartRate?.let { String.format(Locale.US, "%.1f BPM", it) } ?: "—")
+            DiagLine("HR variation (σ)", restState.heartRateVariation?.let { String.format(Locale.US, "%.2f", it) } ?: "—")
+            Text("POSSIBLE SLEEP is a rule-based heuristic, not a production LiteRT/TFLite model output.", style = MaterialTheme.typography.bodySmall, color = DiagMuted)
+        }
+
+        DiagCard("Cloud diagnostics") {
+            DiagLine("Status", cloudSyncState.status.name, valueColor = if (cloudError != null) HeartCoral else DiagText)
+            DiagLine("Uploaded / Pending", "${cloudSyncState.uploadedCount} / ${cloudSyncState.pendingCount}")
+            DiagLine("Dropped telemetry", cloudSyncState.droppedTelemetryCount.toString())
+            DiagLine("Session", cloudSyncState.sessionId ?: "not created", mono = true)
+            if (cloudError != null) {
+                Surface(color = HeartCoral.copy(alpha = .18f), shape = RoundedCornerShape(10.dp)) {
+                    Text(cloudError, Modifier.padding(12.dp), color = androidx.compose.ui.graphics.Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
+                DiagLine("Last error", "none")
+            }
+        }
+
+        DiagCard("BLE terminal") {
+            Surface(color = androidx.compose.ui.graphics.Color(0xFF0E1621), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp, max = 220.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val lines = logs.takeLast(50)
+                    if (lines.isEmpty()) Text("No BLE events yet", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = DiagMuted)
+                    lines.forEach { Text(it, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = DiagText) }
+                }
             }
         }
     }
 }
-
 @Composable
 private fun CloudSyncCard(state: CloudSyncUiState) {
     val healthy = state.status == CloudSyncStatus.SYNCED

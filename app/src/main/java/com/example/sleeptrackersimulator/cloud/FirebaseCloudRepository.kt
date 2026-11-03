@@ -1,4 +1,4 @@
-package com.example.sleeptrackersimulator.cloud
+﻿package com.example.sleeptrackersimulator.cloud
 
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.DatabaseException
@@ -86,6 +86,6 @@ class FirebaseCloudRepository(
     private suspend fun <T> databaseCall(block: suspend () -> T): T = try {
         block()
     } catch (error: DatabaseException) {
-        throw CloudOperationException(CloudErrorType.SERVER, "Firebase database operation failed", error)
+        throw CloudOperationException(CloudErrorType.SERVER, "Firebase database operation failed: ${error.message ?: error.javaClass.simpleName}", error)
     }
 }
