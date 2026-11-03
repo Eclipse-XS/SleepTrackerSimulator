@@ -83,6 +83,7 @@ android {
         buildConfig = true
     }
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    sourceSets.getByName("main").kotlin.srcDir(rootProject.file("wearable-protocol/src/main/kotlin"))
 }
 
 dependencies {
@@ -110,6 +111,7 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.litert)
+    implementation(libs.java.websocket)
     ksp(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)

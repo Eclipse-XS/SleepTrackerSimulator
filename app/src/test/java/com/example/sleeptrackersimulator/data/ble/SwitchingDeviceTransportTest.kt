@@ -21,15 +21,15 @@ import org.junit.Test
 class SwitchingDeviceTransportTest {
     @Test fun modeSwitchDisconnectsPreviousTransportAndRoutesCommands() = runTest {
         val real = FakeTransport()
-        val demo = FakeTransport()
-        val gateway = SwitchingDeviceTransport(real, demo, TestScope(StandardTestDispatcher(testScheduler)))
+        val virtualWebSocket = FakeTransport()
+        val gateway = SwitchingDeviceTransport(real, virtualWebSocket, TestScope(StandardTestDispatcher(testScheduler)))
         gateway.startScan()
         assertEquals(1, real.scans)
-        gateway.selectMode(BleMode.DEMO)
+        gateway.selectMode(BleMode.VIRTUAL_WEBSOCKET)
         gateway.startScan()
         assertEquals(1, real.disconnects)
-        assertEquals(1, demo.scans)
-        assertEquals(BleMode.DEMO, gateway.mode.value)
+        assertEquals(1, virtualWebSocket.scans)
+        assertEquals(BleMode.VIRTUAL_WEBSOCKET, gateway.mode.value)
     }
 }
 

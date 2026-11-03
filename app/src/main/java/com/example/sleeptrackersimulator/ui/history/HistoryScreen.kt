@@ -371,6 +371,7 @@ fun SessionDetailsView(
                     Text(
                         text = when (summary?.sourceKind ?: fallbackProvenance(session.sourceMode)) {
                             SourceKind.SIMULATED -> "These are deterministic synthetic demonstration metrics, not measurements from a person or device. They do not represent medically verified sleep stages."
+                            SourceKind.WEBSOCKET_SIMULATED -> "These metrics include synthetic HR transmitted by the independent VirtualSleepBand application over WebSocket. WebSocket is not BLE, and the data is not medically valid."
                             SourceKind.BLE_UNVERIFIED -> "These metrics combine observed device signals with an unverified wearable source. They do not constitute medically verified sleep stages or clinical polysomnography."
                             SourceKind.BLE_REAL -> "These metrics include observations from a connected wearable and may include phone movement. They do not constitute medically verified sleep stages or clinical polysomnography."
                             SourceKind.REPLAY -> "These metrics were reconstructed from replayed data, not a live observation. They do not constitute medically verified sleep stages."

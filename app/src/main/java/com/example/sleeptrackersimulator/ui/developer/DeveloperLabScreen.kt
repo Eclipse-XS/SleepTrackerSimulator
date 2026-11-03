@@ -317,7 +317,7 @@ private fun BleInspectorTab(
                 Text(text = "Single-Radio Dual-Role Architecture Notice", fontWeight = FontWeight.Bold, color = MotionAmber)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "• Running BLE Central (scanner/client) and BLE Peripheral (GATT server) concurrently on the same physical Android radio causes controller-level time slicing, latency spikes, and potential packet drops.\n• For realistic physical testing, run the standalone companion app VirtualSleepBand (package com.example.virtualsleepband) on a second Android device or separate emulator instance.\n• The loopback advertiser below is maintained for automated single-device test pipelines.",
+                    text = "• SleepSense is a BLE Central/client only.\n• Physical GATT verification requires VirtualSleepBand on another BLE-capable Android device.\n• Virtual WebSocket mode is independent-process simulation and does not verify Bluetooth.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MistBlue.copy(alpha = 0.85f),
                 )
@@ -344,10 +344,11 @@ private fun BleInspectorTab(
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = onToggleAdvertising,
+                    enabled = false,
                     shape = RoundedCornerShape(10.dp),
                 ) {
                     Text(
-                        if (isAdvertising) "Stop BLE Peripheral Advertiser" else "Start BLE Peripheral Advertiser (GATT Server)",
+                        "In-app BLE advertiser removed",
                         color = MistBlue,
                     )
                 }

@@ -19,16 +19,19 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import com.example.virtualsleepband.websocket.VirtualWearableWebSocketServer
 
 class VirtualBandService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var server: VirtualGattServer
+    private lateinit var webSocketServer: VirtualWearableWebSocketServer
     private val binder = Binder()
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
         server = VirtualGattServer(this, scope)
+        webSocketServer = VirtualWearableWebSocketServer(scope)
         scope.launch { server.state.collect { sharedState.value = it } }
     }
 
@@ -43,9 +46,11 @@ class VirtualBandService : Service() {
                     .setContentText("Synthetic measurements · not medical data")
                     .setOngoing(true).build())
                 server.startAdvertising().onFailure { sharedState.value = sharedState.value.copy(errorMessage = it.message) }
+                runCatching { webSocketServer.start() }.onFailure { sharedState.value = sharedState.value.copy(errorMessage = it.message) }
             }
             ACTION_STOP -> {
                 server.stopAdvertising()
+                runCatching { webSocketServer.stop(1_000) }
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -60,6 +65,7 @@ class VirtualBandService : Service() {
 
     override fun onDestroy() {
         server.stopAdvertising()
+        runCatching { webSocketServer.stop(1_000) }
         scope.cancel()
         super.onDestroy()
     }

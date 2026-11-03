@@ -56,7 +56,6 @@ interface AppContainer {
     val dataRetentionPolicy: com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
     val cloudSyncConsentRepository: com.example.sleeptrackersimulator.cloud.CloudSyncConsentRepository
     val deviceTransport: com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport
-    val virtualSleepBandAdvertiser: com.example.sleeptrackersimulator.data.ble.VirtualSleepBandAdvertiser
 }
 
 class DefaultAppContainer(private val context: Context) : AppContainer {
@@ -223,11 +222,12 @@ class DefaultAppContainer(private val context: Context) : AppContainer {
     override val deviceTransport: com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport by lazy {
         com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport(
             real = com.example.sleeptrackersimulator.data.ble.AndroidGattDeviceTransport(context),
-            demo = com.example.sleeptrackersimulator.data.ble.MockDeviceTransport(),
+            virtualWebSocket = com.example.sleeptrackersimulator.data.ble.WebSocketWearableTransport(
+                java.net.URI.create(
+                    context.getSharedPreferences("wearable_transport", Context.MODE_PRIVATE)
+                        .getString("virtual_websocket_endpoint", "ws://10.0.2.2:8765"),
+                ),
+            ),
         )
-    }
-
-    override val virtualSleepBandAdvertiser: com.example.sleeptrackersimulator.data.ble.VirtualSleepBandAdvertiser by lazy {
-        com.example.sleeptrackersimulator.data.ble.VirtualSleepBandAdvertiser(context)
     }
 }

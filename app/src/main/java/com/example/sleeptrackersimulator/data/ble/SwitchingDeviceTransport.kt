@@ -21,38 +21,38 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-enum class BleMode { REAL, DEMO }
+enum class BleMode { REAL, VIRTUAL_WEBSOCKET }
 
 /** Single application BLE gateway shared by Devices and RecordingService. */
 class SwitchingDeviceTransport(
     private val real: DeviceTransport,
-    private val demo: DeviceTransport,
+    private val virtualWebSocket: DeviceTransport,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : DeviceTransport {
     private val _mode = MutableStateFlow(BleMode.REAL)
     private val operationMutex = Mutex()
     val mode: StateFlow<BleMode> = _mode
 
-    private val active: DeviceTransport get() = if (_mode.value == BleMode.REAL) real else demo
+    private val active: DeviceTransport get() = if (_mode.value == BleMode.REAL) real else virtualWebSocket
 
     override val connectionState: StateFlow<DeviceConnectionState> = _mode
-        .flatMapLatest { if (it == BleMode.REAL) real.connectionState else demo.connectionState }
+        .flatMapLatest { if (it == BleMode.REAL) real.connectionState else virtualWebSocket.connectionState }
         .stateIn(scope, SharingStarted.Eagerly, DeviceConnectionState.DISCONNECTED)
 
     override val connectedDevice: StateFlow<DeviceInfo?> = _mode
-        .flatMapLatest { if (it == BleMode.REAL) real.connectedDevice else demo.connectedDevice }
+        .flatMapLatest { if (it == BleMode.REAL) real.connectedDevice else virtualWebSocket.connectedDevice }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
     override val heartRateStream: SharedFlow<HeartRateSample> = _mode
-        .flatMapLatest { if (it == BleMode.REAL) real.heartRateStream else demo.heartRateStream }
+        .flatMapLatest { if (it == BleMode.REAL) real.heartRateStream else virtualWebSocket.heartRateStream }
         .shareIn(scope, SharingStarted.Eagerly, replay = 0)
 
     override val lastHeartRate: StateFlow<HeartRateSample?> = _mode
-        .flatMapLatest { if (it == BleMode.REAL) real.lastHeartRate else demo.lastHeartRate }
+        .flatMapLatest { if (it == BleMode.REAL) real.lastHeartRate else virtualWebSocket.lastHeartRate }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
     override fun observeDiscoveredDevices(): Flow<List<DeviceInfo>> = _mode
-        .flatMapLatest { if (it == BleMode.REAL) real.observeDiscoveredDevices() else demo.observeDiscoveredDevices() }
+        .flatMapLatest { if (it == BleMode.REAL) real.observeDiscoveredDevices() else virtualWebSocket.observeDiscoveredDevices() }
 
     suspend fun selectMode(mode: BleMode) {
         operationMutex.withLock {

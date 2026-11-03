@@ -194,10 +194,10 @@ fun DevicesScreen(
                     modifier = Modifier.weight(1f),
                 )
                 FilterChip(
-                    selected = state.mode == BleMode.DEMO,
-                    onClick = { onSelectMode(BleMode.DEMO) },
-                    label = { Text("In-app Simulator · No Bluetooth") },
-                    leadingIcon = if (state.mode == BleMode.DEMO) {
+                    selected = state.mode == BleMode.VIRTUAL_WEBSOCKET,
+                    onClick = { onSelectMode(BleMode.VIRTUAL_WEBSOCKET) },
+                    label = { Text("Virtual · WebSocket") },
+                    leadingIcon = if (state.mode == BleMode.VIRTUAL_WEBSOCKET) {
                         { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
                     } else null,
                     modifier = Modifier.weight(1f),
@@ -243,13 +243,13 @@ fun DevicesScreen(
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = "Standard Heart Rate GATT 0x180D",
+                                    text = if (state.mode == BleMode.REAL) "Standard Heart Rate GATT 0x180D" else "Independent app · WebSocket · synthetic HR",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
-                        ProvenanceChip(sourceKind = state.connectedDevice?.sourceKind ?: if (state.mode == BleMode.REAL) SourceKind.BLE_REAL else SourceKind.SIMULATED)
+                        ProvenanceChip(sourceKind = state.connectedDevice?.sourceKind ?: if (state.mode == BleMode.REAL) SourceKind.BLE_REAL else SourceKind.WEBSOCKET_SIMULATED)
                     }
 
                     // Heart Rate telemetry if active

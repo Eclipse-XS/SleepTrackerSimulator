@@ -72,6 +72,7 @@ android {
         compose = true
         buildConfig = true
     }
+    sourceSets.getByName("main").kotlin.srcDir(rootProject.file("wearable-protocol/src/main/kotlin"))
 }
 
 dependencies {
@@ -85,6 +86,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.gson)
+    implementation(libs.java.websocket)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

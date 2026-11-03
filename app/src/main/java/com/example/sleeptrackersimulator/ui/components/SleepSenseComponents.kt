@@ -161,6 +161,7 @@ fun ProvenanceChip(
         SourceKind.BLE_REAL -> "WEARABLE" to MoonBlue
         SourceKind.BLE_UNVERIFIED -> "BLE UNVERIFIED" to MotionAmber
         SourceKind.SIMULATED -> "SIMULATED" to HeartCoral
+        SourceKind.WEBSOCKET_SIMULATED -> "VIRTUAL · WEBSOCKET" to HeartCoral
         SourceKind.REPLAY -> "REPLAY" to MotionAmber
         SourceKind.IMPORTED -> "IMPORTED" to Color(0xFFC084FC)
     }

@@ -338,7 +338,6 @@ class MainActivity : ComponentActivity() {
                             overlayBackDestination = AppOverlay.NONE
                         }
                         val appContainer = (application as SleepTrackerApplication).container
-                        val bleAdvState by appContainer.virtualSleepBandAdvertiser.state.collectAsStateWithLifecycle()
                         DeveloperLabScreen(
                             onBack = {
                                 activeOverlay = returnDest
@@ -359,14 +358,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenLegacyDashboard = { activeOverlay = AppOverlay.LEGACY_DASHBOARD },
-                            isBleAdvertising = bleAdvState.isAdvertising,
-                            onToggleBleAdvertising = {
-                                if (bleAdvState.isAdvertising) {
-                                    appContainer.virtualSleepBandAdvertiser.stopAdvertising()
-                                } else {
-                                    appContainer.virtualSleepBandAdvertiser.startAdvertising()
-                                }
-                            },
+                            isBleAdvertising = false,
+                            onToggleBleAdvertising = {},
                             demoDatasetState = demoDatasetState,
                             onGenerateDemo = demoDatasetViewModel::generate,
                             onImportDemo = demoDatasetViewModel::importHistory,

@@ -14,6 +14,9 @@ enum class SourceKind {
     /** BLE transport is real, but physiological authenticity is not established. */
     BLE_UNVERIFIED,
 
+    /** Synthetic HR received from the independent VirtualSleepBand process over WebSocket. */
+    WEBSOCKET_SIMULATED,
+
     /** Synthetic generated signal (e.g., VirtualSleepBand or in-memory demo) */
     SIMULATED,
 
@@ -27,7 +30,7 @@ enum class SourceKind {
         get() = this == PHONE_REAL || this == BLE_REAL
 
     val isSimulated: Boolean
-        get() = this == SIMULATED
+        get() = this == SIMULATED || this == WEBSOCKET_SIMULATED
 
     val isReplay: Boolean
         get() = this == REPLAY
