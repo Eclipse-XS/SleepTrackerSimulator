@@ -36,6 +36,7 @@ class RoomSessionRepository(
     private val database: SleepTrackerDatabase? = null,
     private val cloudOutboxDao: com.example.sleeptrackersimulator.cloud.CloudOutboxDao? = null,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val localDeletionCrashInjector: (() -> Unit)? = null,
 ) : SessionRepository, AnalyticsRepository {
 
     override fun observeActiveSession(): Flow<RecordingSession?> {
@@ -123,17 +124,24 @@ class RoomSessionRepository(
         outboxOperation: com.example.sleeptrackersimulator.cloud.PendingCloudOperation?,
     ): Boolean = withContext(dispatcher) {
         if (database != null) {
+            var outboxEnqueued = outboxOperation == null
             database.withTransaction {
                 sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(summary))
                 sessionDao.updateSession(RecordingSessionEntity.fromDomain(completedSession))
                 if (outboxOperation != null) {
-                    database.cloudOutboxDao().enqueue(
-                        outboxOperation.toEntity(),
-                        RoomCloudStateStore.DEFAULT_MAXIMUM_OPERATIONS,
-                    )
+                    try {
+                        database.cloudOutboxDao().enqueue(
+                            outboxOperation.toEntity(),
+                            RoomCloudStateStore.DEFAULT_MAXIMUM_OPERATIONS,
+                        )
+                        outboxEnqueued = true
+                    } catch (_: com.example.sleeptrackersimulator.cloud.CloudOutboxFullException) {
+                        // Cloud backpressure must not roll back the authoritative local completion.
+                        outboxEnqueued = false
+                    }
                 }
             }
-            true
+            outboxEnqueued
         } else {
             sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(summary))
             sessionDao.updateSession(RecordingSessionEntity.fromDomain(completedSession))
@@ -163,14 +171,20 @@ class RoomSessionRepository(
 
     suspend fun clearAllLocalData() = withContext(dispatcher) {
         val db = requireNotNull(database) { "Database is required to clear all local data" }
-        val cloudStore = RoomCloudStateStore(db.cloudOutboxDao())
-        // Local deletion must cancel stale uploads while preserving the only durable copy of
-        // previously requested cloud erasure tombstones across offline periods and restarts.
-        val deletionTombstones = cloudStore.pendingOperations().filter {
-            it.type == com.example.sleeptrackersimulator.cloud.PendingOperationType.DELETE_SESSION
+        // One SQLite transaction removes local data and stale uploads while leaving deletion
+        // tombstones in place. A crash therefore observes either the old state or the cleared
+        // state; there is no interval where tombstones exist only in process memory.
+        db.withTransaction {
+            val sql = db.openHelper.writableDatabase
+            listOf(
+                "sensor_samples", "heart_rate_samples", "feature_windows", "predictions",
+                "session_summaries", "personal_baselines", "devices", "recording_sessions",
+                "smart_rule_executions", "smart_rules", "actuator_events", "sensor_records",
+                "cloud_active_session",
+            ).forEach { table -> sql.execSQL("DELETE FROM `$table`") }
+            sql.execSQL("DELETE FROM `cloud_outbox` WHERE `type` != 'DELETE_SESSION'")
+            localDeletionCrashInjector?.invoke()
         }
-        db.clearAllTables()
-        deletionTombstones.forEach(cloudStore::enqueue)
     }
 
     suspend fun verifyDemoNights(expectedCount: Int = 90, nowUtcMillis: Long = System.currentTimeMillis()): List<String> = withContext(dispatcher) {

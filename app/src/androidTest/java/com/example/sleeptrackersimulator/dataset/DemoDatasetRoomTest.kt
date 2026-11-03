@@ -7,6 +7,13 @@ import com.example.sleeptrackersimulator.core.model.DevicePlacement
 import com.example.sleeptrackersimulator.core.model.RecordingSession
 import com.example.sleeptrackersimulator.core.model.SessionStatus
 import com.example.sleeptrackersimulator.core.model.SourceMode
+import com.example.sleeptrackersimulator.core.model.SourceKind
+import com.example.sleeptrackersimulator.core.model.SessionQualityStatus
+import com.example.sleeptrackersimulator.core.model.SessionSummary
+import com.example.sleeptrackersimulator.cloud.CloudOutboxEntity
+import com.example.sleeptrackersimulator.cloud.PendingCloudOperation
+import com.example.sleeptrackersimulator.cloud.PendingOperationType
+import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
 import com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
 import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
 import kotlinx.coroutines.runBlocking
@@ -86,4 +93,58 @@ class DemoDatasetRoomTest {
         assertEquals(null, repository.getSessionById(real.sessionId))
         assertEquals(0, repository.countDemoNights())
     }
+
+    @Test fun fullOutboxDoesNotPreventLocalSessionCompletion() = runBlocking {
+        val session = completedSession("capacity-session")
+        repository.saveSession(session.copy(status = SessionStatus.RECORDING, endUtcMillis = null))
+        repeat(RoomCloudStateStore.DEFAULT_MAXIMUM_OPERATIONS) { index ->
+            db.cloudOutboxDao().enqueue(
+                CloudOutboxEntity(
+                    operationId = "existing-$index", type = PendingOperationType.UPLOAD_SESSION_SUMMARY.name,
+                    sessionId = "other-$index", payloadJson = "{}", endedAt = null, createdAt = index.toLong(),
+                    retryCount = 0, lastError = null, deliveryState = "PENDING",
+                ),
+                RoomCloudStateStore.DEFAULT_MAXIMUM_OPERATIONS,
+            )
+        }
+        val summary = summaryFor(session)
+
+        val queued = repository.saveSessionSummaryAndOutbox(
+            summary, session,
+            PendingCloudOperation("summary-capacity", PendingOperationType.UPLOAD_SESSION_SUMMARY, session.sessionId),
+        )
+
+        assertEquals(false, queued)
+        assertEquals(SessionStatus.COMPLETED, repository.getSessionById(session.sessionId)?.status)
+        assertEquals(summary, repository.getSessionSummary(session.sessionId))
+    }
+
+    @Test fun crashDuringLocalClearRollsBackAndPreservesDeletionTombstone() = runBlocking {
+        val tombstone = PendingCloudOperation("delete-durable", PendingOperationType.DELETE_SESSION, "remote-session")
+        RoomCloudStateStore(db.cloudOutboxDao()).enqueue(tombstone)
+        repository.saveSession(completedSession("local-session"))
+        val crashingRepository = RoomSessionRepository(
+            db.sessionDao(), db.sensorSampleDao(), db.heartRateSampleDao(), db.featureWindowDao(), db.predictionDao(),
+            db.sessionSummaryDao(), db.personalBaselineDao(), db.deviceDao(), db,
+            localDeletionCrashInjector = { error("injected crash") },
+        )
+
+        runCatching { crashingRepository.clearAllLocalData() }
+
+        assertNotNull(repository.getSessionById("local-session"))
+        assertEquals(listOf(tombstone), RoomCloudStateStore(db.cloudOutboxDao()).pendingOperations())
+    }
+
+    private fun completedSession(id: String) = RecordingSession(
+        sessionId = id, startUtcMillis = 1_000, endUtcMillis = 2_000, startElapsedRealtimeNanos = 1,
+        status = SessionStatus.COMPLETED, sourceMode = SourceMode.PHONE_ONLY,
+        devicePlacement = DevicePlacement.MATTRESS, qualityStatus = SessionQualityStatus.GOOD,
+    )
+
+    private fun summaryFor(session: RecordingSession) = SessionSummary(
+        sessionId = session.sessionId, observationDurationMs = 1_000, validDurationMs = 1_000,
+        lowMotionFraction = 1f,
+        movementEpisodeCount = 0, movementRatePerHour = 0f, dataCoverageFraction = 1f,
+        sourceKind = SourceKind.PHONE_REAL,
+    )
 }
