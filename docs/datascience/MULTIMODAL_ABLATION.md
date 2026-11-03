@@ -11,7 +11,7 @@ In SleepSense 2.0, we systematically evaluate the marginal utility of cardiovasc
 
 ## 2. Experimental Ablation Conditions & Empirical Results
 
-All conditions were evaluated on the held-out subject test set ($N = 10,798$ feature windows across `SUBJ-011` and `SUBJ-012`), with Condition G evaluated on the shifted cohort ($N = 53,982$ windows):
+All conditions A–F were evaluated on the held-out subject test set ($N = 10,798$ feature windows across `SUBJ-011` and `SUBJ-012`), with Condition G evaluated on the held-out shifted nightstand cohort ($N = 53,938$ windows across `SHIFT-001`..`SHIFT-010`):
 
 | Condition ID | Input Sensor Configuration | Accuracy | Balanced Accuracy | Macro F1 | Weighted F1 | Precision (REST / RESTLESS / ACTIVE) | Recall (REST / RESTLESS / ACTIVE) | ECE |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -21,7 +21,8 @@ All conditions were evaluated on the held-out subject test set ($N = 10,798$ fea
 | **Condition D** | Accel + 100% Missing HR (BLE Dropout) | 94.55% | 59.08% | 0.6767 | 0.9340 | 0.95 / 0.76 / 0.90 | 1.00 / 0.32 / 0.45 | 0.0256 |
 | **Condition E** | Accel + Severely Noisy HR ($\sigma=15\text{ bpm}$) | **94.57%** | **59.15%** | 0.6827 | 0.9346 | 0.95 / 0.76 / 0.98 | 1.00 / 0.34 / 0.44 | 0.0197 |
 | **Condition F** | Accel + Stale Frozen HR (60s lag) | 94.52% | 58.64% | 0.6778 | 0.9334 | 0.95 / 0.77 / 0.98 | 1.00 / 0.32 / 0.44 | 0.0294 |
-| **Condition G** | Real-World Domain Shift (Nightstand Cohort) | 95.94% | 82.86% | 0.8784 | 0.9545 | 0.96 / 0.94 / 0.99 | 1.00 / 0.55 / 0.94 | 0.0073 |
+| **Condition G** | Real-World Domain Shift (Nightstand Cohort, $N=53,938$) | 64.74% | 44.97% | 0.4037 | 0.6710 | 0.94 / 0.14 / 0.95 | 0.67 / 0.58 / 0.11 | — |
+| ~~Condition G (Historical)~~ | **`SUPERSEDED_INVALID_EVALUATION`** *(evaluated on training DB $N=53,982$ due to closure bug; see [DOMAIN_SHIFT_EVALUATION.md](DOMAIN_SHIFT_EVALUATION.md))* | ~~95.94%~~ | ~~82.86%~~ | ~~0.8784~~ | ~~0.9545~~ | ~~0.96 / 0.94 / 0.99~~ | ~~1.00 / 0.55 / 0.94~~ | ~~0.0073~~ |
 
 ---
 

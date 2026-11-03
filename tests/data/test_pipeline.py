@@ -84,7 +84,7 @@ def test_sensor_synchronizer_multimodal_alignment() -> None:
 
 
 def test_feature_extractor_physical_motion_metrics() -> None:
-    # Window with static gravity: z = 9.81, x=0, y=0
+    # Window with standard static gravity (9.80665 m/s^2) and no supervised label -> UNLABELED
     static_window = {
         "window_id": "w0",
         "session_id": "s1",
@@ -92,7 +92,7 @@ def test_feature_extractor_physical_motion_metrics() -> None:
         "end_utc_millis": 2000,
         "accel_x": [0.0] * 20,
         "accel_y": [0.0] * 20,
-        "accel_z": [9.81] * 20,
+        "accel_z": [9.80665] * 20,
         "mean_hr": 55.0,
         "hr_available": True,
         "provenance": "PHONE_REAL",
@@ -102,9 +102,15 @@ def test_feature_extractor_physical_motion_metrics() -> None:
     assert features["motion_rms"] == pytest.approx(0.0, abs=1e-4)
     assert features["variance"] == pytest.approx(0.0, abs=1e-4)
     assert features["jerk"] == pytest.approx(0.0, abs=1e-4)
-    assert features["label"] == "REST"
+    assert features["label"] == "UNLABELED"
+    assert features["training_eligible"] is False
     assert features["hr_available"] is True
     assert features["mean_hr"] == 55.0
+
+    labeled_window = {**static_window, "motion_class_label": "REST"}
+    labeled_features = FeatureExtractor.extract_window_features(labeled_window)
+    assert labeled_features["label"] == "REST"
+    assert labeled_features["training_eligible"] is True
 
 
 def test_dataset_builder_and_duckdb_analytics() -> None:

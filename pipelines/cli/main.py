@@ -158,36 +158,54 @@ def cmd_run_all(args: argparse.Namespace) -> None:
     print("=" * 70)
 
 
+def _ingest_and_clean_export(input_path: Path):
+    """Executes the DE-004 7-step ingestion, separation, cleaning, validation and lineage order."""
+    if input_path.suffix.lower() == ".json":
+        ingested = AndroidExportReader.ingest_json_export(input_path)
+    else:
+        ingested = AndroidExportReader.ingest_csv_export(input_path)
+
+    cleaned_accel, clean_audit = DataCleaner.clean_accelerometer_with_audit(ingested.accepted)
+    validated_accel = RawAccelerometerSchema.validate(cleaned_accel) if len(cleaned_accel) > 0 else cleaned_accel
+
+    cleaned_hr = DataCleaner.clean_heart_rate(ingested.heart_rate) if len(ingested.heart_rate) > 0 else ingested.heart_rate
+    validated_hr = HeartRateSchema.validate(cleaned_hr) if len(cleaned_hr) > 0 else cleaned_hr
+    return ingested, validated_accel, validated_hr, clean_audit
+
+
 def cmd_ingest(args: argparse.Namespace) -> None:
     print(f"Reading export from: {args.input}")
-    reader = AndroidExportReader()
     input_path = Path(args.input)
-    if input_path.suffix.lower() == ".json":
-        accel_df, hr_df = reader.read_json_export(input_path)
-    else:
-        accel_df = reader.read_csv_export(input_path)
-        hr_df = pl.DataFrame()
+    ingested, accel_df, hr_df, clean_audit = _ingest_and_clean_export(input_path)
 
-    print(f"Loaded {len(accel_df)} accelerometer samples across {accel_df['session_id'].n_unique()} session(s).")
+    print(
+        f"Loaded {ingested.audit['raw_records']} raw records -> "
+        f"{len(accel_df)} accepted ({ingested.audit['rejected_records']} rejected: "
+        f"{ingested.audit['rejected_by_reason']}) across {accel_df['session_id'].n_unique()} session(s)."
+    )
     if not hr_df.is_empty():
         print(f"Loaded {len(hr_df)} heart rate samples.")
 
 
 def cmd_build_dataset(args: argparse.Namespace) -> None:
     print(f"Building Parquet dataset from: {args.input} -> {args.output}")
-    reader = AndroidExportReader()
     input_path = Path(args.input)
-    if input_path.suffix.lower() == ".json":
-        accel_df, hr_df = reader.read_json_export(input_path)
-    else:
-        accel_df = reader.read_csv_export(input_path)
-        hr_df = pl.DataFrame()
+    ingested, cleaned_accel, cleaned_hr, clean_audit = _ingest_and_clean_export(input_path)
 
-    cleaned_accel = DataCleaner.clean_accelerometer(accel_df)
-    cleaned_hr = DataCleaner.clean_heart_rate(hr_df) if not hr_df.is_empty() else hr_df
-    windows = SensorSynchronizer.create_synchronized_windows(cleaned_accel, cleaned_hr)
-    features_df = FeatureExtractor.extract_all_windows(windows)
-    out_dir = DatasetBuilder.build_parquet_dataset(features_df, args.output)
+    sync_diag = SensorSynchronizer.synchronize_with_diagnostics(cleaned_accel, cleaned_hr)
+    features_df = FeatureExtractor.extract_all_windows(sync_diag.accepted_windows)
+    lineage = {
+        "source_metadata": ingested.metadata,
+        "ingestion_audit": ingested.audit,
+        "cleaning_audit": clean_audit,
+        "window_sync_diagnostics": sync_diag.to_dict(),
+    }
+    out_dir = DatasetBuilder.build_parquet_dataset(
+        features_df,
+        args.output,
+        replace_output=getattr(args, "replace_output", False),
+        lineage=lineage,
+    )
     print(f"SUCCESS: Parquet dataset built and partitioned at: {out_dir}")
 
 
@@ -261,6 +279,11 @@ def main() -> None:
     p_build = subparsers.add_parser("build-dataset", help="Process raw export and build partitioned Parquet dataset")
     p_build.add_argument("--input", required=True)
     p_build.add_argument("--output", required=True)
+    p_build.add_argument(
+        "--replace-output",
+        action="store_true",
+        help="Explicitly authorize replacing an existing SleepSense Parquet dataset directory",
+    )
 
     p_analyze = subparsers.add_parser("analyze", help="Run DuckDB SQL analytics on Parquet dataset")
     p_analyze.add_argument("--dataset", required=True)

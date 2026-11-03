@@ -230,20 +230,56 @@ def test_causal_heart_rate_stale_rejected():
 
 
 def test_causal_heart_rate_valid_fresh():
-    """HR measurement at or within 10s before cutoff is valid and causally aligned."""
+    """HR measurement at or within 10s before the prediction cutoff (last accel sample) is valid."""
     session_start = 1_000_000
     session_end = session_start + 1_000
     accel = [
         {"utc_millis": session_start + i * 50, "x": 0.0, "y": 0.0, "z": 9.8}
         for i in range(20)
     ]
-    # HR exactly at window cutoff
-    hr = [{"utc_millis": session_end, "bpm": 70}]
+    prediction_cutoff = accel[-1]["utc_millis"]  # session_start + 950
+    # HR exactly at prediction cutoff
+    hr = [{"utc_millis": prediction_cutoff, "bpm": 70}]
     intervals = [DummyInterval(0.0, 1.0, "REST")]
 
     res = build_session_windows("SESS-001", session_start, session_end, accel, hr, intervals)
     w = res.windows[0]
+    assert w["prediction_cutoff_utc"] == prediction_cutoff
     assert w["hr_available"] == 1
     assert w["mean_hr"] == 70.0
     # norm_bpm = (70 - 60) / 40 = 0.25
     assert res.hr_feature_vectors[0] == [0.25, 1.0]
+
+
+def test_hr_between_last_sample_and_nominal_window_end_does_not_leak():
+    """DE-005: HR arriving after the last accel sample (950ms) but before nominal window end (1000ms) is rejected."""
+    session_start = 1_000_000
+    session_end = session_start + 1_000
+    accel = [
+        {"utc_millis": session_start + i * 50, "x": 0.0, "y": 0.0, "z": 9.8}
+        for i in range(20)
+    ]
+    # Last accel sample is at +950ms; HR arrives at +990ms (inside [start, end), but AFTER prediction cutoff!)
+    hr = [{"utc_millis": session_start + 990, "bpm": 88}]
+    intervals = [DummyInterval(0.0, 1.0, "REST")]
+
+    res = build_session_windows("SESS-001", session_start, session_end, accel, hr, intervals)
+    w = res.windows[0]
+    assert w["prediction_cutoff_utc"] == session_start + 950
+    assert w["hr_available"] == 0
+    assert w["mean_hr"] is None
+    assert "NO_PRIOR_HEART_RATE" in w["quality_flags"]
+
+
+def test_missing_ground_truth_intervals_produce_unlabeled_never_rest():
+    """ML-001: Missing ground-truth intervals must yield UNLABELED, never silently default to REST."""
+    session_start = 1_000_000
+    session_end = session_start + 1_000
+    accel = [
+        {"utc_millis": session_start + i * 50, "x": 0.0, "y": 0.0, "z": 9.8}
+        for i in range(20)
+    ]
+    res = build_session_windows("SESS-001", session_start, session_end, accel, [], [])
+    w = res.windows[0]
+    assert w["ground_truth_label"] == "UNLABELED"
+    assert w["ground_truth_label"] != "REST"

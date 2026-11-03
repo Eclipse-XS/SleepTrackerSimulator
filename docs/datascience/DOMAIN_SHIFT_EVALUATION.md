@@ -36,8 +36,8 @@ The domain shift introduces three simultaneous severe perturbations:
 
 ## 3. Empirical Model Performance Under True Domain Shift
 
-### 3.1 Historical Closure Defect & Resolution
-In initial experiments, an outer-scope Python closure bug in `ml/experiments/runner.py` caused `collate_split` to query `data_by_subject` (the standard training database) rather than `data_shifted`. Consequently, the model was accidentally evaluated on its own training set ($N=53,982$), producing an artificially inflated Macro F1 of $0.8784$.
+### 3.1 Historical Closure Defect & Resolution (`SUPERSEDED_INVALID_EVALUATION`)
+In initial experiments, an outer-scope Python closure bug in `ml/experiments/runner.py` caused `collate_split` to query `data_by_subject` (the standard training database) rather than `data_shifted`. Consequently, the model was accidentally evaluated on its own training set ($N=53,982$), producing an artificially inflated Macro F1 of $0.8784$ (**status: `SUPERSEDED_INVALID_EVALUATION`** — retained strictly as an audit record and must not be cited as a shifted-cohort result).
 
 Following the defect resolution (`collate_split(source_dict=data_shifted)`), the model was evaluated on the actual held-out shifted cohort ($N = 53,938$ windows across 10 virtual subjects):
 
@@ -46,6 +46,9 @@ Following the defect resolution (`collate_split(source_dict=data_shifted)`), the
 | **Standard Held-Out Test ($N=10,798$)** | 94.56% | 58.73% | 0.6796 | 0.9337 | 99.91% | 32.18% | 44.09% |
 | **True Domain Shift ($N=53,938$, Unweighted)** | **64.74%** | **44.97%** | **0.4037** | **0.6710** | 66.83% | 58.06% | **11.09%** |
 | **True Domain Shift ($N=53,938$, Balanced)** | **31.23%** | **40.42%** | **0.2652** | **0.2845** | 26.27% | 85.39% | **11.09%** |
+| ~~Historical Shifted Report ($N=53,982$)~~ | ~~95.94%~~ | ~~82.86%~~ | ~~0.8784~~ | ~~0.9545~~ | ~~100.0%~~ | ~~55.0%~~ | ~~94.0%~~ |
+
+> **Audit Notice (`SUPERSEDED_INVALID_EVALUATION`)**: Any historical reference to shifted-cohort `Macro F1 = 0.8784` or `Accuracy = 95.94%` is superseded by the true shifted-cohort rows above (`Macro F1 = 0.4037` unweighted, `0.2652` balanced).
 
 ### 3.2 True Shifted Confusion Matrix (Unweighted, $N=53,938$)
 
@@ -76,8 +79,6 @@ When thermal sensor noise is elevated by $+300\%$ ($\sigma=0.035\text{ m/s}^2$),
 With nightstand mechanical attenuation $\alpha = 0.14$ ($86\%$ vibration dampening), active movements fail to generate the high-energy acceleration peaks expected on a mattress. Consequently, **1,077 active windows are misclassified as restlessness**, and active class recall collapses from $44.09\%$ down to **$11.09\%$**.
 
 This empirical finding validates the physical domain-shift hypothesis: **A model trained strictly on mattress mechanics cannot be deployed on a rigid nightstand without adaptive gain compensation or automated placement calibration.**
-- Active macro-movements (bed exits, major rolling) generate sufficient kinetic force ($>3.5\text{ m/s}^2$) that even after $86\%$ attenuation, the transmitted energy ($>0.5\text{ m/s}^2$) remains clearly distinguishable from resting noise.
-- Crucially, the Multimodal Late-Fusion model leverages the elevated heart-rate signal during sustained active awakenings to boost confidence in the `ACTIVE` state, confirming the value of multimodal fusion under degraded physical coupling.
 
 ---
 

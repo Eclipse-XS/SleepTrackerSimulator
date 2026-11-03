@@ -92,10 +92,12 @@ def test_android_csv_export_to_duckdb_e2e_pipeline() -> None:
         windows = SensorSynchronizer.create_synchronized_windows(cleaned_accel, empty_hr, window_size=20)
         assert len(windows) == 4  # 80 samples / 20 = 4 windows
 
-        # 4. Feature Extraction
+        # 4. Feature Extraction (default path: unmapped activity -> label is UNLABELED, ground_truth_activity preserved)
         feature_rows = [FeatureExtractor.extract_window_features(w) for w in windows]
         assert len(feature_rows) == 4
-        assert all(row["label"] == "REST" for row in feature_rows)
+        assert all(row["ground_truth_activity"] == "RESTING" for row in feature_rows)
+        assert all(row["label"] == "UNLABELED" for row in feature_rows)
+        assert all(row["training_eligible"] is False for row in feature_rows)
         assert all(row["hr_available"] is False for row in feature_rows)
 
         features_df = pl.DataFrame(feature_rows)
@@ -115,7 +117,7 @@ def test_android_csv_export_to_duckdb_e2e_pipeline() -> None:
 
         class_dist = analytics.get_class_distributions()
         assert len(class_dist) == 1
-        assert class_dist["label"][0] == "REST"
+        assert class_dist["label"][0] == "UNLABELED"
         assert class_dist["window_count"][0] == 4
 
 

@@ -25,6 +25,7 @@ Release evidence: [`docs/PORTFOLIO_RELEASE_ACCEPTANCE.md`](docs/PORTFOLIO_RELEAS
 - ⏱️ **[Data Integrity Acceptance Report](docs/datascience/DATA_INTEGRITY_ACCEPTANCE.md)** — Event-time windowing, 20-bin coverage, and 12 SQL quality gates.
 - 🔁 **[Dataset Reproducibility Report](docs/datascience/DATASET_REPRODUCIBILITY_REPORT.md)** — Deterministic manifests, bounded-memory streaming Parquet, and storage safety.
 - 🔬 **[Final Experimental Integrity Report](docs/datascience/FINAL_EXPERIMENTAL_INTEGRITY.md)** — Subject-independent 6-Fold GroupKFold CV, paired t-tests, and true domain shift.
+- 📜 **[Android ↔ Python Data & ML Contract](docs/datascience/ANDROID_PYTHON_DATA_CONTRACT.md)** — Schema v2.1, monotonic-to-UTC timestamp anchoring, causal HR cutoff, `android_runtime_features_v1` golden parity, and strict label/provenance rules.
 - 📦 **[Final Model Provenance & Registry](docs/datascience/FINAL_MODEL_PROVENANCE.md)** — Candidate staging, TFLite checksums, and audited promotion protocol.
 - 📱 **[Final ML Deployment Acceptance](docs/datascience/FINAL_ML_DEPLOYMENT_ACCEPTANCE.md)** — 4-tier Android inference engine, causal HR alignment, and on-device parity.
 - 🔬 **[Final Project Technical Audit](docs/audit/FINAL_PROJECT_AUDIT.md)** — Comprehensive independent code audit and multi-role acceptance.
@@ -170,9 +171,15 @@ The data pipeline provides a unified CLI (`python -m pipelines.cli.main`):
 
 The project implements reproducible on-device machine learning with Group-Aware validation (session/subject holdout) to prevent data leakage.
 
-### Quantitative Benchmarking (Holdout Set, $N = 900$ Windows)
+### Quantitative Benchmarking — Three Distinct Synthetic Regimes
 
-Comparative benchmark performed in `ml/evaluation/evaluate_tflite_artifact.py` and `ml/training/train_multimodal_model.py`:
+The repository maintains three separate synthetic evaluation regimes that must be distinguished:
+
+1. **Simple Synthetic Waveform Holdout ($N = 900$ Windows, session-disjoint)** — `ml/evaluation/evaluate_tflite_artifact.py` and `ml/training/train_accel_model.py` (verifies TFLite runtime parity and separability on clean parametric waveforms; **not** a subject-independent benchmark):
+2. **Subject-Separated Synthetic Cohort ($N = 10,798$ Windows, held-out subjects `SUBJ-011` & `SUBJ-012`)** — [Multimodal Ablation Study](docs/datascience/MULTIMODAL_ABLATION.md): Multimodal Late-Fusion achieves **94.54% Accuracy / 0.6787 Macro F1** vs. **94.38% Accuracy / 0.6716 Macro F1** for Accelerometer-Only.
+3. **True Domain-Shifted Nightstand Cohort ($N = 53,938$ Windows, held-out subjects `SHIFT-001`..`SHIFT-010`)** — [Domain Shift Evaluation](docs/datascience/DOMAIN_SHIFT_EVALUATION.md): uncalibrated nightstand placement + $3\times$ thermal noise reduces performance to **64.74% Accuracy / 0.4037 Macro F1** (an earlier `0.8784` Macro F1 report is marked `SUPERSEDED_INVALID_EVALUATION` due to a resolved data-source closure bug).
+
+#### Simple Synthetic Waveform Holdout Table ($N = 900$ Windows):
 
 | Model Architecture | Accuracy | Macro F1 | Latency ($\mu$s/window) | Model Size | Battery Footprint |
 | :--- | :---: | :---: | :---: | :---: | :---: |

@@ -11,6 +11,7 @@ import sqlite3
 import numpy as np
 import pytest
 
+from ml.data.label_policy import InvalidLabelError
 from ml.data.window_dataset import load_dataset_from_sqlite
 
 
@@ -123,3 +124,33 @@ def test_dropout_does_not_shift_later_window_samples(test_db_with_mid_session_dr
     assert wids == ["SESS-001-w00000", "SESS-001-w00002"]
     assert np.allclose(X_accel[0, :, 0], 1.0)
     assert np.allclose(X_accel[1, :, 0], 5.0)
+
+
+@pytest.mark.parametrize("bad_label", ["UNLABELED", "", None, "READING", "UNKNOWN"])
+def test_sqlite_loader_rejects_or_excludes_unknown_labels_never_maps_to_rest(
+    test_db_with_mid_session_dropout, bad_label
+):
+    """ML-001: Unknown/unlabeled rows in SQLite must raise InvalidLabelError or be excluded, never become REST."""
+    conn = sqlite3.connect(str(test_db_with_mid_session_dropout))
+    conn.execute(
+        """
+        INSERT INTO feature_windows
+        (window_id, session_id, start_utc_millis, end_utc_millis, sample_count, coverage_fraction,
+         motion_rms, variance, jerk, peak_to_peak, mean_hr, hr_available, ground_truth_label, provenance,
+         max_gap_ms, has_large_gap, was_resampled, training_eligible, quality_flags)
+        VALUES ('SESS-001-w00099', 'SESS-001', 4000, 5000, 20, 1.0, 0.0, 0.0, 0.0, 0.0, 60.0, 1, ?, 'SIMULATED', 50, 0, 0, 1, '');
+        """,
+        (bad_label,),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(InvalidLabelError) as exc_info:
+        load_dataset_from_sqlite(test_db_with_mid_session_dropout, unlabeled_policy="raise")
+    assert "SESS-001" in str(exc_info.value)
+    assert "SESS-001-w00099" in str(exc_info.value)
+
+    ds_excluded = load_dataset_from_sqlite(test_db_with_mid_session_dropout, unlabeled_policy="exclude")
+    assert ds_excluded.excluded_label_count == 1
+    assert ds_excluded.total_windows_loaded == 3
+    assert "SESS-001-w00099" not in ds_excluded["SUBJ-001"]["window_ids"]
