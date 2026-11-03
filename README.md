@@ -4,10 +4,10 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF.svg?style=flat&logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202025.02-4285F4.svg?style=flat&logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
 [![Room](https://img.shields.io/badge/Room-v7%20SQLite-FFCA28.svg?style=flat&logo=sqlite)](https://developer.android.com/training/data-storage/room)
-[![TFLite](https://img.shields.io/badge/TensorFlow%20Lite-2.20.0-FF6F00.svg?style=flat&logo=tensorflow)](https://www.tensorflow.org/lite)
+[![LiteRT](https://img.shields.io/badge/LiteRT-1.4.2-FF6F00.svg?style=flat)](https://ai.google.dev/edge/litert)
 [![Data Stack](https://img.shields.io/badge/Data%20Stack-Polars%20%7C%20DuckDB%20%7C%20Pandera%20%7C%20Parquet-2B7A78.svg?style=flat)](https://pola.rs)
 [![Android Tests](https://img.shields.io/badge/Android%20Unit%20Tests-295%20PASSED%20(279%20app%20%2B%2016%20vsb)-brightgreen.svg?style=flat)]()
-[![Python Tests](https://img.shields.io/badge/Python%20Tests-57%20PASSED%20(12%20subtests)-brightgreen.svg?style=flat)]()
+[![Python Tests](https://img.shields.io/badge/Python%20Tests-75%20PASSED%20(12%20subtests)-brightgreen.svg?style=flat)]()
 [![SQL Quality Gates](https://img.shields.io/badge/SQL%20Quality%20Gates-12%2F12%20PASSED%20(0%20violations)-brightgreen.svg?style=flat)]()
 [![Engineering Maturity](https://img.shields.io/badge/Maturity%20Score-DE%2094%2F100%20%7C%20ML%2092%2F100-blue.svg?style=flat)]()
 [![Release Status](https://img.shields.io/badge/Status-PORTFOLIO__CODE__READY-brightgreen.svg?style=flat)]()
@@ -45,7 +45,7 @@ flowchart TD
         Insights["Insights Screen\n(Personal Baseline)"]
         Devices["Devices Screen\n(BLE & Phone)"]
         Settings["Settings & Privacy"]
-        DevLab["Developer Lab\n(Labs 1–7 Console)"]
+        DevLab["Developer & Diagnostics\n(Production state + Labs 1–7)"]
     end
 
     subgraph Domain ["Domain Layer (Session Lifecycle)"]
@@ -208,8 +208,9 @@ Evaluation of the exact deployed binary (`app/src/main/assets/activity_classifie
 
 1. **First-Run Onboarding & Wellness Notice**: Accessible directly via header info button on `TodayScreen`. Clarifies that SleepSense is for movement and rest tracking, not medical sleep apnea diagnosis.
 2. **Placement Selector**: Supports selecting `Mattress` (near pillow) vs `Nightstand` (flat surface) before starting recording.
-3. **Live ML Status**: Displays active model status (`On-Device TFLite (20 Hz)` / `Heuristic Fallback`).
+3. **Live ML Status**: During recording, Today displays the actual production prediction, LiteRT/fallback path, meaningful confidence, and collection/unavailable state. It reads `SessionCoordinator` state from the same inference that is persisted to Room.
 4. **Hero Recording Card**: Real-time duration ticker, pause/resume/finish controls, and session state preservation across unexpected app kills.
+5. **Recording Sources**: The primary UI exposes `Phone Monitoring` and enables `Phone + Wearable` only while a current GATT heart-rate stream is present. Persisted legacy source modes remain readable but are not misrepresented as full movement monitoring.
 
 ---
 
@@ -242,7 +243,7 @@ SleepSense treats the cloud as a secondary, opt-in replica:
 
 ## 7. Laboratory Compatibility Matrix (Labs 1–7)
 
-All educational requirements from University Labs 1–7 remain fully functional and independently testable inside the **Developer Lab**:
+Production observability is grouped under **Settings → Advanced → Developer & Diagnostics** (BLE, ML, Demo Data, Session & Cloud, Actuators). Academic Labs 1–7 remain available through **Academic Lab View**, separate from production telemetry.
 
 | Lab | Educational Subject | Implementation Component | Developer Lab Tab | University Report | Verification Test | Status |
 | :---: | :--- | :--- | :--- | :--- | :--- | :---: |

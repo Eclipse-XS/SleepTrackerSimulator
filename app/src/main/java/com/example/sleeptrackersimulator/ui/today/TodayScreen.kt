@@ -318,7 +318,7 @@ private fun SessionHeroCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         StatusBadge(text = "READY TO RECORD", color = CalmGreen)
-                        StatusBadge(text = "LOCAL ONLY", color = MaterialTheme.colorScheme.outlineVariant)
+                        StatusBadge(text = "LOCAL RECORDING", color = MaterialTheme.colorScheme.outlineVariant)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -340,29 +340,27 @@ private fun SessionHeroCard(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
-                        text = "Recording Source",
+                        text = "Monitoring mode",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         FilterChip(
                             selected = state.selectedSourceMode == SourceMode.PHONE_ONLY,
                             onClick = { onSelectSourceMode(SourceMode.PHONE_ONLY) },
-                            label = { Text("Phone Only") },
+                            label = { Text("Phone Monitoring · accelerometer") },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         FilterChip(
                             selected = state.selectedSourceMode == SourceMode.COMBINED,
                             onClick = { onSelectSourceMode(SourceMode.COMBINED) },
-                            label = { Text("Combined (Phone + Band)") },
-                        )
-                        FilterChip(
-                            selected = state.selectedSourceMode == SourceMode.WEARABLE_ONLY,
-                            onClick = { onSelectSourceMode(SourceMode.WEARABLE_ONLY) },
-                            label = { Text("Band Only") },
+                            enabled = state.isWearableStreamActive,
+                            label = { Text("Phone + Wearable · accelerometer + HR") },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
 
@@ -376,10 +374,10 @@ private fun SessionHeroCard(
                             Spacer(modifier = Modifier.width(6.dp))
                             ProvenanceChip(sourceKind = state.connectedDevice.sourceKind)
                         }
-                    } else if (state.selectedSourceMode.requiresBleConnection) {
+                    } else {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Wearable disconnected. Connect via Devices tab, or fallback to phone-only sensor will be used.",
+                            text = "Wearable stream unavailable. Phone Monitoring remains fully functional; connect a device in Devices to enable combined monitoring.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MotionAmber,
                         )
@@ -440,7 +438,11 @@ private fun SessionHeroCard(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ProvenanceChip(sourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.PHONE_REAL)
+                        ProvenanceChip(
+                            sourceKind = if (state.selectedSourceMode == SourceMode.COMBINED) {
+                                state.connectedDevice?.sourceKind ?: com.example.sleeptrackersimulator.core.model.SourceKind.BLE_UNVERIFIED
+                            } else com.example.sleeptrackersimulator.core.model.SourceKind.PHONE_REAL,
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Phone Accelerometer · On-Device TFLite (20 Hz)",
@@ -487,7 +489,15 @@ private fun SessionHeroCard(
                             text = if (isPaused) "SESSION PAUSED" else "RECORDING IN PROGRESS",
                             color = if (isPaused) MotionAmber else CalmGreen,
                         )
-                        ProvenanceChip(sourceKind = com.example.sleeptrackersimulator.core.model.SourceKind.PHONE_REAL)
+                        ProvenanceChip(
+                            sourceKind = when (state.activeSession?.sourceMode) {
+                                SourceMode.COMBINED, SourceMode.WEARABLE_ONLY -> state.connectedDevice?.sourceKind
+                                    ?: com.example.sleeptrackersimulator.core.model.SourceKind.BLE_UNVERIFIED
+                                SourceMode.DEMO -> com.example.sleeptrackersimulator.core.model.SourceKind.SIMULATED
+                                SourceMode.REPLAY -> com.example.sleeptrackersimulator.core.model.SourceKind.REPLAY
+                                else -> com.example.sleeptrackersimulator.core.model.SourceKind.PHONE_REAL
+                            },
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -522,6 +532,46 @@ private fun SessionHeroCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val inference = state.liveInference
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Live movement inference", fontWeight = FontWeight.SemiBold)
+                            val inferenceText = when (inference.status) {
+                                com.example.sleeptrackersimulator.domain.recording.LiveInferenceStatus.UNAVAILABLE -> "Unavailable"
+                                com.example.sleeptrackersimulator.domain.recording.LiveInferenceStatus.PAUSED -> "Paused"
+                                com.example.sleeptrackersimulator.domain.recording.LiveInferenceStatus.COLLECTING ->
+                                    "Collecting sensor window · ${inference.collectedSamples}/${inference.requiredSamples}"
+                                com.example.sleeptrackersimulator.domain.recording.LiveInferenceStatus.READY ->
+                                    inference.activity?.name ?: "UNCERTAIN"
+                            }
+                            Text(inferenceText, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            if (inference.status == com.example.sleeptrackersimulator.domain.recording.LiveInferenceStatus.READY) {
+                                val sourceLabel = when (inference.inferenceMode) {
+                                    com.example.sleeptrackersimulator.ml.InferenceMode.MULTIMODAL_TFLITE -> "Multimodal LiteRT"
+                                    com.example.sleeptrackersimulator.ml.InferenceMode.ACCELEROMETER_TFLITE -> "Accelerometer LiteRT"
+                                    com.example.sleeptrackersimulator.ml.InferenceMode.RULE_BASED_FALLBACK -> "Heuristic fallback"
+                                    else -> "Insufficient data"
+                                }
+                                Text(
+                                    buildString {
+                                        append(sourceLabel)
+                                        inference.confidence?.let { append(" · confidence ${String.format("%.0f%%", it * 100f)}") }
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                inference.fallbackReason?.let {
+                                    Text("Fallback context: $it", style = MaterialTheme.typography.labelSmall, color = MotionAmber)
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(20.dp))
 

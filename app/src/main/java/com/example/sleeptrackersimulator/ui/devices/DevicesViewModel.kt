@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 data class DevicesUiState(
     val phoneSensorAvailable: Boolean = true,
@@ -20,6 +21,7 @@ data class DevicesUiState(
     val connectionState: DeviceConnectionState = DeviceConnectionState.DISCONNECTED,
     val heartRate: Int? = null,
     val lastPacketUtcMillis: Long? = null,
+    val isHeartRateStreaming: Boolean = false,
     val connectedDevice: DeviceInfo? = null,
     val discoveredDevices: List<DeviceInfo> = emptyList(),
     val errorMessage: String? = null,
@@ -34,7 +36,14 @@ class DevicesViewModel(private val transport: SwitchingDeviceTransport) : ViewMo
             combine(transport.mode, transport.connectionState, transport.connectedDevice) { mode, state, device ->
                 Triple(mode, state, device)
             }.collect { (mode, state, device) ->
-                _uiState.update { it.copy(mode = mode, connectionState = state, connectedDevice = device) }
+                _uiState.update { current -> current.copy(
+                    mode = mode,
+                    connectionState = state,
+                    connectedDevice = device,
+                    heartRate = if (state == DeviceConnectionState.CONNECTED) current.heartRate else null,
+                    lastPacketUtcMillis = if (state == DeviceConnectionState.CONNECTED) current.lastPacketUtcMillis else null,
+                    isHeartRateStreaming = state == DeviceConnectionState.CONNECTED && current.isHeartRateStreaming,
+                ) }
             }
         }
         viewModelScope.launch {
@@ -43,6 +52,16 @@ class DevicesViewModel(private val transport: SwitchingDeviceTransport) : ViewMo
             }
         }
         viewModelScope.launch { transport.heartRateStream.collect(::onHeartRate) }
+        viewModelScope.launch {
+            while (true) {
+                val now = System.currentTimeMillis()
+                _uiState.update { state -> state.copy(
+                    isHeartRateStreaming = state.connectionState == DeviceConnectionState.CONNECTED &&
+                        state.lastPacketUtcMillis?.let { now - it in 0..STREAM_FRESHNESS_MILLIS } == true,
+                ) }
+                delay(1000L)
+            }
+        }
     }
 
     fun selectMode(mode: BleMode) = launchOperation("Switch BLE mode") { transport.selectMode(mode) }
@@ -52,7 +71,7 @@ class DevicesViewModel(private val transport: SwitchingDeviceTransport) : ViewMo
     fun dismissError() = _uiState.update { it.copy(errorMessage = null) }
 
     private fun onHeartRate(sample: HeartRateSample) {
-        _uiState.update { it.copy(heartRate = sample.bpm, lastPacketUtcMillis = sample.utcTimestampMillis) }
+        _uiState.update { it.copy(heartRate = sample.bpm, lastPacketUtcMillis = sample.utcTimestampMillis, isHeartRateStreaming = true) }
     }
 
     private fun launchOperation(name: String, operation: suspend () -> Unit) {
@@ -68,6 +87,7 @@ class DevicesViewModel(private val transport: SwitchingDeviceTransport) : ViewMo
     }
 
     companion object {
+        const val STREAM_FRESHNESS_MILLIS = 10_000L
         fun factory(transport: SwitchingDeviceTransport): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = DevicesViewModel(transport) as T

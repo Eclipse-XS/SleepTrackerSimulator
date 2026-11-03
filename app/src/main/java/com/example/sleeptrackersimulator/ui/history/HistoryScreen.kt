@@ -369,7 +369,14 @@ fun SessionDetailsView(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "These metrics describe observed device movement and rest patterns from your phone accelerometer. They do not constitute medically verified sleep stages or clinical polysomnography.",
+                        text = when (summary?.sourceKind ?: fallbackProvenance(session.sourceMode)) {
+                            SourceKind.SIMULATED -> "These are deterministic synthetic demonstration metrics, not measurements from a person or device. They do not represent medically verified sleep stages."
+                            SourceKind.BLE_UNVERIFIED -> "These metrics combine observed device signals with an unverified wearable source. They do not constitute medically verified sleep stages or clinical polysomnography."
+                            SourceKind.BLE_REAL -> "These metrics include observations from a connected wearable and may include phone movement. They do not constitute medically verified sleep stages or clinical polysomnography."
+                            SourceKind.REPLAY -> "These metrics were reconstructed from replayed data, not a live observation. They do not constitute medically verified sleep stages."
+                            SourceKind.IMPORTED -> "These metrics came from imported data whose original collection environment was outside this application. They do not constitute medically verified sleep stages."
+                            SourceKind.PHONE_REAL -> "These metrics describe observed movement and rest patterns from the phone accelerometer. They do not constitute medically verified sleep stages or clinical polysomnography."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

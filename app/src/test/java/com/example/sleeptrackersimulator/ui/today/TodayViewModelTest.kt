@@ -10,6 +10,7 @@ import com.example.sleeptrackersimulator.core.model.SourceKind
 import com.example.sleeptrackersimulator.core.model.SourceMode
 import com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
 import com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
+import com.example.sleeptrackersimulator.domain.recording.LiveInferenceState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,7 @@ class TodayViewModelTest {
         private val _session = MutableStateFlow<RecordingSession?>(null)
         override val activeSession: StateFlow<RecordingSession?> = _session
         override val sessionStatus: StateFlow<SessionStatus> = MutableStateFlow(SessionStatus.IDLE)
+        override val liveInference: StateFlow<LiveInferenceState> = MutableStateFlow(LiveInferenceState())
 
         override suspend fun startSession(sourceMode: SourceMode, placement: DevicePlacement, samplingHz: Int): Result<RecordingSession> =
             Result.success(
@@ -146,7 +148,7 @@ class TodayViewModelTest {
     }
 
     @Test
-    fun testSetSourceModeUpdatesState() = runTest {
+    fun combinedModeRequiresCurrentWearableStream() = runTest {
         val vm = TodayViewModel(
             sessionCoordinator = FakeSessionCoordinator(),
             analyticsRepository = FakeAnalyticsRepository(),
@@ -156,6 +158,7 @@ class TodayViewModelTest {
 
         vm.setSourceMode(SourceMode.COMBINED)
 
-        assertEquals(SourceMode.COMBINED, vm.uiState.value.selectedSourceMode)
+        assertEquals(SourceMode.PHONE_ONLY, vm.uiState.value.selectedSourceMode)
+        assertTrue(vm.uiState.value.errorMessage?.contains("current heart-rate stream") == true)
     }
 }

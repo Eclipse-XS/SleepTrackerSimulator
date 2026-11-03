@@ -16,6 +16,7 @@ interface DeviceTransport {
     val connectionState: StateFlow<DeviceConnectionState>
     val connectedDevice: StateFlow<DeviceInfo?>
     val heartRateStream: SharedFlow<HeartRateSample>
+    val lastHeartRate: StateFlow<HeartRateSample?>
 
     fun observeDiscoveredDevices(): Flow<List<DeviceInfo>>
 

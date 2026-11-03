@@ -205,6 +205,18 @@ class RecordingService : Service(), SensorEventListener {
             )
             return
         }
+        require(mode == SourceMode.PHONE_ONLY || mode == SourceMode.COMBINED) {
+            "$mode is retained for stored-data compatibility but is not a supported live recording source"
+        }
+        if (mode == SourceMode.COMBINED) {
+            val transport = (application as? SleepTrackerApplication)?.container?.deviceTransport
+            val latest = transport?.lastHeartRate?.value
+            val ageMillis = latest?.let { System.currentTimeMillis() - it.utcTimestampMillis }
+            require(
+                transport?.connectionState?.value == com.example.sleeptrackersimulator.core.model.DeviceConnectionState.CONNECTED &&
+                    ageMillis != null && ageMillis in 0..10_000L,
+            ) { "Phone + Wearable requires an active, current heart-rate stream" }
+        }
         val notification = buildNotification("Recording in progress", "Monitoring device movement...")
 
         val foregroundType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

@@ -47,6 +47,10 @@ class SwitchingDeviceTransport(
         .flatMapLatest { if (it == BleMode.REAL) real.heartRateStream else demo.heartRateStream }
         .shareIn(scope, SharingStarted.Eagerly, replay = 0)
 
+    override val lastHeartRate: StateFlow<HeartRateSample?> = _mode
+        .flatMapLatest { if (it == BleMode.REAL) real.lastHeartRate else demo.lastHeartRate }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
     override fun observeDiscoveredDevices(): Flow<List<DeviceInfo>> = _mode
         .flatMapLatest { if (it == BleMode.REAL) real.observeDiscoveredDevices() else demo.observeDiscoveredDevices() }
 

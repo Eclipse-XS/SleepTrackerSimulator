@@ -12,6 +12,7 @@ import com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
 import com.example.sleeptrackersimulator.domain.recording.SessionCoordinatorImpl
 import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
 import com.example.sleeptrackersimulator.ml.ActivityClassifier
+import com.example.sleeptrackersimulator.ml.DeployedModelIds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -116,7 +117,7 @@ class DataFlowIntegrationTest {
 
         val storedPredictions = database.predictionDao().getPredictionsForSession(sessionId)
         assertEquals("Expected 2 TFLite predictions", 2, storedPredictions.size)
-        assertTrue(storedPredictions.all { it.modelId == "activity-v2.1" })
+        assertTrue(storedPredictions.all { it.modelId == DeployedModelIds.ACCELEROMETER })
         assertTrue(storedPredictions.all { it.windowId.isNotBlank() })
         assertTrue(storedPredictions.all { it.confidence > 0f })
 

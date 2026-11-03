@@ -1,6 +1,6 @@
 # SleepSense 2.0 — Portfolio Release Acceptance
 
-Date: 2026-11-02. Scope: engineering prototype using synthetic data and movement-state classification. This is not a certified medical device or a validated REM/NREM sleep-stage detector.
+Date: 2026-11-03. Scope: engineering prototype using synthetic data and movement-state classification. This is not a certified medical device or a validated REM/NREM sleep-stage detector.
 
 ## A. Repository snapshot
 
@@ -45,6 +45,30 @@ An additional deterministic UI-state race was found during final verification: c
 | G5 Portfolio readiness | PASS | README and existing architecture material retained; deployment manifest and this evidence report added; debug APKs produced. |
 
 Verdict: **CONDITIONAL_GO**. The narrower engineering-prototype scope is credible and reproducible. Unconditional GO is prohibited because launch/instrumentation, physical BLE actuation, and a fresh on-device LR7 run were not executed.
+
+## H. Product integration follow-up — 2026-11-03
+
+The earlier emulator limitation no longer applies. A `Pixel_10_Pro` AVD (`sdk_gphone16k_x86_64`) was available with `getconf PAGE_SIZE = 16384`.
+
+- Today now exposes only Phone Monitoring and Phone + Wearable. Combined mode is disabled until the production GATT transport has a heart-rate packet no older than 10 seconds. RecordingService enforces the same rule.
+- Production inference is observable through `SessionCoordinator.liveInference` and shown on Today with class, LiteRT/fallback mode, confidence when meaningful, and collection state. The displayed result is the same prediction persisted to Room.
+- Devices and Developer BLE Diagnostics observe the same production `DevicesUiState`; an open GATT connection without current notifications is explicitly shown as `NO CURRENT HR`.
+- In-app simulation is labeled `In-app Simulator · No Bluetooth`. The standalone VirtualSleepBand advertises the same Heart Rate service, command characteristic, and `SSV1` manufacturer marker used by the production scanner.
+- The deterministic 90-night demo now contains 48 aggregate feature windows and 48 predictions per night (4,320 timeline predictions total), without fabricated raw accelerometer samples. Demo provenance remains `DEMO`/`SIMULATED`, imports are idempotent, and reset targets only demo sessions.
+- Developer Lab is presented as Developer & Diagnostics with five areas: BLE, ML, Demo Data, Session & Cloud, and Actuators. Academic LR1–LR7 tools remain reachable through Academic Lab View.
+
+Verification evidence:
+
+- Both debug APKs, both JVM suites, and both lint tasks: PASS.
+- Android instrumentation: PASS, 35/35 app tests on the 16 KB AVD; VirtualSleepBand connected test task also PASS.
+- Bundled LiteRT model: actual native initialization and inference PASS on the 16 KB AVD; six `ActivityClassifierInstrumentedTest` cases passed and runtime Logcat reported `libtensorflowlite_jni.so ... ok`.
+- ELF verification: `libdatastore_shared_counter.so`, `libtensorflowlite_jni.so`, and `libandroidx.graphics.path.so` have every `PT_LOAD` aligned to `0x4000`.
+- APK verification: Build Tools 36 `zipalign -c -P 16 -v 4` returned `Verification successful`.
+- Python: 75 passed, 12 subtests passed. Firebase Realtime Database rules emulator: 11/11 passed.
+- ADB product smoke test: launch, phone recording, live REST inference through accelerometer LiteRT, Pause, Resume, Finish, History persistence, Insights rendering, Devices, and Developer & Diagnostics all observed without an application fatal exception.
+- Physical two-device BLE GATT and physical actuator execution remain `NOT_VERIFIED`; one emulator is not a substitute for a peripheral device.
+
+Updated verdict: **CONDITIONAL_GO**. Core phone-only recording, native LiteRT inference, persistence, navigation, 16 KB runtime, and diagnostics are verified. Physical BLE remains hardware-blocked, so `GO` would overstate the evidence.
 
 ## D. ML integrity
 

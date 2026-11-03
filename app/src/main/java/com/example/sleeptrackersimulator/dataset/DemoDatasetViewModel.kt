@@ -52,7 +52,7 @@ class DemoDatasetViewModel(
         _state.update {
             it.copy(
                 importedCount = count,
-                message = if (errors.isEmpty()) "Room integrity verified: 90 synthetic sessions and summaries" else "Integrity failed: ${errors.joinToString(limit = 3)}",
+                message = if (errors.isEmpty()) "Room integrity verified: 90 synthetic sessions, summaries, and 4,320 timeline predictions" else "Integrity failed: ${errors.joinToString(limit = 3)}",
             )
         }
     }

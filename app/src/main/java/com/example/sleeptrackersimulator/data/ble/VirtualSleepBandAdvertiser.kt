@@ -177,8 +177,9 @@ class VirtualSleepBandAdvertiser(
             .build()
 
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
+            .setIncludeDeviceName(false)
             .addServiceUuid(ParcelUuid(UUID_HEART_RATE_SERVICE))
+            .addManufacturerData(SIMULATOR_MANUFACTURER_ID, SIMULATOR_MARKER)
             .build()
 
         advertiser.startAdvertising(settings, data, advertiseCallback)
@@ -272,5 +273,7 @@ class VirtualSleepBandAdvertiser(
         val UUID_BODY_SENSOR_LOCATION: UUID = UUID.fromString("00002a38-0000-1000-8000-00805f9b34fb")
         val UUID_CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val UUID_COMMAND_CHARACTERISTIC: UUID = UUID.fromString("7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e")
+        const val SIMULATOR_MANUFACTURER_ID = 0xFFFF
+        val SIMULATOR_MARKER = byteArrayOf(0x53, 0x53, 0x56, 0x31)
     }
 }

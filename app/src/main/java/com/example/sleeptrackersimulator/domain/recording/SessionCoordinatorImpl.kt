@@ -59,6 +59,8 @@ class SessionCoordinatorImpl(
 
     private val _sessionStatus = MutableStateFlow(SessionStatus.IDLE)
     override val sessionStatus: StateFlow<SessionStatus> = _sessionStatus.asStateFlow()
+    private val _liveInference = MutableStateFlow(LiveInferenceState())
+    override val liveInference: StateFlow<LiveInferenceState> = _liveInference.asStateFlow()
 
     private var currentClockAnchor: ClockAnchor? = null
     private val windowSegmenter = SlidingWindowSegmenter(windowSize = 20, stride = 20)
@@ -147,6 +149,7 @@ class SessionCoordinatorImpl(
             droppedSamplesCount = 0L
             totalPausedDurationMs = 0L
             lastPauseTimestampMs = null
+            _liveInference.value = LiveInferenceState(status = LiveInferenceStatus.COLLECTING)
             automationCoordinator?.resetSessionState()
 
             sessionRepository.saveSession(session)
@@ -199,6 +202,10 @@ class SessionCoordinatorImpl(
 
                 // Process windows
                 val windows = windowSegmenter.addSample(sample)
+                _liveInference.value = _liveInference.value.copy(
+                    status = if (_liveInference.value.activity == null) LiveInferenceStatus.COLLECTING else LiveInferenceStatus.READY,
+                    collectedSamples = windowSegmenter.pendingSampleCount.coerceAtMost(20),
+                )
                 for (w in windows) {
                     processWindow(w, session)
                 }
@@ -276,6 +283,17 @@ class SessionCoordinatorImpl(
         }
 
         sessionRepository.insertPredictions(listOf(prediction))
+        _liveInference.value = LiveInferenceState(
+            status = LiveInferenceStatus.READY,
+            activity = selection.activity,
+            confidence = selection.confidence.takeIf { it.isFinite() },
+            inferenceMode = selection.inferenceMode,
+            modelId = selection.modelId,
+            fallbackReason = selection.fallbackReason,
+            qualityFlags = selection.qualityFlags,
+            lastPredictionUtcMillis = featureWindow.endUtcMillis,
+            collectedSamples = 20,
+        )
 
         // Trigger ML-based background automations
         val predictionForAutomation = if (selection.activity != ActivityClass.UNCERTAIN) com.example.sleeptrackersimulator.ml.ActivityPrediction(
@@ -317,6 +335,7 @@ class SessionCoordinatorImpl(
             sessionRepository.updateSession(paused)
             _activeSession.value = paused
             _sessionStatus.value = SessionStatus.PAUSED
+            _liveInference.value = _liveInference.value.copy(status = LiveInferenceStatus.PAUSED)
             Result.success(Unit)
         }
     }
@@ -339,6 +358,7 @@ class SessionCoordinatorImpl(
             sessionRepository.updateSession(resumed)
             _activeSession.value = resumed
             _sessionStatus.value = SessionStatus.RECORDING
+            _liveInference.value = _liveInference.value.copy(status = LiveInferenceStatus.COLLECTING, collectedSamples = 0)
             Result.success(Unit)
         }
     }
@@ -471,6 +491,7 @@ class SessionCoordinatorImpl(
 
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE
+            _liveInference.value = LiveInferenceState()
             automationCoordinator?.resetSessionState()
 
             // Asynchronously prune expired data (samples > 7d, windows/preds > 30d) without blocking stop
@@ -505,6 +526,7 @@ class SessionCoordinatorImpl(
             sessionRepository.updateSession(failed)
             _activeSession.value = failed
             _sessionStatus.value = SessionStatus.FAILED
+            _liveInference.value = LiveInferenceState()
             automationCoordinator?.resetSessionState()
             Result.success(failed)
         }
@@ -523,6 +545,7 @@ class SessionCoordinatorImpl(
             sessionRepository.updateSession(recovered)
             _activeSession.value = recovered
             _sessionStatus.value = SessionStatus.RECORDING
+            _liveInference.value = LiveInferenceState(status = LiveInferenceStatus.COLLECTING)
             reconstructCounters(sessionId)
             Result.success(recovered)
         }
@@ -564,6 +587,7 @@ class SessionCoordinatorImpl(
             lastWasMovement = false
             _activeSession.value = null
             _sessionStatus.value = SessionStatus.IDLE
+            _liveInference.value = LiveInferenceState()
             automationCoordinator?.resetSessionState()
             Result.success(Unit)
         }

@@ -196,7 +196,7 @@ fun DevicesScreen(
                 FilterChip(
                     selected = state.mode == BleMode.DEMO,
                     onClick = { onSelectMode(BleMode.DEMO) },
-                    label = { Text("Virtual Band (Demo)") },
+                    label = { Text("In-app Simulator · No Bluetooth") },
                     leadingIcon = if (state.mode == BleMode.DEMO) {
                         { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
                     } else null,
@@ -278,12 +278,20 @@ fun DevicesScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "· Realtime heart rate reading",
+                                    text = if (state.isHeartRateStreaming) "· Active HR stream" else "· Waiting for current HR data",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
+                    }
+
+                    if (isConnected) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        StatusBadge(
+                            text = if (state.isHeartRateStreaming) "HR STREAM ACTIVE" else "GATT CONNECTED · NO CURRENT HR",
+                            color = if (state.isHeartRateStreaming) CalmGreen else MotionAmber,
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

@@ -149,6 +149,8 @@ class RoomSessionRepository(
         requireNotNull(database) { "Transactional database is required" }.withTransaction {
             nights.forEach { night ->
                 sessionDao.insertSession(RecordingSessionEntity.fromDomain(night.session))
+                featureWindowDao.insertBatch(night.featureWindows.map { FeatureWindowEntity.fromDomain(it) })
+                predictionDao.insertBatch(night.predictions.map { PredictionEntity.fromDomain(it) })
                 sessionSummaryDao.insertSummary(SessionSummaryEntity.fromDomain(night.summary))
             }
         }
@@ -192,6 +194,10 @@ class RoomSessionRepository(
                 if (summary.dataCoverageFraction !in 0f..1f) add("Invalid coverage: ${session.sessionId}")
                 val expectedRate = summary.movementEpisodeCount / (summary.observationDurationMs / 3_600_000f)
                 if (!summary.movementRatePerHour.isFinite() || kotlin.math.abs(expectedRate - summary.movementRatePerHour) > 0.001f) add("Inconsistent movement rate: ${session.sessionId}")
+                val windows = featureWindowDao.getWindowsForSession(session.sessionId)
+                val predictions = predictionDao.getPredictionsForSession(session.sessionId)
+                if (windows.size != 48) add("Expected 48 feature windows: ${session.sessionId}, found ${windows.size}")
+                if (predictions.size != windows.size) add("Prediction/window mismatch: ${session.sessionId}")
             }
         }
     }

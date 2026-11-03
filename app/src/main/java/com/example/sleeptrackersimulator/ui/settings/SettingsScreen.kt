@@ -202,7 +202,7 @@ fun SettingsScreen(
                                 color = MistBlue,
                             )
                             Text(
-                                text = "Developer Lab → Room provides verified demo CSV export",
+                                text = "Developer & Diagnostics → Demo Data provides verified demo CSV export",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MistBlue.copy(alpha = 0.65f),
                             )
@@ -307,7 +307,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Developer Lab (Labs 1–7)",
+                                text = "Developer & Diagnostics",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = MistBlue,
                             )
@@ -327,7 +327,7 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = CalmGreen),
                     ) {
-                        Text(text = "Open Developer Lab", color = NightBlue, fontWeight = FontWeight.Bold)
+                        Text(text = "Open Developer & Diagnostics", color = NightBlue, fontWeight = FontWeight.Bold)
                     }
                 }
             }

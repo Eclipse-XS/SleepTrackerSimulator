@@ -2,6 +2,7 @@ package com.example.sleeptrackersimulator.dataset
 
 import com.example.sleeptrackersimulator.core.model.SourceKind
 import com.example.sleeptrackersimulator.core.model.SourceMode
+import com.example.sleeptrackersimulator.core.model.ActivityClass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,6 +30,10 @@ class DemoDatasetGeneratorTest {
         assertTrue(nights.all { it.session.sourceMode == SourceMode.DEMO })
         assertTrue(nights.all { it.summary.sourceKind == SourceKind.SIMULATED })
         assertTrue(nights.all { it.session.sessionId.startsWith("demo-v1-") })
+        assertTrue(nights.all { it.featureWindows.size == 48 && it.predictions.size == 48 })
+        assertTrue(nights.flatMap { it.predictions }.all { it.modelId == "demo-generator-v1" })
+        assertTrue(nights.flatMap { it.predictions }.all { kotlin.math.abs(it.probabilities.values.sum() - 1f) < 0.001f })
+        assertTrue(nights.flatMap { it.predictions }.map { it.predictedClass }.toSet().containsAll(setOf(ActivityClass.REST, ActivityClass.RESTLESS, ActivityClass.ACTIVE)))
     }
 
     @Test fun csvContainsAllRecordsAndProvenance() {

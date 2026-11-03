@@ -1,10 +1,26 @@
 package com.example.sleeptrackersimulator.domain.recording
 
 import com.example.sleeptrackersimulator.core.model.DevicePlacement
+import com.example.sleeptrackersimulator.core.model.ActivityClass
 import com.example.sleeptrackersimulator.core.model.RecordingSession
 import com.example.sleeptrackersimulator.core.model.SessionStatus
 import com.example.sleeptrackersimulator.core.model.SourceMode
 import kotlinx.coroutines.flow.StateFlow
+
+enum class LiveInferenceStatus { UNAVAILABLE, COLLECTING, READY, PAUSED }
+
+data class LiveInferenceState(
+    val status: LiveInferenceStatus = LiveInferenceStatus.UNAVAILABLE,
+    val activity: ActivityClass? = null,
+    val confidence: Float? = null,
+    val inferenceMode: com.example.sleeptrackersimulator.ml.InferenceMode? = null,
+    val modelId: String? = null,
+    val fallbackReason: String? = null,
+    val qualityFlags: Set<String> = emptySet(),
+    val lastPredictionUtcMillis: Long? = null,
+    val collectedSamples: Int = 0,
+    val requiredSamples: Int = 20,
+)
 
 /**
  * Top-level session orchestrator responsible for managing session lifecycle,
@@ -13,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 interface SessionCoordinator {
     val activeSession: StateFlow<RecordingSession?>
     val sessionStatus: StateFlow<SessionStatus>
+    val liveInference: StateFlow<LiveInferenceState>
 
     suspend fun startSession(
         sourceMode: SourceMode = SourceMode.PHONE_ONLY,

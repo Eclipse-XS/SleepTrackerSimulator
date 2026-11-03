@@ -13,6 +13,7 @@ import com.example.sleeptrackersimulator.core.model.SourceMode
 import com.example.sleeptrackersimulator.data.ble.SwitchingDeviceTransport
 import com.example.sleeptrackersimulator.domain.analytics.AnalyticsRepository
 import com.example.sleeptrackersimulator.domain.recording.SessionCoordinator
+import com.example.sleeptrackersimulator.domain.recording.LiveInferenceState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +33,9 @@ data class TodayUiState(
     val connectedDevice: DeviceInfo? = null,
     val deviceConnectionState: DeviceConnectionState = DeviceConnectionState.DISCONNECTED,
     val connectedHeartRate: Int? = null,
+    val lastHeartRateUtcMillis: Long? = null,
+    val isWearableStreamActive: Boolean = false,
+    val liveInference: LiveInferenceState = LiveInferenceState(),
     val errorMessage: String? = null,
     val showOnboarding: Boolean = false,
 )
@@ -61,17 +65,15 @@ class TodayViewModel(
             }
             viewModelScope.launch {
                 deviceTransport.connectedDevice.collect { device ->
-                    _uiState.update { current -> current.copy(
-                        connectedDevice = device,
-                        selectedSourceMode = if (device != null && current.selectedSourceMode == SourceMode.PHONE_ONLY) {
-                            SourceMode.COMBINED
-                        } else current.selectedSourceMode,
-                    ) }
+                    _uiState.update { it.copy(connectedDevice = device) }
                 }
             }
             viewModelScope.launch {
-                deviceTransport.heartRateStream.collect { hrSample ->
-                    _uiState.update { it.copy(connectedHeartRate = hrSample.bpm) }
+                deviceTransport.lastHeartRate.collect { hrSample ->
+                    _uiState.update { it.copy(
+                        connectedHeartRate = hrSample?.bpm,
+                        lastHeartRateUtcMillis = hrSample?.utcTimestampMillis,
+                    ) }
                 }
             }
         }
@@ -90,6 +92,11 @@ class TodayViewModel(
                 previousSession = session
             }
         }
+        viewModelScope.launch {
+            sessionCoordinator.liveInference.collect { inference ->
+                _uiState.update { it.copy(liveInference = inference) }
+            }
+        }
 
         // Load most recent summary
         viewModelScope.launch {
@@ -101,9 +108,20 @@ class TodayViewModel(
         viewModelScope.launch {
             while (true) {
                 val active = _uiState.value.activeSession
+                val current = _uiState.value
+                val streamActive = current.deviceConnectionState == DeviceConnectionState.CONNECTED &&
+                    current.lastHeartRateUtcMillis?.let { System.currentTimeMillis() - it in 0..HEART_RATE_FRESHNESS_MILLIS } == true
                 if (active != null && active.status == SessionStatus.RECORDING) {
                     val durationSec = (System.currentTimeMillis() - active.startUtcMillis) / 1000L
                     _uiState.update { it.copy(activeDurationSeconds = durationSec) }
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        isWearableStreamActive = streamActive,
+                        selectedSourceMode = if (!streamActive && active == null && state.selectedSourceMode == SourceMode.COMBINED) {
+                            SourceMode.PHONE_ONLY
+                        } else state.selectedSourceMode,
+                    )
                 }
                 delay(1000L)
             }
@@ -150,7 +168,11 @@ class TodayViewModel(
     }
 
     fun setSourceMode(mode: SourceMode) {
-        _uiState.update { it.copy(selectedSourceMode = mode) }
+        if (mode == SourceMode.COMBINED && !_uiState.value.isWearableStreamActive) {
+            _uiState.update { it.copy(errorMessage = "Phone + Wearable requires a connected device with a current heart-rate stream") }
+            return
+        }
+        _uiState.update { it.copy(selectedSourceMode = mode, errorMessage = null) }
     }
 
     fun reportServiceCommandFailure(operation: String, error: Throwable?) {
@@ -169,6 +191,7 @@ class TodayViewModel(
     }
 
     companion object {
+        const val HEART_RATE_FRESHNESS_MILLIS = 10_000L
         fun factory(
             sessionCoordinator: SessionCoordinator,
             analyticsRepository: AnalyticsRepository,

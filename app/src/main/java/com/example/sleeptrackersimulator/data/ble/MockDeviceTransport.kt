@@ -50,6 +50,8 @@ class MockDeviceTransport(
 
     private val _heartRateStream = MutableSharedFlow<HeartRateSample>(extraBufferCapacity = 64)
     override val heartRateStream: SharedFlow<HeartRateSample> = _heartRateStream.asSharedFlow()
+    private val _lastHeartRate = MutableStateFlow<HeartRateSample?>(null)
+    override val lastHeartRate: StateFlow<HeartRateSample?> = _lastHeartRate.asStateFlow()
 
     private val _discoveredDevices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     private var measurementJob: Job? = null
@@ -105,6 +107,7 @@ class MockDeviceTransport(
                     timingUncertaintyMillis = 0L,
                     sourceKind = SourceKind.SIMULATED,
                 )
+                _lastHeartRate.value = sample
                 _heartRateStream.emit(sample)
             }
         }
@@ -118,6 +121,7 @@ class MockDeviceTransport(
         band.stopStreaming()
 
         _connectedDevice.value = null
+        _lastHeartRate.value = null
         _connectionState.value = DeviceConnectionState.DISCONNECTED
         return Result.success(Unit)
     }

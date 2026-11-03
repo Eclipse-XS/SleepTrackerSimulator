@@ -64,6 +64,7 @@ class SessionCoordinatorTest {
         assertNotNull(session)
         assertEquals(SessionStatus.RECORDING, coordinator.sessionStatus.value)
         assertEquals(session!!.sessionId, coordinator.activeSession.value?.sessionId)
+        assertEquals(LiveInferenceStatus.COLLECTING, coordinator.liveInference.value.status)
 
         // Attempting to start another active session should fail
         val secondResult = coordinator.startSession()
@@ -79,11 +80,13 @@ class SessionCoordinatorTest {
         val pauseResult = coordinator.pauseSession()
         assertTrue(pauseResult.isSuccess)
         assertEquals(SessionStatus.PAUSED, coordinator.sessionStatus.value)
+        assertEquals(LiveInferenceStatus.PAUSED, coordinator.liveInference.value.status)
 
         // Resume
         val resumeResult = coordinator.resumeSession()
         assertTrue(resumeResult.isSuccess)
         assertEquals(SessionStatus.RECORDING, coordinator.sessionStatus.value)
+        assertEquals(LiveInferenceStatus.COLLECTING, coordinator.liveInference.value.status)
 
         // Feed some sensor samples
         for (i in 1..25) {
@@ -97,6 +100,9 @@ class SessionCoordinatorTest {
                 sourceKind = SourceKind.PHONE_REAL,
             )
         }
+        assertEquals(LiveInferenceStatus.READY, coordinator.liveInference.value.status)
+        assertNotNull(coordinator.liveInference.value.activity)
+        assertNotNull(coordinator.liveInference.value.inferenceMode)
 
         // Stop session
         val stopResult = coordinator.stopSession()
@@ -106,6 +112,7 @@ class SessionCoordinatorTest {
         assertEquals(SessionStatus.COMPLETED, completed!!.status)
         assertEquals(SessionStatus.IDLE, coordinator.sessionStatus.value)
         assertNull(coordinator.activeSession.value)
+        assertEquals(LiveInferenceStatus.UNAVAILABLE, coordinator.liveInference.value.status)
 
         // Verify summary was saved
         val summary = repository.getSessionSummary(completed.sessionId)

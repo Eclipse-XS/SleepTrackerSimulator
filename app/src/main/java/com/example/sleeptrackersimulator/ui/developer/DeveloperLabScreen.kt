@@ -75,15 +75,18 @@ import com.example.sleeptrackersimulator.ui.theme.MistBlue
 import com.example.sleeptrackersimulator.ui.theme.MoonBlue
 import com.example.sleeptrackersimulator.ui.theme.MotionAmber
 import com.example.sleeptrackersimulator.ui.theme.NightBlue
+import com.example.sleeptrackersimulator.ui.devices.DevicesUiState
+import com.example.sleeptrackersimulator.domain.recording.LiveInferenceState
+import com.example.sleeptrackersimulator.domain.recording.LiveInferenceStatus
+import com.example.sleeptrackersimulator.core.model.SessionStatus
+import com.example.sleeptrackersimulator.cloud.CloudSyncUiState
 
 enum class DevLabTab(val title: String) {
-    SENSORS("Sensors (L1)"),
-    BLE("BLE (L2)"),
-    CLOUD("Cloud (L3)"),
-    ACTUATORS("Actuators (L4)"),
-    DATABASE("Room (L5)"),
-    ML("ML (L6)"),
-    TRACE("Pipeline Trace (L7)"),
+    BLE("BLE Diagnostics"),
+    ML("ML Diagnostics"),
+    DEMO("Demo Data"),
+    SESSION_CLOUD("Session & Cloud"),
+    ACTUATORS("Actuators"),
 }
 
 @Composable
@@ -105,6 +108,10 @@ fun DeveloperLabScreen(
     onVerifyDemo: () -> Unit = {},
     onExportDemo: () -> Unit = {},
     onResetDemo: () -> Unit = {},
+    productionBleState: DevicesUiState = DevicesUiState(),
+    productionInference: LiveInferenceState = LiveInferenceState(),
+    recordingStatus: SessionStatus = SessionStatus.IDLE,
+    cloudState: CloudSyncUiState = CloudSyncUiState(),
     modifier: Modifier = Modifier,
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -133,12 +140,12 @@ fun DeveloperLabScreen(
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Developer Lab",
+                    text = "Developer & Diagnostics",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Labs 1–7 Diagnostic & Verification Console",
+                    text = "Production observability and isolated test tools · LR1–LR7 preserved",
                     style = MaterialTheme.typography.labelSmall,
                     color = CalmGreen,
                 )
@@ -147,7 +154,7 @@ fun DeveloperLabScreen(
                 onClick = onOpenLegacyDashboard,
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text("Lab View", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                Text("Academic Lab View", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
             }
         }
 
@@ -182,13 +189,17 @@ fun DeveloperLabScreen(
                 .padding(16.dp),
         ) {
             when (tabs[selectedTabIndex]) {
-                DevLabTab.SENSORS -> SensorInspectorTab()
                 DevLabTab.BLE -> BleInspectorTab(
                     onSendAlert = onTriggerBleAlert,
                     isAdvertising = isBleAdvertising,
                     onToggleAdvertising = onToggleBleAdvertising,
+                    productionState = productionBleState,
                 )
-                DevLabTab.CLOUD -> CloudInspectorTab()
+                DevLabTab.ML -> MlInspectorTab(productionInference = productionInference)
+                DevLabTab.DEMO -> DatabaseInspectorTab(
+                    demoDatasetState, onGenerateDemo, onImportDemo, onVerifyDemo, onExportDemo, onResetDemo,
+                )
+                DevLabTab.SESSION_CLOUD -> SessionCloudDiagnostics(recordingStatus, cloudState)
                 DevLabTab.ACTUATORS -> ActuatorInspectorTab(
                     state = actuatorState,
                     onVibrate = onTriggerVibration,
@@ -197,11 +208,6 @@ fun DeveloperLabScreen(
                     onEmergencyOff = onEmergencyOff,
                     onAutomaticControlChanged = onAutomaticControlChanged,
                 )
-                DevLabTab.DATABASE -> DatabaseInspectorTab(
-                    demoDatasetState, onGenerateDemo, onImportDemo, onVerifyDemo, onExportDemo, onResetDemo,
-                )
-                DevLabTab.ML -> MlInspectorTab()
-                DevLabTab.TRACE -> PipelineTraceTab()
             }
         }
     }
@@ -253,6 +259,7 @@ private fun BleInspectorTab(
     onSendAlert: () -> Unit,
     isAdvertising: Boolean = false,
     onToggleAdvertising: () -> Unit = {},
+    productionState: DevicesUiState,
 ) {
     Column(
         modifier = Modifier
@@ -270,11 +277,33 @@ private fun BleInspectorTab(
             MetricCard(title = "Service UUID", value = "0x180D", subtitle = "Heart Rate Service", modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.width(12.dp))
             MetricCard(
-                title = "GATT Status",
-                value = if (isAdvertising) "ADVERTISING" else "READY",
-                accentColor = if (isAdvertising) CalmGreen else MoonBlue,
+                title = "Production BLE",
+                value = when {
+                    productionState.isHeartRateStreaming -> "STREAMING"
+                    productionState.connectedDevice != null -> "CONNECTED"
+                    else -> "OFFLINE"
+                },
+                subtitle = productionState.connectionState.name,
+                accentColor = if (productionState.isHeartRateStreaming) CalmGreen else MotionAmber,
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Production transport state", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text("Mode: ${productionState.mode}", color = MistBlue)
+                Text("Device: ${productionState.connectedDevice?.displayName ?: "None"}", color = MistBlue)
+                Text("HR subscription/stream: ${if (productionState.isHeartRateStreaming) "ACTIVE · ${productionState.heartRate} BPM" else "NO CURRENT PACKETS"}", color = if (productionState.isHeartRateStreaming) CalmGreen else MotionAmber)
+                Text("Last packet: ${productionState.lastPacketUtcMillis ?: "none"}", color = MistBlue.copy(alpha = 0.8f))
+                productionState.errorMessage?.let { Text("Last error: $it", color = HeartCoral) }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -303,7 +332,7 @@ private fun BleInspectorTab(
             colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "In-App Loopback Peripheral Controls", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text(text = "Explicit test tools", fontWeight = FontWeight.Bold, color = MistBlue)
                 Spacer(modifier = Modifier.height(10.dp))
                 Button(
                     onClick = onSendAlert,
@@ -324,6 +353,38 @@ private fun BleInspectorTab(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SessionCloudDiagnostics(recordingStatus: SessionStatus, cloudState: CloudSyncUiState) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Session & Cloud Diagnostics", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MistBlue)
+        Row(modifier = Modifier.fillMaxWidth()) {
+            MetricCard("Recording", recordingStatus.name, modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.width(12.dp))
+            MetricCard("Cloud", cloudState.status.name, modifier = Modifier.weight(1f))
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Durable synchronization", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text("Authenticated: ${cloudState.authenticated}", color = MistBlue)
+                Text("Monitoring active: ${cloudState.monitoringActive}", color = MistBlue)
+                Text("Pending operations: ${cloudState.pendingCount}", color = MistBlue)
+                Text("Uploaded: ${cloudState.uploadedCount}", color = MistBlue)
+                Text("Dropped telemetry: ${cloudState.droppedTelemetryCount}", color = MistBlue)
+                cloudState.lastErrorMessage?.let { Text("Last sync error: $it", color = HeartCoral) }
+                cloudState.storageErrorMessage?.let { Text("Storage error: $it", color = HeartCoral) }
+            }
+        }
+        Text("Academic LR1–LR7 sensor and pipeline inspectors remain available through Academic Lab View.", style = MaterialTheme.typography.bodySmall, color = MistBlue.copy(alpha = 0.75f))
     }
 }
 
@@ -549,7 +610,7 @@ private fun DatabaseInspectorTab(
 }
 
 @Composable
-private fun MlInspectorTab() {
+private fun MlInspectorTab(productionInference: LiveInferenceState) {
     val context = LocalContext.current
     val controller = remember { DatasetRecordingController() }
 
@@ -637,6 +698,21 @@ private fun MlInspectorTab() {
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkSurfaceRaised),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Production recording inference", fontWeight = FontWeight.Bold, color = MistBlue)
+                Text("Status: ${productionInference.status}", color = if (productionInference.status == LiveInferenceStatus.READY) CalmGreen else MotionAmber)
+                Text("Prediction: ${productionInference.activity?.name ?: "none"}", color = MistBlue)
+                Text("Source: ${productionInference.inferenceMode?.name ?: "none"}", color = MistBlue)
+                Text("Model: ${productionInference.modelId ?: "none"}", color = MistBlue.copy(alpha = 0.8f))
+                productionInference.fallbackReason?.let { Text("Fallback: $it", color = MotionAmber) }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "TensorFlow Lite On-Device ML",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),

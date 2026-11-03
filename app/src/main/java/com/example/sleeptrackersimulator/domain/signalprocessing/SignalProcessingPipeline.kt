@@ -68,6 +68,9 @@ class SlidingWindowSegmenter(
 ) {
     private val buffer = ArrayList<RawSensorSample>(windowSize * 2)
 
+    val pendingSampleCount: Int
+        @Synchronized get() = buffer.size
+
     @Synchronized
     fun addSample(sample: RawSensorSample): List<List<RawSensorSample>> {
         buffer.add(sample)

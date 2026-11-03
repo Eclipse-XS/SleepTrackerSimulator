@@ -39,6 +39,7 @@ private class FakeTransport : DeviceTransport {
     override val connectionState = MutableStateFlow(DeviceConnectionState.DISCONNECTED)
     override val connectedDevice = MutableStateFlow<DeviceInfo?>(null)
     override val heartRateStream: SharedFlow<HeartRateSample> = MutableSharedFlow()
+    override val lastHeartRate = MutableStateFlow<HeartRateSample?>(null)
     override fun observeDiscoveredDevices(): Flow<List<DeviceInfo>> = MutableStateFlow(emptyList())
     override suspend fun startScan(): Result<Unit> { scans++; return Result.success(Unit) }
     override suspend fun stopScan() = Result.success(Unit)

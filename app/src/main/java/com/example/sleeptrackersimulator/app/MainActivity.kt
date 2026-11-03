@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.example.sleeptrackersimulator.ble.BleOperationResult
+import com.example.sleeptrackersimulator.core.model.DeviceCommand
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticLog
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticResult
 import com.example.sleeptrackersimulator.diagnostics.DiagnosticTags
@@ -349,7 +350,14 @@ class MainActivity : ComponentActivity() {
                             onFlashlightChanged = ::requestFlashlightChange,
                             onEmergencyOff = { actuatorViewModel.emergencyOff() },
                             onAutomaticControlChanged = actuatorViewModel::setAutomaticControlEnabled,
-                            onTriggerBleAlert = { bleViewModel.sendAlert("DEV_LAB") },
+                            onTriggerBleAlert = {
+                                lifecycleScope.launch {
+                                    val device = appContainer.deviceTransport.connectedDevice.value ?: return@launch
+                                    appContainer.deviceTransport.executeCommand(
+                                        DeviceCommand(targetDeviceId = device.deviceId, action = "ALERT"),
+                                    )
+                                }
+                            },
                             onOpenLegacyDashboard = { activeOverlay = AppOverlay.LEGACY_DASHBOARD },
                             isBleAdvertising = bleAdvState.isAdvertising,
                             onToggleBleAdvertising = {
@@ -365,6 +373,10 @@ class MainActivity : ComponentActivity() {
                             onVerifyDemo = demoDatasetViewModel::verify,
                             onExportDemo = demoDatasetViewModel::exportCsv,
                             onResetDemo = demoDatasetViewModel::reset,
+                            productionBleState = devicesState,
+                            productionInference = todayState.liveInference,
+                            recordingStatus = todayState.sessionStatus,
+                            cloudState = cloudSyncState,
                         )
                     }
                     AppOverlay.LEGACY_DASHBOARD -> {

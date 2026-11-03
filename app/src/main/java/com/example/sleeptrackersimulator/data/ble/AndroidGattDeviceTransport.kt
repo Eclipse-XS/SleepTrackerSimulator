@@ -72,6 +72,8 @@ class AndroidGattDeviceTransport(
 
     private val _heartRateStream = MutableSharedFlow<HeartRateSample>(extraBufferCapacity = 64)
     override val heartRateStream: SharedFlow<HeartRateSample> = _heartRateStream.asSharedFlow()
+    private val _lastHeartRate = MutableStateFlow<HeartRateSample?>(null)
+    override val lastHeartRate: StateFlow<HeartRateSample?> = _lastHeartRate.asStateFlow()
 
     private val _discoveredDevices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     private var activeGatt: BluetoothGatt? = null
@@ -277,6 +279,7 @@ class AndroidGattDeviceTransport(
         )
 
         scope.launch {
+            _lastHeartRate.value = sample
             _heartRateStream.emit(sample)
         }
     }
@@ -286,10 +289,20 @@ class AndroidGattDeviceTransport(
     @SuppressLint("MissingPermission")
     override suspend fun startScan(): Result<Unit> {
         if (!hasBlePermissions()) {
+            _connectionState.value = DeviceConnectionState.ERROR
             return Result.failure(SecurityException("Missing Bluetooth permissions"))
         }
 
-        val scanner = bluetoothAdapter?.bluetoothLeScanner
+        val adapter = bluetoothAdapter ?: run {
+            _connectionState.value = DeviceConnectionState.UNSUPPORTED
+            return Result.failure(UnsupportedOperationException("Bluetooth LE is unavailable on this device"))
+        }
+        if (!adapter.isEnabled) {
+            _connectionState.value = DeviceConnectionState.ERROR
+            return Result.failure(IllegalStateException("Bluetooth is disabled"))
+        }
+
+        val scanner = adapter.bluetoothLeScanner
             ?: return Result.failure(IllegalStateException("Bluetooth LE Scanner not available"))
 
         _connectionState.value = DeviceConnectionState.SCANNING
@@ -326,7 +339,17 @@ class AndroidGattDeviceTransport(
     @SuppressLint("MissingPermission")
     override suspend fun connect(deviceId: String): Result<Unit> {
         if (!hasBlePermissions()) {
+            _connectionState.value = DeviceConnectionState.ERROR
             return Result.failure(SecurityException("Missing Bluetooth permissions"))
+        }
+
+        val adapter = bluetoothAdapter ?: run {
+            _connectionState.value = DeviceConnectionState.UNSUPPORTED
+            return Result.failure(UnsupportedOperationException("Bluetooth LE is unavailable on this device"))
+        }
+        if (!adapter.isEnabled) {
+            _connectionState.value = DeviceConnectionState.ERROR
+            return Result.failure(IllegalStateException("Bluetooth is disabled"))
         }
 
         reconnectJob?.cancel()
@@ -337,8 +360,10 @@ class AndroidGattDeviceTransport(
         activeGatt?.disconnect()
         activeGatt?.close()
         activeGatt = null
-        val device = bluetoothAdapter?.getRemoteDevice(deviceId)
-            ?: return Result.failure(IllegalArgumentException("Invalid Bluetooth device address: $deviceId"))
+        val device = runCatching { adapter.getRemoteDevice(deviceId) }.getOrElse {
+            _connectionState.value = DeviceConnectionState.ERROR
+            return Result.failure(IllegalArgumentException("Invalid Bluetooth device address: $deviceId", it))
+        }
 
         _connectionState.value = DeviceConnectionState.CONNECTING
         val ctx = context ?: return Result.failure(IllegalStateException("Context not available"))
@@ -387,6 +412,7 @@ class AndroidGattDeviceTransport(
         }
         activeGatt = null
         _connectedDevice.value = null
+        _lastHeartRate.value = null
         _connectionState.value = DeviceConnectionState.DISCONNECTED
         return Result.success(Unit)
     }
