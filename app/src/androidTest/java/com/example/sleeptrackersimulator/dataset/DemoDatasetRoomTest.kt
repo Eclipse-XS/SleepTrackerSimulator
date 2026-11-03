@@ -14,6 +14,7 @@ import com.example.sleeptrackersimulator.cloud.CloudOutboxEntity
 import com.example.sleeptrackersimulator.cloud.PendingCloudOperation
 import com.example.sleeptrackersimulator.cloud.PendingOperationType
 import com.example.sleeptrackersimulator.cloud.RoomCloudStateStore
+import com.example.sleeptrackersimulator.cloud.SessionSummaryPayload
 import com.example.sleeptrackersimulator.data.sessions.RoomSessionRepository
 import com.example.sleeptrackersimulator.data.sessions.DataRetentionPolicy
 import com.example.sleeptrackersimulator.history.SleepTrackerDatabase
@@ -189,12 +190,21 @@ class DemoDatasetRoomTest {
 
         val queued = repository.saveSessionSummaryAndOutbox(
             summary, session,
-            PendingCloudOperation("summary-capacity", PendingOperationType.UPLOAD_SESSION_SUMMARY, session.sessionId),
+            PendingCloudOperation(
+                "summary-capacity", PendingOperationType.UPLOAD_SESSION_SUMMARY, session.sessionId,
+                summary = SessionSummaryPayload(sessionId = session.sessionId),
+            ),
         )
 
         assertEquals(false, queued)
         assertEquals(SessionStatus.COMPLETED, repository.getSessionById(session.sessionId)?.status)
         assertEquals(summary, repository.getSessionSummary(session.sessionId))
+
+        // Simulate restart/recovery after capacity becomes available.
+        assertEquals(1, db.cloudOutboxDao().deleteOperation("existing-0"))
+        val restartedStore = RoomCloudStateStore(db.cloudOutboxDao())
+        assertEquals(1, restartedStore.reconcileDeliveryIntents())
+        assertEquals(1, restartedStore.pendingOperations().count { it.operationId == "summary-capacity" })
     }
 
     @Test fun crashDuringLocalClearRollsBackAndPreservesDeletionTombstone() = runBlocking {

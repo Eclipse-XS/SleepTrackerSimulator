@@ -46,6 +46,7 @@ class SleepTrackerMigrationTest {
                 SleepTrackerDatabase.MIGRATION_4_5,
                 SleepTrackerDatabase.MIGRATION_5_6,
                 SleepTrackerDatabase.MIGRATION_6_7,
+                SleepTrackerDatabase.MIGRATION_7_8,
             )
             .build()
         runBlocking(Dispatchers.IO) {
@@ -84,6 +85,7 @@ class SleepTrackerMigrationTest {
                 SleepTrackerDatabase.MIGRATION_4_5,
                 SleepTrackerDatabase.MIGRATION_5_6,
                 SleepTrackerDatabase.MIGRATION_6_7,
+                SleepTrackerDatabase.MIGRATION_7_8,
             ).build()
         runBlocking(Dispatchers.IO) { assertEquals(1, migrated.sensorRecordDao().recordsBetween(1, 2_000).size) }
         migrated.close()

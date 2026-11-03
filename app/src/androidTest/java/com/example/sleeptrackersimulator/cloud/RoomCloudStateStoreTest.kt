@@ -44,7 +44,7 @@ class RoomCloudStateStoreTest {
 
         store.removeFirst()
         store.removeFirst()
-        store.completeSessionEnd("s")
+        store.completeSessionEnd("end-s", "s")
         assertEquals(0, store.pendingCount)
         assertNull(store.activeSession())
     }
@@ -64,6 +64,51 @@ class RoomCloudStateStoreTest {
         }
         Unit
     }
+
+    @Test
+    fun deferredSummaryIntentSurvivesFullOutboxAndIsDeliveredWhenCapacityReturns() = runBlocking(Dispatchers.IO) {
+        val dao = database.cloudOutboxDao()
+        val tiny = RoomCloudStateStore(dao, maximumOperations = 2)
+        tiny.enqueue(PendingCloudOperation("end-a", PendingOperationType.END_SESSION, "a", endedAt = 1, createdAt = 1))
+        tiny.enqueue(PendingCloudOperation("end-b", PendingOperationType.END_SESSION, "b", endedAt = 2, createdAt = 2))
+        val summary = summaryEntity("sum-c", "c", 3)
+        assertThrows(CloudOutboxFullException::class.java) { dao.enqueue(summary, 2) }
+        dao.saveDeliveryIntent(summary)
+
+        assertEquals(0, tiny.reconcileDeliveryIntents())
+        assertEquals(listOf("end-a", "end-b"), tiny.pendingOperations().map { it.operationId })
+
+        tiny.removeFirst()
+        assertEquals(1, tiny.reconcileDeliveryIntents())
+        assertEquals(listOf("end-b", "sum-c"), tiny.pendingOperations().map { it.operationId })
+        assertEquals(0, tiny.reconcileDeliveryIntents())
+    }
+
+    @Test
+    fun deletionTombstoneDropsDeferredIntentsAndBlocksLaterUploads() = runBlocking(Dispatchers.IO) {
+        val dao = database.cloudOutboxDao()
+        dao.saveDeliveryIntent(summaryEntity("sum-x", "x", 1))
+        dao.enqueue(summaryEntity("del-x", "x", 2).copy(type = PendingOperationType.DELETE_SESSION.name), 4)
+        dao.completeDeletion("del-x", "x", "uid", 3)
+
+        dao.enqueue(summaryEntity("sum-x2", "x", 4), 4)
+        dao.saveDeliveryIntent(summaryEntity("sum-x3", "x", 5))
+
+        assertEquals(0, store.pendingCount)
+        assertEquals(0, store.reconcileDeliveryIntents())
+    }
+
+    private fun summaryEntity(id: String, sessionId: String, createdAt: Long) = CloudOutboxEntity(
+        operationId = id,
+        type = PendingOperationType.UPLOAD_SESSION_SUMMARY.name,
+        sessionId = sessionId,
+        payloadJson = null,
+        endedAt = null,
+        createdAt = createdAt,
+        retryCount = 0,
+        lastError = null,
+        deliveryState = "PENDING",
+    )
 
     private fun upload(id: String, timestamp: Long) = PendingCloudOperation(
         operationId = id,
