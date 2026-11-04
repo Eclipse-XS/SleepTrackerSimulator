@@ -6,8 +6,8 @@ This document specifies the authoritative cross-language contract between the An
 
 ## 1. Export Schema Version & Formats
 
-- **Current schema version**: `2.1` (`DATASET_EXPORT_SCHEMA_VERSION = "2.1"` in [DatasetCollector.kt](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/app/src/main/java/com/example/sleeptrackersimulator/dataset/DatasetCollector.kt)).
-- **Backward compatibility**: Python ingestion ([android_export_reader.py](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/pipelines/ingestion/android_export_reader.py)) continues to read `v2.0` CSV and JSON exports that omit `rejection_reason`, `source_kind`, or `isValid`, applying the documented fallback validity policy (`fallback_range_policy_v1`).
+- **Current schema version**: `2.1` (`DATASET_EXPORT_SCHEMA_VERSION = "2.1"` in [DatasetCollector.kt](../../app/src/main/java/com/example/sleeptrackersimulator/dataset/DatasetCollector.kt)).
+- **Backward compatibility**: Python ingestion ([android_export_reader.py](../../pipelines/ingestion/android_export_reader.py)) continues to read `v2.0` CSV and JSON exports that omit `rejection_reason`, `source_kind`, or `isValid`, applying the documented fallback validity policy (`fallback_range_policy_v1`).
 
 ### 1.1 Field Names and Units
 
@@ -111,7 +111,7 @@ The **latest** eligible HR sample at or before $t_{\text{cutoff}}$ is selected (
 
 ## 8. Feature Contracts & Golden Parity (DE/ML-008)
 
-Two versioned feature specifications are defined in [feature_extractor.py](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/pipelines/features/feature_extractor.py):
+Two versioned feature specifications are defined in [feature_extractor.py](../../pipelines/features/feature_extractor.py):
 
 1. **`android_runtime_features_v1`** (default for Android export pipelines): matches Kotlin `SignalProcessingPipeline.FeatureExtractor` on raw observed samples:
    - $m_i = \sqrt{x_i^2 + y_i^2 + z_i^2}$, $\quad d_i = |m_i - 9.80665|$

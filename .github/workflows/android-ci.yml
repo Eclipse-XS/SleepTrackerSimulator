@@ -59,7 +59,9 @@ jobs:
           name: android-reports
           path: |
             app/build/reports/
+            app/build/test-results/
             virtualsleepband/build/reports/
+            virtualsleepband/build/test-results/
 
 
   firebase-rules:

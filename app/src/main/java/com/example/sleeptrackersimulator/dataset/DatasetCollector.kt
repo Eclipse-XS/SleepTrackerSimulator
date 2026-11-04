@@ -10,6 +10,7 @@ import java.io.StringReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -92,7 +93,9 @@ object DatasetCsvExporter {
     private const val CSV_COLUMNS = "timestamp_utc_ms,elapsed_realtime_ns,accel_x,accel_y,accel_z,dynamic_magnitude,is_valid,ground_truth_label,predicted_motion_class,rejection_reason,source_kind"
 
     fun generateCsv(session: DatasetSession): String {
-        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
         val sb = StringBuilder()
 
         sb.appendLine("$HEADER_PREFIX SleepSense Ground-Truth Accelerometry Dataset v2.0")

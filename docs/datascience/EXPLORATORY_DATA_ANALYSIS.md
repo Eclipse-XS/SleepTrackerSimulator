@@ -2,7 +2,7 @@
 
 ## 1. Overview & Dataset Demographics
 
-The exploratory data analysis covers the standard benchmark synthetic dataset generated under the `SMALL` configuration ([data/synthetic/sleepsense_synthetic.sqlite](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/data/synthetic/sleepsense_synthetic.sqlite)).
+The exploratory data analysis covers the standard benchmark synthetic dataset generated under the `SMALL` configuration (`data/synthetic/sleepsense_synthetic.sqlite`).
 - **Subjects**: 12 virtual individuals with distinct autonomic reactivity and physical device placements.
 - **Sessions**: 36 multi-modal recording sessions (3 sessions per subject).
 - **Total Monitored Time**: 18.0 continuous observation hours (1,080 minutes).
@@ -20,7 +20,7 @@ Human sleep and rest are fundamentally dominated by prolonged quiescent episodes
 - **`RESTLESS`**: 5,236 windows (**8.08%**)
 - **`ACTIVE`**: 1,356 windows (**2.09%**)
 
-![Class Distribution](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/docs/datascience/figures/01_class_distribution.png)
+![Class Distribution](../../docs/datascience/figures/01_class_distribution.png)
 *Figure 1: Ground truth class distribution demonstrating natural nocturnal class imbalance.*
 
 > [!NOTE]
@@ -31,7 +31,7 @@ Human sleep and rest are fundamentally dominated by prolonged quiescent episodes
 ### 2.2 Raw Accelerometer Biomechanical Waveforms
 The simulated tri-axial accelerometer signals preserve Earth gravity ($\approx 9.81\text{ m/s}^2$) rotated into the device's resting frame of reference:
 
-![Raw Accelerometer Waveforms](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/docs/datascience/figures/02_waveform_examples.png)
+![Raw Accelerometer Waveforms](../../docs/datascience/figures/02_waveform_examples.png)
 *Figure 2: Exemplar 20 Hz tri-axial accelerometer waveforms across REST, RESTLESS, and ACTIVE states.*
 
 1. **`REST`**: Low-amplitude baseline containing high-frequency sensor thermal noise ($\sigma \approx 0.012\text{ m/s}^2$) and low-frequency respiratory micro-vibrations ($0.25\text{ Hz}, \sim 0.025\text{ m/s}^2$).
@@ -43,7 +43,7 @@ The simulated tri-axial accelerometer signals preserve Earth gravity ($\approx 9
 ### 2.3 Physiological Heart Rate Dynamics & Autonomic Inertia
 Heart rate does not step-function instantaneously upon movement onset. It exhibits physiological latency, sympathetic ramp-up, and parasympathetic vagal recovery:
 
-![Heart Rate Inertia](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/docs/datascience/figures/03_hr_inertia_trajectory.png)
+![Heart Rate Inertia](../../docs/datascience/figures/03_hr_inertia_trajectory.png)
 *Figure 3: Simulated 1 Hz heart rate continuous trajectory exhibiting sympathetic acceleration and exponential recovery.*
 
 - **Onset Delay & Acceleration**: When transitioning from `REST` to `ACTIVE`, HR accelerates with a characteristic time constant $\tau_{\text{rise}} \in [6.0, 14.0]\text{ s}$.
@@ -55,7 +55,7 @@ Heart rate does not step-function instantaneously upon movement onset. It exhibi
 ### 2.4 Latent State Transitions (Semi-Markov Process)
 The sequential state transitions govern nocturnal restlessness cycles:
 
-![State Transition Matrix](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/docs/datascience/figures/04_transition_matrix.png)
+![State Transition Matrix](../../docs/datascience/figures/04_transition_matrix.png)
 *Figure 4: Empirical state transition probability matrix.*
 
 - Transitions from `REST` lead predominantly to `RESTLESS` ($85.0\%$) and rarely directly to `ACTIVE` ($15.0\%$).
@@ -67,7 +67,7 @@ The sequential state transitions govern nocturnal restlessness cycles:
 ### 2.5 Mechanical Placement Decoupling
 Device placement drastically modifies the observed mechanical signal energy:
 
-![Placement Attenuation](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/docs/datascience/figures/05_placement_attenuation.png)
+![Placement Attenuation](../../docs/datascience/figures/05_placement_attenuation.png)
 *Figure 5: Accelerometer RMS distribution across Body/Chest, Mattress, and Nightstand placements.*
 
 - **`BODY_CHEST`** ($\alpha = 1.35$): Direct mechanical coupling. Highest sensitivity to ballistocardiogram and micro-movements.
@@ -79,7 +79,7 @@ Device placement drastically modifies the observed mechanical signal energy:
 ### 2.6 Multimodal Cross-Correlation & Independence
 A core architectural requirement of SleepSense 2.0 is that the multimodal relationship between physical motion and cardiovascular arousal must remain realistic and non-deterministic:
 
-![Multimodal Correlation](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/docs/datascience/figures/06_multimodal_correlation.png)
+![Multimodal Correlation](../../docs/datascience/figures/06_multimodal_correlation.png)
 *Figure 6: Scatter plot of dynamic motion RMS versus mean heart rate showing non-deterministic multimodal coupling.*
 
 - **Empirical Pearson Correlation**: $r \approx 0.38$ between `motion_rms` and `mean_hr`.

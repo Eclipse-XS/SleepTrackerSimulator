@@ -2,7 +2,7 @@
 
 ## 1. Experimental Methodology & Rigor
 
-All modeling experiments are evaluated on the standard benchmark dataset ([data/synthetic/sleepsense_synthetic.sqlite](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/data/synthetic/sleepsense_synthetic.sqlite), $N=64,780$ windows across 36 sessions and 12 subjects).
+All modeling experiments are evaluated on the standard benchmark dataset (`data/synthetic/sleepsense_synthetic.sqlite`, $N=64,780$ windows across 36 sessions and 12 subjects).
 
 ### 1.1 Leakage-Safe Subject-Independent Partitioning
 To prevent data leakage across correlated temporal time series, the dataset is split strictly by virtual subject identity:
