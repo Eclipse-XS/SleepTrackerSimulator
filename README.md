@@ -19,6 +19,19 @@ It classifies coarse movement states (`REST`, `RESTLESS`, `ACTIVE`), not clinica
 
 The repository builds two Android applications: `app/` is SleepSense, while `virtualsleepband/` supplies synthetic HR over WebSocket and contains a separate BLE GATT peripheral implementation. Shared Kotlin protocol source lives in `wearable-protocol/`; offline processing and training live in `pipelines/` and `ml/`, not inside either Android runtime.
 
+## Technology Stack
+
+| Category | Technologies |
+| --- | --- |
+| Android development | Kotlin, Android SDK, Jetpack Compose, Material 3, Coroutines |
+| Runtime architecture | Foreground Services, ViewModel, WorkManager |
+| Persistence and visualization | Room, Vico charts |
+| Connectivity | Bluetooth Low Energy (GATT), Java-WebSocket |
+| Cloud | Firebase Authentication, Firebase Realtime Database |
+| On-device ML | LiteRT (TensorFlow Lite), dense DNN, multimodal late-fusion DNN |
+| Data and ML | Python, Polars, Pandera, PyArrow/Parquet, DuckDB, scikit-learn, TensorFlow, MLflow |
+| Testing and delivery | JUnit, AndroidX Test, pytest, Ruff, GitHub Actions |
+
 ## System Architecture
 
 ```mermaid
