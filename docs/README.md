@@ -21,4 +21,4 @@
 
 ## Research
 
-Versioned dataset contracts, synthetic-data design, evaluation, domain shift and ablation findings remain in [datascience/](datascience/). Claims in these reports apply to synthetic cohorts unless explicitly stated otherwise.
+Versioned dataset contracts, synthetic-data design, evaluation, domain shift and ablation findings remain in [datascience/](datascience/ANDROID_PYTHON_DATA_CONTRACT.md). Claims in these reports apply to synthetic cohorts unless explicitly stated otherwise.
