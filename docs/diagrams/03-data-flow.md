@@ -14,7 +14,7 @@ flowchart LR
     MULTI["Multimodal TFLite: XYZ + HR availability"]
     SINGLE["Accelerometer TFLite: XYZ"]
     FALL["Rule-based fallback / uncertain"]
-    ROOM[("Room v8")
+    ROOM[("Room v8")]
     ACC --> VAL
     HR --> VAL
     VAL --> WIN
