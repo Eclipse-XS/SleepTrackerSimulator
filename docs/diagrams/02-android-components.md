@@ -39,7 +39,7 @@ flowchart TB
   MS --> ROOM
   MS --> AUTO
   AUTO --> ROOM
-  AUTO --> ACT['Android / wearable actuators']
+  AUTO --> ACT["Android / wearable actuators"]
   ROOM --> OUT
   OUT --> CLOUD
 ```
