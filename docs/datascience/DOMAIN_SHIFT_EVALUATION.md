@@ -5,7 +5,7 @@
 A critical vulnerability of machine learning in wearable computing is **environmental and biomechanical domain shift**: models trained under ideal placement conditions (e.g. phone resting directly on the mattress) often fail when deployed in uncontrolled real-world environments (e.g. phone placed on a rigid wooden nightstand, high acoustic/thermal sensor noise, or altered user physiology).
 
 To rigorously answer **RQ5** and **RQ6**, we evaluated our benchmark models against a dedicated, held-out domain-shifted dataset:
-- **Database**: [data/synthetic/sleepsense_shifted.sqlite](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/data/synthetic/sleepsense_shifted.sqlite) (136 MB)
+- **Database**: `data/synthetic/sleepsense_shifted.sqlite` (136 MB)
 - **Cohort**: 10 distinct virtual subjects (`SHIFT-001` through `SHIFT-010`)
 - **Sessions**: 30 multi-modal sessions (15.0 continuous observation hours)
 - **Sample Counts**: 1,079,036 raw accelerometer samples, 43,805 BLE HR samples, 53,938 feature windows, 60 injected quality events

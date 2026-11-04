@@ -7,7 +7,7 @@ In physiological signal processing and edge ML systems, silent data corruption, 
 SleepSense 2.0 incorporates a **defense-in-depth data quality framework**:
 1. **Relational Constraints & Foreign Keys**: Enforced at the persistence boundary via SQLite `PRAGMA foreign_keys = ON;`.
 2. **Schema & Contract Verification**: Pandera schema checks validating column types, bounded ranges, and nullability.
-3. **Automated SQL Quality Gates**: 9 automated integrity checks ([sql/quality_checks.sql](file:///C:/Users/Eclipse/AndroidStudioProjects/SleepTrackerSimulator/sql/quality_checks.sql)) integrated into the CI test suite.
+3. **Automated SQL Quality Gates**: 9 automated integrity checks ([sql/quality_checks.sql](../../sql/quality_checks.sql)) integrated into the CI test suite.
 4. **Structured Telemetry Event Logging**: Dedicated `data_quality_events` table recording physical and wireless transmission faults.
 5. **Statistical Distribution & Drift Monitoring**: Population Stability Index (PSI) tracking to detect domain shifts.
 
