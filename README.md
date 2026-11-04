@@ -50,7 +50,7 @@ Start VirtualSleepBand before connecting its WebSocket endpoint from SleepSense.
 - Synthetic subject-separated evaluation reports **94.54% accuracy / 0.6787 macro F1** for the multimodal model; shifted synthetic placement/noise evaluation falls to **64.74% / 0.4037**. These are not human-subject or clinical validation results.
 - Physical BLE radio performance, physical actuators, and live production Firebase delivery are not established by emulator-only evidence.
 
-[Model card](docs/MODEL_CARD.md) · [Data engineering](docs/DATA_PIPELINE.md) · [Testing scope](docs/TESTING.md) · [Limitations](docs/LIMITATIONS.md) · [Research materials](docs/datascience/)
+[Model card](docs/MODEL_CARD.md) · [Data engineering](docs/DATA_PIPELINE.md) · [Testing scope](docs/TESTING.md) · [Limitations](docs/LIMITATIONS.md) · [Research materials](docs/datascience/ANDROID_PYTHON_DATA_CONTRACT.md)
 
 ## Repository documentation
 
