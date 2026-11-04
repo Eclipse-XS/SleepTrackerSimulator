@@ -3,8 +3,9 @@
 **Android runtime:** 20 Hz is the default requested accelerometer rate, not a guarantee. The coordinator creates 20-sample windows with stride 20. Model tensor shape is `[1,20,3]`; Python's scalar feature dictionaries are not its direct input.
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph AND["Android online runtime"]
+    direction LR
     ACC["Phone XYZ samples - default 20 Hz"]
     HR["BLE or synthetic WebSocket HR"]
     VAL["Clock anchor / validation / provenance"]
@@ -29,6 +30,7 @@ flowchart LR
     FALL --> ROOM
   end
   subgraph OFF["Python offline data and ML"]
+    direction LR
     EXP["Android export / synthetic generation"]
     CLEAN["Ingest / clean / align / validate"]
     PAR["Features, Parquet, DuckDB"]

@@ -5,14 +5,14 @@ External actuator calls are **not** part of an atomic SQLite transaction. The co
 ```mermaid
 sequenceDiagram
   autonumber
-  participant ML as ModelSelectionEngine
+  participant Coord as SessionCoordinatorImpl
   participant Auto as BackgroundAutomationCoordinator
   participant Rule as SmartRuleEventCoordinator
   participant DB as Room v8
   participant Act as Actuator or BLE
   participant Work as CloudOutboxWorker
   participant FB as Firebase RTDB
-  ML->>Auto: Prediction / sensor event
+  Coord->>Auto: Valid sensor sample or model prediction
   Auto->>Auto: Validate predicate, consecutive matches, cooldown
   opt Rule triggers
     Auto->>Rule: Prepare execution

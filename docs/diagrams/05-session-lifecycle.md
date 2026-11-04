@@ -15,10 +15,13 @@ stateDiagram-v2
   PAUSED --> FINALIZING: stop
   RECORDING --> INTERRUPTED: process loss
   PAUSED --> INTERRUPTED: process loss
+  INTERRUPTED --> RECORDING: explicitly resume
   INTERRUPTED --> RECOVERABLE: app returns
   INTERRUPTED --> FINALIZING: finish stored data
+  INTERRUPTED --> FAILED: recovery failure
   RECOVERABLE --> RECORDING: explicitly recover
   RECOVERABLE --> FINALIZING: finish stored data
+  RECOVERABLE --> FAILED: recovery failure
   RECORDING --> FAILED: unrecoverable failure
   PAUSED --> FAILED: unrecoverable failure
   FINALIZING --> COMPLETED: summary committed
